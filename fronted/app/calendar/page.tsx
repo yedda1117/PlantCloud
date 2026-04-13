@@ -8,6 +8,13 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   ChevronLeft,
   ChevronRight,
   Thermometer,
@@ -22,6 +29,7 @@ import {
   Trash2,
   ImageIcon,
   Plus,
+  Leaf,
 } from "lucide-react"
 
 const milestones = [
@@ -39,7 +47,7 @@ const plantPhotos = [
   "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=300&h=300&fit=crop",
 ]
 
-const calendarData: Record<number, {
+type DayRecord = {
   hasPhoto: boolean
   photoUrl?: string
   milestone?: string
@@ -47,13 +55,53 @@ const calendarData: Record<number, {
   temp?: number
   humidity?: number
   light?: number
-}> = {
-  3:  { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "sprout", note: "今天发现小芽冒出来了！", temp: 24, humidity: 65, light: 3200 },
-  7:  { hasPhoto: true, photoUrl: plantPhotos[1], note: "叶子长大了一些", temp: 25, humidity: 62, light: 3500 },
-  10: { hasPhoto: true, photoUrl: plantPhotos[2], milestone: "flower", note: "第一朵花开了，太开心了！", temp: 26, humidity: 58, light: 4000 },
-  15: { hasPhoto: true, photoUrl: plantPhotos[3], note: "花朵越来越多", temp: 24, humidity: 60, light: 3800 },
-  18: { hasPhoto: true, photoUrl: plantPhotos[4], milestone: "repot", note: "换了一个更大的花盆", temp: 23, humidity: 65, light: 3200 },
 }
+
+const allPlantCalendarData: Record<string, Record<number, DayRecord>> = {
+  p1: {
+    3:  { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "sprout", note: "今天发现小芽冒出来了！", temp: 24, humidity: 65, light: 3200 },
+    7:  { hasPhoto: true, photoUrl: plantPhotos[1], note: "叶子长大了一些", temp: 25, humidity: 62, light: 3500 },
+    10: { hasPhoto: true, photoUrl: plantPhotos[2], milestone: "flower", note: "第一朵花开了，太开心了！", temp: 26, humidity: 58, light: 4000 },
+    15: { hasPhoto: true, photoUrl: plantPhotos[3], note: "花朵越来越多", temp: 24, humidity: 60, light: 3800 },
+    18: { hasPhoto: true, photoUrl: plantPhotos[4], milestone: "repot", note: "换了一个更大的花盆", temp: 23, humidity: 65, light: 3200 },
+  },
+  p2: {
+    2:  { hasPhoto: true, photoUrl: plantPhotos[2], note: "多肉状态良好，叶片饱满", temp: 28, humidity: 38, light: 12000 },
+    9:  { hasPhoto: true, photoUrl: plantPhotos[3], milestone: "repot", note: "换了透气性更好的颗粒土", temp: 27, humidity: 35, light: 11000 },
+    14: { hasPhoto: true, photoUrl: plantPhotos[0], note: "发现新的侧芽", temp: 29, humidity: 40, light: 13000 },
+  },
+  p3: {
+    1:  { hasPhoto: true, photoUrl: plantPhotos[1], milestone: "sprout", note: "薰衣草发芽了！", temp: 22, humidity: 72, light: 8000 },
+    6:  { hasPhoto: true, photoUrl: plantPhotos[4], note: "长势喜人，香气浓郁", temp: 21, humidity: 70, light: 7500 },
+    12: { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "flower", note: "第一串花穗开放，紫色很美", temp: 23, humidity: 68, light: 8500 },
+    20: { hasPhoto: true, photoUrl: plantPhotos[2], note: "修剪了部分枝条", temp: 22, humidity: 71, light: 8000 },
+  },
+  p4: {
+    4:  { hasPhoto: true, photoUrl: plantPhotos[3], milestone: "sprout", note: "番茄苗破土而出", temp: 30, humidity: 55, light: 15000 },
+    8:  { hasPhoto: true, photoUrl: plantPhotos[1], note: "茎干变粗，生长旺盛", temp: 32, humidity: 52, light: 14000 },
+    13: { hasPhoto: true, photoUrl: plantPhotos[4], milestone: "flower", note: "开出了第一朵黄花", temp: 31, humidity: 54, light: 15500 },
+    19: { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "fruit", note: "结出了第一颗小番茄！", temp: 33, humidity: 50, light: 16000 },
+  },
+  p5: {
+    5:  { hasPhoto: true, photoUrl: plantPhotos[2], note: "薄荷叶片翠绿，香气清新", temp: 20, humidity: 80, light: 3000 },
+    11: { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "repot", note: "换了更大的花盆，施了有机肥", temp: 19, humidity: 78, light: 2800 },
+    17: { hasPhoto: true, photoUrl: plantPhotos[3], note: "采摘了一些叶片泡茶", temp: 21, humidity: 82, light: 3200 },
+  },
+  p6: {
+    3:  { hasPhoto: true, photoUrl: plantPhotos[4], note: "仙人掌状态稳定", temp: 30, humidity: 25, light: 22000 },
+    10: { hasPhoto: true, photoUrl: plantPhotos[1], note: "顶部出现新刺", temp: 31, humidity: 23, light: 23000 },
+    22: { hasPhoto: true, photoUrl: plantPhotos[2], milestone: "flower", note: "开出了一朵白色小花，难得一见！", temp: 29, humidity: 26, light: 21000 },
+  },
+}
+
+const plants = [
+  { id: "p1", name: "绿萝", emoji: "🌿" },
+  { id: "p2", name: "多肉植物", emoji: "🌵" },
+  { id: "p3", name: "薰衣草", emoji: "💜" },
+  { id: "p4", name: "番茄苗", emoji: "🍅" },
+  { id: "p5", name: "薄荷", emoji: "🌱" },
+  { id: "p6", name: "仙人掌", emoji: "🌴" },
+]
 
 const weekDays = ["日", "一", "二", "三", "四", "五", "六"]
 const ROWS = 6
@@ -64,6 +112,10 @@ export default function CalendarPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedMilestones, setSelectedMilestones] = useState<string[]>([])
   const [noteText, setNoteText] = useState("")
+  const [selectedPlantId, setSelectedPlantId] = useState("p1")
+
+  const currentPlant = plants.find((p) => p.id === selectedPlantId) ?? plants[0]
+  const calendarData = allPlantCalendarData[selectedPlantId] ?? {}
 
   const gridRef = useRef<HTMLDivElement>(null)
   const [rowHeight, setRowHeight] = useState(0)
@@ -115,7 +167,26 @@ export default function CalendarPage() {
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
-      <NavHeader />
+      <NavHeader
+        rightSlot={
+          <div className="flex items-center gap-2">
+            <Leaf className="h-4 w-4 text-primary" />
+            <span className="text-sm text-muted-foreground">绑定植物：</span>
+            <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
+              <SelectTrigger className="w-36 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {plants.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.emoji} {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
 
       <main className="flex-1 flex flex-col container mx-auto px-6 py-4 overflow-hidden min-h-0">
         <div className="flex items-center justify-between mb-3 flex-shrink-0">
@@ -130,9 +201,14 @@ export default function CalendarPage() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={handleToday}>
-            回到今天
-          </Button>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              {currentPlant.emoji} {currentPlant.name} 的生长日志
+            </span>
+            <Button variant="outline" size="sm" onClick={handleToday}>
+              回到今天
+            </Button>
+          </div>
         </div>
 
         <Card className="flex-1 overflow-hidden min-h-0">
@@ -205,7 +281,7 @@ export default function CalendarPage() {
         <DialogContent className="max-w-4xl w-full">
           <DialogHeader>
             <DialogTitle className="text-lg">
-              {year}年{month + 1}月{selectedDay}日 - 详细记录
+              {currentPlant.emoji} {currentPlant.name} · {year}年{month + 1}月{selectedDay}日 - 详细记录
             </DialogTitle>
           </DialogHeader>
 
