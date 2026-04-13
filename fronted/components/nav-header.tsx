@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -13,7 +14,11 @@ const navItems = [
   { href: "/settings", label: "设置" },
 ]
 
-export function NavHeader() {
+interface NavHeaderProps {
+  rightSlot?: React.ReactNode
+}
+
+export function NavHeader({ rightSlot }: NavHeaderProps) {
   const pathname = usePathname()
 
   return (
@@ -53,6 +58,11 @@ export function NavHeader() {
 
         {/* Right side */}
         <div className="flex items-center gap-3">
+          {rightSlot && (
+            <div className="flex items-center gap-2 mr-2 border-r border-border/40 pr-3">
+              {rightSlot}
+            </div>
+          )}
           <button className="relative p-2 rounded-lg hover:bg-muted transition-colors">
             <Bell className="h-5 w-5 text-muted-foreground" />
             <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
