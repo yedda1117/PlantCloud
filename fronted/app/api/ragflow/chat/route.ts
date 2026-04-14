@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
 - 温度：26.4℃
 - 湿度：61%
 - 光照：偏弱
-- 风扇：关闭
+- 风扇：关
 `
 
     const finalMessage = `${sensorContext}
