@@ -1,5 +1,6 @@
 package com.plantcloud.mqtt.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.plantcloud.alert.entity.AlertLog;
 import com.plantcloud.alert.mapper.AlertLogMapper;
 import com.plantcloud.companion.entity.InteractionEvent;
@@ -25,14 +26,21 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
     private static final String ALERT_TYPE_TILT = "TILT_ABNORMAL";
     private static final String ALERT_SEVERITY_HIGH = "HIGH";
     private static final String ALERT_STATUS_UNRESOLVED = "UNRESOLVED";
+    private static final String ALERT_STATUS_RESOLVED = "RESOLVED";
     private static final String ALERT_TITLE = "\u68c0\u6d4b\u5230\u690d\u7269\u503e\u659c";
     private static final String ALERT_CONTENT =
             "\u8bbe\u5907\u68c0\u6d4b\u5230\u82b1\u76c6\u53d1\u751f\u503e\u659c\uff0c\u8bf7\u68c0\u67e5\u690d\u7269\u72b6\u6001";
 
     private static final String EVENT_TYPE_MOTION_DETECTED = "MOTION_DETECTED";
-    private static final String EVENT_TITLE = "\u76d1\u6d4b\u5230\u503e\u659c\u52a8\u4f5c";
-    private static final String EVENT_CONTENT =
+    private static final String EVENT_TITLE_TILT = "\u76d1\u6d4b\u5230\u503e\u659c\u52a8\u4f5c";
+    private static final String EVENT_CONTENT_TILT =
             "\u8bbe\u5907\u68c0\u6d4b\u5230\u82b1\u76c6\u53d1\u751f\u503e\u659c\u52a8\u4f5c";
+    private static final String EVENT_TITLE_RECOVER = "\u690d\u7269\u503e\u659c\u5df2\u6062\u590d\u6b63\u5e38";
+    private static final String EVENT_CONTENT_RECOVER =
+            "\u8bbe\u5907\u68c0\u6d4b\u5230\u82b1\u76c6\u5df2\u6062\u590d\u5230\u6b63\u5e38\u72b6\u6001";
+
+    private static final ZoneId MQTT_EVENT_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final long EPOCH_MILLI_THRESHOLD = 100000000000L;
 
     private final AlertLogMapper alertLogMapper;
     private final InteractionEventMapper interactionEventMapper;
@@ -43,7 +51,29 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
     public void handleTiltAlert(Long deviceId, TiltAlertMessage message, String rawPayload) {
         Long plantId = resolvePlantId(deviceId);
         LocalDateTime eventTime = resolveEventTime(message.getTimestamp());
-        log.info("Start persisting tilt alert. deviceId={}, plantId={}, eventTime={}",
+        boolean currentTilt = Boolean.TRUE.equals(message.getIsTilt());
+        AlertLog latestUnresolvedAlert = findLatestUnresolvedAlert(deviceId);
+        boolean previousTilt = latestUnresolvedAlert != null;
+
+        log.info("Evaluating tilt state transition. deviceId={}, plantId={}, previousTilt={}, currentTilt={}, eventTime={}",
+                deviceId, plantId, previousTilt, currentTilt, eventTime);
+
+        if (!previousTilt && currentTilt) {
+            handleTiltDetected(deviceId, plantId, eventTime, rawPayload);
+            return;
+        }
+
+        if (previousTilt && !currentTilt) {
+            handleTiltRecovered(deviceId, plantId, eventTime, rawPayload, latestUnresolvedAlert);
+            return;
+        }
+
+        log.info("Tilt state unchanged, no database write required. deviceId={}, plantId={}, previousTilt={}, currentTilt={}",
+                deviceId, plantId, previousTilt, currentTilt);
+    }
+
+    private void handleTiltDetected(Long deviceId, Long plantId, LocalDateTime eventTime, String rawPayload) {
+        log.info("Detected tilt transition false -> true. deviceId={}, plantId={}, eventTime={}",
                 deviceId, plantId, eventTime);
 
         AlertLog alertLog = new AlertLog();
@@ -57,21 +87,73 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
         alertLog.setCreatedAt(eventTime);
         alertLog.setExtraData(rawPayload);
         alertLogMapper.insert(alertLog);
-        log.info("Inserted alert_log successfully. alertId={}, deviceId={}, plantId={}, alertType={}",
-                alertLog.getId(), deviceId, plantId, ALERT_TYPE_TILT);
+        log.info("Inserted tilt alert_log successfully. alertId={}, deviceId={}, plantId={}",
+                alertLog.getId(), deviceId, plantId);
 
+        insertInteractionEvent(
+                plantId,
+                deviceId,
+                EVENT_TITLE_TILT,
+                EVENT_CONTENT_TILT,
+                eventTime,
+                "{\"is_tilt\": true}"
+        );
+    }
+
+    private void handleTiltRecovered(Long deviceId,
+                                     Long plantId,
+                                     LocalDateTime eventTime,
+                                     String rawPayload,
+                                     AlertLog latestUnresolvedAlert) {
+        log.info("Detected tilt transition true -> false. deviceId={}, plantId={}, eventTime={}, alertId={}",
+                deviceId, plantId, eventTime, latestUnresolvedAlert.getId());
+
+        latestUnresolvedAlert.setStatus(ALERT_STATUS_RESOLVED);
+        latestUnresolvedAlert.setResolvedAt(eventTime);
+        latestUnresolvedAlert.setExtraData(rawPayload);
+        alertLogMapper.updateById(latestUnresolvedAlert);
+        log.info("Resolved tilt alert successfully. alertId={}, deviceId={}, plantId={}",
+                latestUnresolvedAlert.getId(), deviceId, plantId);
+
+        insertInteractionEvent(
+                plantId,
+                deviceId,
+                EVENT_TITLE_RECOVER,
+                EVENT_CONTENT_RECOVER,
+                eventTime,
+                "{\"is_tilt\": false}"
+        );
+    }
+
+    private void insertInteractionEvent(Long plantId,
+                                        Long deviceId,
+                                        String eventTitle,
+                                        String eventContent,
+                                        LocalDateTime eventTime,
+                                        String extraData) {
         InteractionEvent interactionEvent = new InteractionEvent();
         interactionEvent.setPlantId(plantId);
         interactionEvent.setDeviceId(deviceId);
         interactionEvent.setEventType(EVENT_TYPE_MOTION_DETECTED);
-        interactionEvent.setEventTitle(EVENT_TITLE);
-        interactionEvent.setEventContent(EVENT_CONTENT);
+        interactionEvent.setEventTitle(eventTitle);
+        interactionEvent.setEventContent(eventContent);
         interactionEvent.setEventCount(1);
         interactionEvent.setDetectedAt(eventTime);
-        interactionEvent.setExtraData("{\"is_tilt\": true}");
+        interactionEvent.setExtraData(extraData);
         interactionEventMapper.insert(interactionEvent);
-        log.info("Inserted interaction_event successfully. eventId={}, deviceId={}, plantId={}, eventType={}",
-                interactionEvent.getId(), deviceId, plantId, EVENT_TYPE_MOTION_DETECTED);
+        log.info("Inserted interaction_event successfully. eventId={}, deviceId={}, plantId={}, eventTitle={}",
+                interactionEvent.getId(), deviceId, plantId, eventTitle);
+    }
+
+    private AlertLog findLatestUnresolvedAlert(Long deviceId) {
+        return alertLogMapper.selectOne(
+                new LambdaQueryWrapper<AlertLog>()
+                        .eq(AlertLog::getDeviceId, deviceId)
+                        .eq(AlertLog::getAlertType, ALERT_TYPE_TILT)
+                        .eq(AlertLog::getStatus, ALERT_STATUS_UNRESOLVED)
+                        .orderByDesc(AlertLog::getCreatedAt)
+                        .last("limit 1")
+        );
     }
 
     private Long resolvePlantId(Long deviceId) {
@@ -89,9 +171,19 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
     }
 
     private LocalDateTime resolveEventTime(Long timestamp) {
-        if (timestamp == null) {
-            return LocalDateTime.now();
+        if (timestamp == null || timestamp <= 0) {
+            LocalDateTime now = LocalDateTime.now(MQTT_EVENT_ZONE);
+            log.warn("MQTT timestamp missing or invalid, using current time. timestamp={}, fallbackTime={}",
+                    timestamp, now);
+            return now;
         }
-        return LocalDateTime.ofInstant(Instant.ofEpochSecond(timestamp), ZoneId.systemDefault());
+
+        Instant instant = timestamp >= EPOCH_MILLI_THRESHOLD
+                ? Instant.ofEpochMilli(timestamp)
+                : Instant.ofEpochSecond(timestamp);
+        LocalDateTime eventTime = LocalDateTime.ofInstant(instant, MQTT_EVENT_ZONE);
+        log.info("Resolved MQTT event time. rawTimestamp={}, resolvedEventTime={}, zone={}",
+                timestamp, eventTime, MQTT_EVENT_ZONE);
+        return eventTime;
     }
 }
