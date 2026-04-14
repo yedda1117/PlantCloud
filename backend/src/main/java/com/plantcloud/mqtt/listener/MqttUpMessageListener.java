@@ -34,10 +34,9 @@ public class MqttUpMessageListener {
             TiltAlertMessage message = objectMapper.readValue(payload, TiltAlertMessage.class);
             log.info("Parsed SC2 alert message. deviceId={}, alertType={}, isTilt={}, timestamp={}",
                     deviceId, message.getAlertType(), message.getIsTilt(), message.getTimestamp());
-            if (TILT_ALERT_TYPE.equalsIgnoreCase(message.getAlertType())
-                    && Boolean.TRUE.equals(message.getIsTilt())) {
-                log.info("Tilt alert matched processing condition. deviceId={}, alertType={}",
-                        deviceId, message.getAlertType());
+            if (TILT_ALERT_TYPE.equalsIgnoreCase(message.getAlertType())) {
+                log.info("Tilt alert matched processing condition. deviceId={}, alertType={}, isTilt={}",
+                        deviceId, message.getAlertType(), message.getIsTilt());
                 tiltAlertMessageService.handleTiltAlert(deviceId, message, payload);
             } else {
                 log.warn("SC2 alert ignored because condition not matched. deviceId={}, alertType={}, isTilt={}",
