@@ -25,8 +25,11 @@ app:
   mqtt:
     broker-url: tcp://localhost:1883
     client-id: plantcloud-backend
-    username: guest
-    password: guest
+    username:
+    password:
+    subscribe-topic: device/+/sc2/alert
+    qos: 1
+    automatic-reconnect: true
   minio:
     endpoint: http://localhost:9000
     access-key: minioadmin

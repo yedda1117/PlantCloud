@@ -18,6 +18,8 @@ D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\companion\mapper\Inter
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\companion\service\CompanionService.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\companion\service\impl\CompanionServiceImpl.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\companion\vo\CompanionEventVO.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\config\MqttClientConfig.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\config\MqttProperties.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\config\MybatisPlusConfig.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\config\OpenApiConfig.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\config\SecurityConfig.java
@@ -41,7 +43,13 @@ D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\monitoring\service\imp
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\monitoring\service\MonitoringService.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\monitoring\vo\CurrentEnvironmentVO.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\monitoring\vo\DeviceStatusOverviewVO.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\config\MqttClientStarter.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\listener\DeviceAlertMqttCallback.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\listener\MqttUpMessageListener.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\listener\TiltAlertMessage.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\service\impl\TiltAlertMessageServiceImpl.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\service\MqttMessageHandler.java
+D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\mqtt\service\TiltAlertMessageService.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\photo\ai\SmartAiClient.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\photo\controller\PhotoController.java
 D:\shixun\PlantCloud\backend\src\main\java\com\plantcloud\photo\entity\PhotoLog.java

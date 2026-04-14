@@ -20,4 +20,5 @@ public class InteractionEvent extends BaseEntity {
     private Integer eventCount;
     private LocalDateTime detectedAt;
     private String extraData;
+    private LocalDateTime createdAt;
 }
