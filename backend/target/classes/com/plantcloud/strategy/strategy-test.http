@@ -1,0 +1,305 @@
+@baseUrl = http://localhost:8080
+@plantId = 1
+@createdBy = 1
+@lightDeviceId = 1
+@fanDeviceId = 2
+
+###
+# 0. 健康检查：查询策略列表（空数据也正常）
+GET {{baseUrl}}/strategies?plant_id={{plantId}}
+
+###
+# 1. 新增策略：光照不足自动补光（正常用例）
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "光照不足自动补光",
+  "strategyType": "CONDITION",
+  "metricType": "LIGHT",
+  "operatorType": "LT",
+  "thresholdMin": 300,
+  "actionType": "AUTO_LIGHT",
+  "actionValue": "ON",
+  "targetDeviceId": {{lightDeviceId}},
+  "enabled": true,
+  "priority": 10,
+  "configJson": {
+    "timeLimitEnabled": true,
+    "startTime": "18:00",
+    "endTime": "22:00"
+  }
+}
+
+###
+# 2. 查询策略列表：确认刚创建的策略是否存在
+GET {{baseUrl}}/strategies?plantId={{plantId}}
+
+###
+# 3. 新增策略：高温自动通风（正常用例）
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "高温自动通风",
+  "strategyType": "CONDITION",
+  "metricType": "TEMPERATURE",
+  "operatorType": "GT",
+  "thresholdMin": 30,
+  "actionType": "AUTO_FAN",
+  "actionValue": "HIGH",
+  "targetDeviceId": {{fanDeviceId}},
+  "enabled": true,
+  "priority": 8,
+  "configJson": {
+    "timeLimitEnabled": false
+  }
+}
+
+###
+# 4. 新增策略：湿度过高通知用户（正常用例）
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "湿度过高通知用户",
+  "strategyType": "CONDITION",
+  "metricType": "HUMIDITY",
+  "operatorType": "GT",
+  "thresholdMin": 85,
+  "actionType": "NOTIFY_USER",
+  "actionValue": "WARNING",
+  "enabled": true,
+  "priority": 6,
+  "configJson": {
+    "timeLimitEnabled": false,
+    "notifyTitleTemplate": "植物湿度提醒",
+    "notifyContentTemplate": "当前湿度过高，请及时关注植物环境"
+  }
+}
+
+###
+# 5. 查询策略列表：查看三条策略是否都已创建
+GET {{baseUrl}}/strategies?plantId={{plantId}}
+
+###
+# 6. 按启用状态筛选
+GET {{baseUrl}}/strategies?plantId={{plantId}}&enabled=true
+
+###
+# 7. 按策略类型筛选
+GET {{baseUrl}}/strategies?plantId={{plantId}}&strategyType=CONDITION
+
+###
+# 8. 查询详情
+# 把下面的 1 改成你实际创建成功返回的策略 ID
+GET {{baseUrl}}/strategies/2044347545794191362
+
+###
+# 9. 更新策略：把补光阈值从 300 改成 250
+# 把下面的 1 改成实际策略 ID
+PUT {{baseUrl}}/strategies/2044345007955058690
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "strategyName": "光照不足自动补光-更新版",
+  "strategyType": "CONDITION",
+  "metricType": "LIGHT",
+  "operatorType": "LT",
+  "thresholdMin": 400,
+  "actionType": "AUTO_LIGHT",
+  "actionValue": "ON",
+  "targetDeviceId": {{lightDeviceId}},
+  "enabled": true,
+  "priority": 12,
+  "configJson": {
+    "timeLimitEnabled": true,
+    "startTime": "17:00",
+    "endTime": "23:00"
+  }
+}
+
+###
+# 10. 查询详情：确认更新结果
+# 把下面的 1 改成实际策略 ID
+GET {{baseUrl}}/strategies/2044345007955058690
+
+###
+# 11. 冲突校验测试：新增一个与“光照不足自动补光”冲突的策略
+# 预期：应该失败，返回 400 或业务异常
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "光照不足自动补光-冲突测试",
+  "strategyType": "CONDITION",
+  "metricType": "LIGHT",
+  "operatorType": "LT",
+  "thresholdMin": 280,
+  "actionType": "AUTO_LIGHT",
+  "actionValue": "ON",
+  "targetDeviceId": {{lightDeviceId}},
+  "enabled": true,
+  "priority": 9,
+  "configJson": {
+    "timeLimitEnabled": true,
+    "startTime": "18:00",
+    "endTime": "22:00"
+  }
+}
+
+###
+# 12. 不冲突测试：相同指标，但动作不同（理论上应允许，取决于你的实现）
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "光照不足通知用户",
+  "strategyType": "CONDITION",
+  "metricType": "LIGHT",
+  "operatorType": "LT",
+  "thresholdMin": 280,
+  "actionType": "NOTIFY_USER",
+  "actionValue": "INFO",
+  "enabled": true,
+  "priority": 5,
+  "configJson": {
+    "timeLimitEnabled": false,
+    "notifyTitleTemplate": "植物光照提醒",
+    "notifyContentTemplate": "当前光照不足，请及时关注植物状态"
+  }
+}
+
+###
+# 13. 参数校验：BETWEEN 缺少 thresholdMax
+# 预期：应失败
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "区间条件错误测试",
+  "strategyType": "CONDITION",
+  "metricType": "TEMPERATURE",
+  "operatorType": "BETWEEN",
+  "thresholdMin": 18,
+  "actionType": "AUTO_FAN",
+  "actionValue": "LOW",
+  "targetDeviceId": {{fanDeviceId}},
+  "enabled": true,
+  "priority": 3
+}
+
+###
+# 14. 参数校验：NOTIFY_USER 但 actionValue 非法
+# 预期：应失败
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "通知级别非法测试",
+  "strategyType": "CONDITION",
+  "metricType": "HUMIDITY",
+  "operatorType": "GT",
+  "thresholdMin": 90,
+  "actionType": "NOTIFY_USER",
+  "actionValue": "ON",
+  "enabled": true,
+  "priority": 1
+}
+
+###
+# 15. 参数校验：AUTO_LIGHT 缺少 targetDeviceId
+# 预期：应失败
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "补光缺少设备测试",
+  "strategyType": "CONDITION",
+  "metricType": "LIGHT",
+  "operatorType": "LT",
+  "thresholdMin": 150,
+  "actionType": "AUTO_LIGHT",
+  "actionValue": "ON",
+  "enabled": true,
+  "priority": 1
+}
+
+###
+# 16. 参数校验：SCHEDULE 正常用例
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "每天早上补光",
+  "strategyType": "SCHEDULE",
+  "metricType": "NONE",
+  "operatorType": "CRON",
+  "cronExpr": "0 0 8 * * ?",
+  "actionType": "AUTO_LIGHT",
+  "actionValue": "ON",
+  "targetDeviceId": {{lightDeviceId}},
+  "enabled": true,
+  "priority": 4,
+  "configJson": {
+    "timeLimitEnabled": false
+  }
+}
+
+###
+# 17. 参数校验：SCHEDULE 缺少 cronExpr
+# 预期：应失败
+POST {{baseUrl}}/strategies
+Content-Type: application/json
+
+{
+  "plantId": {{plantId}},
+  "createdBy": {{createdBy}},
+  "strategyName": "定时缺少cron测试",
+  "strategyType": "SCHEDULE",
+  "metricType": "NONE",
+  "operatorType": "CRON",
+  "actionType": "AUTO_FAN",
+  "actionValue": "LOW",
+  "targetDeviceId": {{fanDeviceId}},
+  "enabled": true,
+  "priority": 2
+}
+
+###
+# 18. 查询日志
+# 把下面的 1 改成实际策略 ID
+GET {{baseUrl}}/strategies/1/logs?page_num=1&page_size=10
+
+###
+# 19. 删除策略
+# 把下面的 1 改成你想删除的策略 ID
+DELETE {{baseUrl}}/strategies/2044356111133376513
+
+###
+# 20. 删除后再次查询详情
+# 预期：404 或业务不存在异常
+GET {{baseUrl}}/strategies/1
+
+###
+# 21. 最终列表检查
+GET {{baseUrl}}/strategies?plant_id={{plantId}}

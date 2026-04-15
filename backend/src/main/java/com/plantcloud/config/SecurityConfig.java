@@ -32,7 +32,8 @@ public class SecurityConfig {
                                 "/visualization/history",
                                 "/companion/events",
                                 "/photos/**",
-                                "/uploads/**"
+                                "/uploads/**",
+                                "/strategies/**"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
