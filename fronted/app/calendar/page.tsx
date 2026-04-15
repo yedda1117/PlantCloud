@@ -1,14 +1,12 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, type ChangeEvent } from "react"
 import { NavHeader } from "@/components/nav-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -32,8 +30,6 @@ import {
   ImageIcon,
   Plus,
   Leaf,
-  X,
-  Camera,
 } from "lucide-react"
 
 const milestones = [
@@ -54,11 +50,13 @@ const plantPhotos = [
 type DayRecord = {
   hasPhoto: boolean
   photoUrl?: string
+  originalPhotoUrl?: string
   milestone?: string
   note?: string
   temp?: number
   humidity?: number
   light?: number
+  aiStatus?: "idle" | "processing" | "done" | "fallback" | "error"
 }
 
 const allPlantCalendarData: Record<string, Record<number, DayRecord>> = {
@@ -109,6 +107,32 @@ const plants = [
 
 const weekDays = ["日", "一", "二", "三", "四", "五", "六"]
 const ROWS = 6
+const plantApiIds: Record<string, number> = {
+  p1: 1,
+  p2: 2,
+  p3: 3,
+  p4: 4,
+  p5: 5,
+  p6: 6,
+}
+
+const cloneCalendarData = () =>
+  Object.fromEntries(
+    Object.entries(allPlantCalendarData).map(([plantId, records]) => [
+      plantId,
+      Object.fromEntries(
+        Object.entries(records).map(([day, record]) => [day, { ...record }])
+      ),
+    ])
+  ) as Record<string, Record<number, DayRecord>>
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
 
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1))
@@ -117,11 +141,15 @@ export default function CalendarPage() {
   const [selectedMilestones, setSelectedMilestones] = useState<string[]>([])
   const [noteText, setNoteText] = useState("")
   const [selectedPlantId, setSelectedPlantId] = useState("p1")
+  const [calendarRecords, setCalendarRecords] = useState(cloneCalendarData)
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false)
+  const [photoProcessMessage, setPhotoProcessMessage] = useState("")
 
   const currentPlant = plants.find((p) => p.id === selectedPlantId) ?? plants[0]
-  const calendarData = allPlantCalendarData[selectedPlantId] ?? {}
+  const calendarData = calendarRecords[selectedPlantId] ?? {}
 
   const gridRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [rowHeight, setRowHeight] = useState(0)
 
   useEffect(() => {
@@ -157,7 +185,123 @@ export default function CalendarPage() {
     const data = calendarData[day]
     setSelectedMilestones(data?.milestone ? [data.milestone] : [])
     setNoteText(data?.note || "")
+    setPhotoProcessMessage("")
     setDialogOpen(true)
+  }
+
+  const updateSelectedDayRecord = (updater: (record: DayRecord) => DayRecord) => {
+    if (!selectedDay) return
+
+    setCalendarRecords((prev) => {
+      const plantRecords = prev[selectedPlantId] ?? {}
+      const currentRecord = plantRecords[selectedDay] ?? { hasPhoto: false }
+
+      return {
+        ...prev,
+        [selectedPlantId]: {
+          ...plantRecords,
+          [selectedDay]: updater(currentRecord),
+        },
+      }
+    })
+  }
+
+  const handlePhotoButtonClick = () => {
+    if (!selectedDay || isProcessingPhoto) return
+    fileInputRef.current?.click()
+  }
+
+  const handlePhotoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file || !selectedDay) return
+
+    setIsProcessingPhoto(true)
+    setPhotoProcessMessage("正在上传图片并调用 SmartJavaAI 处理...")
+
+    const originalPhotoUrl = await readFileAsDataUrl(file)
+
+    try {
+      const form = new FormData()
+      form.append("file", file)
+
+      const response = await fetch(`/api/photos/upload?plantId=${plantApiIds[selectedPlantId]}&userId=1`, {
+        method: "POST",
+        body: form,
+      })
+      const data = await response.json()
+      const photoLog = data?.data ?? data
+
+      if (!response.ok || data?.code > 0) {
+        throw new Error(data?.message || "图片上传失败")
+      }
+
+      const processedPhotoUrl =
+        photoLog?.processedImageUrl ||
+        photoLog?.thumbnailUrl ||
+        photoLog?.originalImageUrl ||
+        originalPhotoUrl
+
+      const nextAiStatus =
+        photoLog?.aiStatus === "PENDING"
+          ? "processing"
+          : photoLog?.aiStatus === "FAILED"
+            ? "error"
+            : "done"
+
+      updateSelectedDayRecord((record) => ({
+        ...record,
+        hasPhoto: true,
+        photoUrl: processedPhotoUrl,
+        originalPhotoUrl: photoLog?.originalImageUrl || originalPhotoUrl,
+        aiStatus: nextAiStatus,
+        note: record.note ?? noteText,
+      }))
+      setPhotoProcessMessage(
+        photoLog?.processedImageUrl
+          ? "SmartJavaAI 已完成主体识别和背景替换"
+          : photoLog?.aiStatus === "FAILED"
+            ? `SmartJavaAI 处理失败：${photoLog?.note || "请检查 ONNX Runtime 本机依赖"}`
+          : "图片已上传，等待后端返回 SmartJavaAI 处理结果"
+      )
+    } catch (error) {
+      updateSelectedDayRecord((record) => ({
+        ...record,
+        hasPhoto: true,
+        photoUrl: originalPhotoUrl,
+        originalPhotoUrl,
+        aiStatus: "error",
+        note: record.note ?? noteText,
+      }))
+      setPhotoProcessMessage(error instanceof Error ? error.message : "图片上传失败")
+    } finally {
+      setIsProcessingPhoto(false)
+    }
+  }
+
+  const handleDeletePhoto = () => {
+    updateSelectedDayRecord((record) => ({
+      ...record,
+      hasPhoto: false,
+      photoUrl: undefined,
+      originalPhotoUrl: undefined,
+      aiStatus: "idle",
+    }))
+    setPhotoProcessMessage("")
+  }
+
+  const handleViewPhoto = () => {
+    const photoUrl = calendarData[selectedDay || 0]?.photoUrl
+    if (photoUrl) window.open(photoUrl, "_blank", "noopener,noreferrer")
+  }
+
+  const handleSave = () => {
+    updateSelectedDayRecord((record) => ({
+      ...record,
+      note: noteText,
+      milestone: selectedMilestones[0],
+    }))
+    setDialogOpen(false)
   }
 
   const getMilestoneIcon = (milestoneId: string) => {
@@ -309,19 +453,54 @@ export default function CalendarPage() {
                 )}
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" size="sm" className="h-10">
-                  <Upload className="h-4 w-4 mr-1.5" />上传照片
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePhotoFileChange}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10"
+                  onClick={handlePhotoButtonClick}
+                  disabled={isProcessingPhoto}
+                >
+                  <Upload className="h-4 w-4 mr-1.5" />
+                  {isProcessingPhoto ? "处理中..." : "上传照片"}
                 </Button>
-                <Button variant="outline" size="sm" className="h-10">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10"
+                  onClick={handlePhotoButtonClick}
+                  disabled={isProcessingPhoto}
+                >
                   <RefreshCw className="h-4 w-4 mr-1.5" />更换照片
                 </Button>
-                <Button variant="outline" size="sm" className="h-10">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10"
+                  onClick={handleViewPhoto}
+                  disabled={!calendarData[selectedDay || 0]?.photoUrl}
+                >
                   <ImageIcon className="h-4 w-4 mr-1.5" />查看照片
                 </Button>
-                <Button variant="outline" size="sm" className="h-10 text-destructive hover:text-destructive">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 text-destructive hover:text-destructive"
+                  onClick={handleDeletePhoto}
+                  disabled={!calendarData[selectedDay || 0]?.photoUrl || isProcessingPhoto}
+                >
                   <Trash2 className="h-4 w-4 mr-1.5" />删除照片
                 </Button>
               </div>
+              {photoProcessMessage && (
+                <p className="text-xs text-muted-foreground">{photoProcessMessage}</p>
+              )}
             </div>
 
             {/* 右列：环境数据 + 里程碑（撑满高度） */}
@@ -406,7 +585,7 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex gap-3 mt-4">
-            <Button className="flex-1">保存</Button>
+            <Button className="flex-1" onClick={handleSave}>保存</Button>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
           </div>
         </DialogContent>

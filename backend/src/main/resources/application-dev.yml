@@ -23,15 +23,20 @@ app:
     access-token-expire-seconds: 7200
     refresh-token-expire-seconds: 604800
   mqtt:
-    broker-url: tcp://150.158.76.53:1883
+    broker-url: tcp://localhost:1883
     client-id: plantcloud-backend
-    username:
-    password:
-    subscribe-topic: device/+/+/+
-    qos: 1
-    automatic-reconnect: true
+    username: guest
+    password: guest
   minio:
     endpoint: http://localhost:9000
     access-key: minioadmin
     secret-key: minioadmin
     bucket: plantcloud
+  upload:
+    dir: uploads
+  smartjavaai:
+    enabled: true
+    instance-seg-model: SEG_YOLOV8N_PYTORCH
+    model-path:
+    threshold: 0.35
+    background-color: "#EEF8E8"

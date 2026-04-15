@@ -20,13 +20,18 @@ app:
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://emqx:1883}
     client-id: ${MQTT_CLIENT_ID:plantcloud-backend}
-    username: ${MQTT_USERNAME:}
-    password: ${MQTT_PASSWORD:}
-    subscribe-topic: ${MQTT_SUBSCRIBE_TOPIC:device/+/+/+}
-    qos: ${MQTT_QOS:1}
-    automatic-reconnect: ${MQTT_AUTOMATIC_RECONNECT:true}
+    username: ${MQTT_USERNAME:guest}
+    password: ${MQTT_PASSWORD:guest}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://minio:9000}
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:plantcloud}
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  smartjavaai:
+    enabled: ${SMARTJAVAAI_ENABLED:true}
+    instance-seg-model: ${SMARTJAVAAI_INSTANCE_SEG_MODEL:SEG_YOLOV8N_PYTORCH}
+    model-path: ${SMARTJAVAAI_MODEL_PATH:}
+    threshold: ${SMARTJAVAAI_THRESHOLD:0.35}
+    background-color: "${SMARTJAVAAI_BACKGROUND_COLOR:#EEF8E8}"
