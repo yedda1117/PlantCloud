@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plantcloud.mqtt.listener.Is1EventMqttListener;
 import com.plantcloud.mqtt.listener.MqttUpMessageListener;
+import com.plantcloud.mqtt.listener.Sf1AlertMqttListener;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -21,21 +22,24 @@ public class MqttMessageHandler {
             Pattern.compile("^device/(\\d+)/sc2/alert$");
     private static final Pattern DEVICE_IS1_EVENT_TOPIC_PATTERN =
             Pattern.compile("^device/(\\d+)/is1/event$");
+    private static final Pattern DEVICE_SF1_TOPIC_PATTERN =
+            Pattern.compile("^device/([^/]+)/sf1/(alert|event)$");
 
     private final ObjectMapper objectMapper;
     private final MqttUpMessageListener mqttUpMessageListener;
     private final Is1EventMqttListener is1EventMqttListener;
+    private final Sf1AlertMqttListener sf1AlertMqttListener;
 
     /**
      * Unified MQTT message entry. It keeps the original payload string and
      * delegates business handling to the existing listener.
      */
     public void handleMessage(String topic, String payload) {
-        Long deviceId = parseDeviceId(topic);
+        String deviceIdentifier = parseDeviceIdentifier(topic);
         JsonNode payloadJson = parsePayload(payload);
 
-        log.info("MQTT message accepted. deviceId={}, topic={}, payload={}",
-                deviceId, topic, payloadJson);
+        log.info("MQTT message accepted. deviceIdentifier={}, topic={}, payload={}",
+                deviceIdentifier, topic, payloadJson);
 
         if (DEVICE_SC2_ALERT_TOPIC_PATTERN.matcher(topic).matches()) {
             mqttUpMessageListener.onMessage(topic, payload);
@@ -45,18 +49,26 @@ public class MqttMessageHandler {
             is1EventMqttListener.onMessage(topic, payload);
             return;
         }
+        if (DEVICE_SF1_TOPIC_PATTERN.matcher(topic).matches()) {
+            sf1AlertMqttListener.onMessage(topic, payload);
+            return;
+        }
 
         throw new IllegalArgumentException("Unsupported MQTT topic: " + topic);
     }
 
-    private Long parseDeviceId(String topic) {
+    private String parseDeviceIdentifier(String topic) {
         Matcher sc2Matcher = DEVICE_SC2_ALERT_TOPIC_PATTERN.matcher(topic);
         if (sc2Matcher.matches()) {
-            return Long.valueOf(sc2Matcher.group(1));
+            return sc2Matcher.group(1);
         }
         Matcher is1Matcher = DEVICE_IS1_EVENT_TOPIC_PATTERN.matcher(topic);
         if (is1Matcher.matches()) {
-            return Long.valueOf(is1Matcher.group(1));
+            return is1Matcher.group(1);
+        }
+        Matcher sf1Matcher = DEVICE_SF1_TOPIC_PATTERN.matcher(topic);
+        if (sf1Matcher.matches()) {
+            return sf1Matcher.group(1);
         }
         log.warn("MQTT topic ignored because it does not match supported patterns. topic={}", topic);
         throw new IllegalArgumentException("Unsupported MQTT topic: " + topic);
