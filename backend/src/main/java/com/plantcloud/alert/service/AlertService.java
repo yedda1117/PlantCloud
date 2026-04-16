@@ -3,7 +3,7 @@ package com.plantcloud.alert.service;
 import com.plantcloud.alert.entity.AlertLog;
 import com.plantcloud.alert.vo.AlertLogVO;
 import com.plantcloud.alert.vo.AlertVO;
-import com.plantcloud.strategy.vo.PageResult;
+import com.plantcloud.common.result.PageResult;
 
 import java.time.LocalDateTime;
 import java.util.List;

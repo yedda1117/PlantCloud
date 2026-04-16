@@ -11,7 +11,7 @@ import com.plantcloud.alert.service.AlertService;
 import com.plantcloud.alert.vo.AlertLogVO;
 import com.plantcloud.alert.vo.AlertVO;
 import com.plantcloud.common.enums.ResultCode;
-import com.plantcloud.strategy.vo.PageResult;
+import com.plantcloud.common.result.PageResult;
 import com.plantcloud.system.exception.BizException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

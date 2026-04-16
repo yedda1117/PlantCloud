@@ -10,7 +10,10 @@ backend/target/
 !.env.example
 .vscode/*
 !.vscode/extensions.json
+!.vscode/launch.json
 !.vscode/settings.example.json
+!.vscode/settings.json
+!.vscode/tasks.json
 
 # frontend
 node_modules/

@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://150.158.76.53:3306/plant_care_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${MYSQL_USERNAME:plant}
+    password: ${MYSQL_PASSWORD:123456}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:change-me-in-prod}
+    access-token-expire-seconds: 7200
+    refresh-token-expire-seconds: 604800
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:tcp://emqx:1883}
+    client-id: ${MQTT_CLIENT_ID:plantcloud-backend}
+    username: ${MQTT_USERNAME:guest}
+    password: ${MQTT_PASSWORD:guest}
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://minio:9000}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    bucket: ${MINIO_BUCKET:plantcloud}
+  upload:
+    dir: ${UPLOAD_DIR:uploads}
+  smartjavaai:
+    enabled: ${SMARTJAVAAI_ENABLED:true}
+    instance-seg-model: ${SMARTJAVAAI_INSTANCE_SEG_MODEL:SEG_YOLOV8N_PYTORCH}
+    model-path: ${SMARTJAVAAI_MODEL_PATH:}
+    threshold: ${SMARTJAVAAI_THRESHOLD:0.35}
+    background-color: "${SMARTJAVAAI_BACKGROUND_COLOR:#EEF8E8}"
+    face:
+      enabled: ${SMARTJAVAAI_FACE_ENABLED:true}
+      detect-model: ${SMARTJAVAAI_FACE_DETECT_MODEL:RETINA_FACE}
+      detect-model-path: ${SMARTJAVAAI_FACE_DETECT_MODEL_PATH:}
+      detect-confidence-threshold: ${SMARTJAVAAI_FACE_DETECT_CONFIDENCE_THRESHOLD:0.5}
+      rec-model: ${SMARTJAVAAI_FACE_REC_MODEL:FACENET_MODEL}
+      rec-model-path: ${SMARTJAVAAI_FACE_REC_MODEL_PATH:}
+      similarity-threshold: ${SMARTJAVAAI_FACE_SIMILARITY_THRESHOLD:0.85}
+      sqlite-db-path: ${SMARTJAVAAI_FACE_SQLITE_DB_PATH:data/face.db}
+      similarity-type: ${SMARTJAVAAI_FACE_SIMILARITY_TYPE:IP}

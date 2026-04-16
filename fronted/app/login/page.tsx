@@ -38,6 +38,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     let stream: MediaStream | null = null
+    let cancelled = false
 
     const startCamera = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -50,9 +51,20 @@ export default function LoginPage() {
           video: { width: 960, height: 720, facingMode: "user" },
           audio: false,
         })
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = stream
-          await videoRef.current.play()
+          try {
+            await videoRef.current.play()
+          } catch (error) {
+            if (error instanceof DOMException && error.name === "AbortError") {
+              return
+            }
+            throw error
+          }
         }
         setReady(true)
       } catch (error) {
@@ -67,6 +79,10 @@ export default function LoginPage() {
     startCamera()
 
     return () => {
+      cancelled = true
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
+      }
       stream?.getTracks().forEach((track) => track.stop())
     }
   }, [])
@@ -207,7 +223,7 @@ export default function LoginPage() {
               </div>
 
               <div className="overflow-hidden rounded-lg border border-white/25 bg-zinc-950 shadow-2xl shadow-black/30">
-                <video ref={videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline autoPlay />
+                <video ref={videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline />
               </div>
 
               <div className="mt-5 flex flex-col gap-4 rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">

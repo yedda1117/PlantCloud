@@ -1,3 +1,22 @@
 {
-    "kiroAgent.configureMCP": "Disabled"
+    "kiroAgent.configureMCP": "Disabled",
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/backend/target/**": true,
+        "**/backend/uploads/**": true,
+        "**/fronted/.next/**": true,
+        "**/fronted/node_modules/**": true
+    },
+    "files.exclude": {
+        "**/backend/target": true,
+        "**/backend/uploads": true,
+        "**/fronted/.next": true
+    },
+    "search.exclude": {
+        "**/backend/target/**": true,
+        "**/backend/uploads/**": true,
+        "**/fronted/.next/**": true,
+        "**/fronted/node_modules/**": true
+    }
 }
