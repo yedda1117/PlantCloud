@@ -1,4 +1,4 @@
-@baseUrl = http://localhost:8080
+@baseUrl = http://150.158.76.53:8080
 @plantId = 1
 @createdBy = 1
 @lightDeviceId = 1
@@ -6,7 +6,7 @@
 
 ###
 # 0. 健康检查：查询策略列表（空数据也正常）
-GET {{baseUrl}}/strategies?plant_id={{plantId}}
+GET {{baseUrl}}/strategies?plantId={{plantId}}
 
 ###
 # 1. 新增策略：光照不足自动补光（正常用例）

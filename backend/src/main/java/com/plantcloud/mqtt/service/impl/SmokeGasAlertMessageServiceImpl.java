@@ -26,7 +26,7 @@ public class SmokeGasAlertMessageServiceImpl implements SmokeGasAlertMessageServ
     private static final String ALERT_TYPE_SMOKE_GAS = "SMOKE_ABNORMAL";
     private static final String ALERT_STATUS_UNRESOLVED = "UNRESOLVED";
     private static final String ALERT_STATUS_RESOLVED = "RESOLVED";
-    private static final String ALERT_SEVERITY_WARNING = "WARNING";
+    private static final String ALERT_SEVERITY_MEDIUM = "MEDIUM";
     private static final String ALERT_SEVERITY_HIGH = "HIGH";
     private static final String METRIC_NAME = "smoke_gas_ppm";
     private static final String ALERT_TITLE = "\u68c0\u6d4b\u5230\u70df\u96fe/\u53ef\u71c3\u6c14\u4f53\u5f02\u5e38";
@@ -169,7 +169,7 @@ public class SmokeGasAlertMessageServiceImpl implements SmokeGasAlertMessageServ
                 || "danger".equalsIgnoreCase(message.getStatus())) {
             return ALERT_SEVERITY_HIGH;
         }
-        return ALERT_SEVERITY_WARNING;
+        return ALERT_SEVERITY_MEDIUM;
     }
 
     private BigDecimal resolveMetricValue(SmokeGasAlertMessage message) {

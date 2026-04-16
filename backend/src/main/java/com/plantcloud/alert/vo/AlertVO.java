@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 @Data
 @Builder
-public class AlertLogVO {
+public class AlertVO {
 
     private Long id;
     private Long plantId;

@@ -33,7 +33,10 @@ public class SecurityConfig {
                                 "/companion/events",
                                 "/photos/**",
                                 "/uploads/**",
-                                "/strategies/**"
+                                "/strategies/**",
+                                "/alerts/**",
+                                "/calendar/**",
+                                "/photos/**"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

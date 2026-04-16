@@ -5,26 +5,36 @@ const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || "http://localhost:8080"
 export async function POST(req: NextRequest) {
   try {
     const form = await req.formData()
-    const file = form.get("file")
-    const plantId = req.nextUrl.searchParams.get("plantId")
-    const userId = req.nextUrl.searchParams.get("userId") || "1"
+    const photo = form.get("photo")
+    const plantId = form.get("plant_id")
+    const date = form.get("date")
+    const note = form.get("note")
+    const milestone = form.get("milestone")
 
-    if (!(file instanceof File)) {
+    if (!(photo instanceof File)) {
       return NextResponse.json(
-        { code: 400, message: "没有上传图片", data: null },
-        { status: 400 }
+        { code: 400, message: "Missing photo file", data: null },
+        { status: 400 },
       )
     }
 
-    if (!plantId) {
+    if (typeof plantId !== "string" || typeof date !== "string") {
       return NextResponse.json(
-        { code: 400, message: "缺少 plantId", data: null },
-        { status: 400 }
+        { code: 400, message: "Missing plant_id or date", data: null },
+        { status: 400 },
       )
     }
 
     const uploadForm = new FormData()
-    uploadForm.append("file", file)
+    uploadForm.append("plant_id", plantId)
+    uploadForm.append("date", date)
+    uploadForm.append("photo", photo)
+    if (typeof note === "string") {
+      uploadForm.append("note", note)
+    }
+    if (typeof milestone === "string") {
+      uploadForm.append("milestone", milestone)
+    }
 
     const headers: HeadersInit = {}
     const authorization = req.headers.get("authorization")
@@ -32,14 +42,11 @@ export async function POST(req: NextRequest) {
       headers.Authorization = authorization
     }
 
-    const backendResponse = await fetch(
-      `${BACKEND_BASE_URL}/photos/upload?plantId=${encodeURIComponent(plantId)}&userId=${encodeURIComponent(userId)}`,
-      {
-        method: "POST",
-        headers,
-        body: uploadForm,
-      }
-    )
+    const backendResponse = await fetch(`${BACKEND_BASE_URL}/photos/upload`, {
+      method: "POST",
+      headers,
+      body: uploadForm,
+    })
 
     const responseText = await backendResponse.text()
     let data: unknown = null
@@ -48,7 +55,7 @@ export async function POST(req: NextRequest) {
     } catch {
       data = {
         code: backendResponse.status,
-        message: responseText || "后端返回了非 JSON 响应",
+        message: responseText || "Backend returned a non-JSON response",
         data: null,
       }
     }
@@ -61,7 +68,7 @@ export async function POST(req: NextRequest) {
         message: error instanceof Error ? error.message : "server error",
         data: null,
       },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

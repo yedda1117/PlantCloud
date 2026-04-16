@@ -2,12 +2,23 @@ package com.plantcloud.alert.controller;
 
 import com.plantcloud.alert.service.AlertService;
 import com.plantcloud.alert.vo.AlertLogVO;
+import com.plantcloud.alert.vo.AlertVO;
 import com.plantcloud.common.result.Result;
+import com.plantcloud.strategy.vo.PageResult;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
+@Validated
 @RestController
 @RequestMapping("/alerts")
 @RequiredArgsConstructor
@@ -15,19 +26,27 @@ public class AlertController {
 
     private final AlertService alertService;
 
-    @GetMapping("/current")
-    public Result<List<AlertLogVO>> getCurrentAlerts(@RequestParam Long plantId) {
-        return Result.ok(alertService.getCurrentAlerts(plantId));
+    @GetMapping
+    public Result<List<AlertVO>> listAlerts(@RequestParam(required = false) String status) {
+        return Result.ok(alertService.listAlerts(status));
     }
 
     @GetMapping("/logs")
-    public Result<List<AlertLogVO>> getAlertLogs(@RequestParam Long plantId) {
-        return Result.ok(alertService.getAlertLogs(plantId));
-    }
-
-    @PostMapping("/{alertId}/acknowledge")
-    public Result<Void> acknowledge(@PathVariable Long alertId, @RequestParam Long userId) {
-        alertService.acknowledge(alertId, userId);
-        return Result.ok(null);
+    public Result<PageResult<AlertLogVO>> getAlertLogs(@RequestParam(value = "alert_type", required = false) String alertType,
+                                                       @RequestParam(required = false) String status,
+                                                       @RequestParam(value = "start_time", required = false)
+                                                       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                                                       LocalDateTime startTime,
+                                                       @RequestParam(value = "end_time", required = false)
+                                                       @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+                                                       LocalDateTime endTime,
+                                                       @RequestParam(defaultValue = "1")
+                                                       @Min(value = 1, message = "current must be greater than or equal to 1")
+                                                       Long current,
+                                                       @RequestParam(defaultValue = "10")
+                                                       @Min(value = 1, message = "pageSize must be greater than or equal to 1")
+                                                       @Max(value = 100, message = "pageSize must be less than or equal to 100")
+                                                       Long pageSize) {
+        return Result.ok(alertService.getAlertLogs(alertType, status, startTime, endTime, current, pageSize));
     }
 }

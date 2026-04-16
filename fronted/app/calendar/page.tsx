@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, type ChangeEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
 import { NavHeader } from "@/components/nav-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { toast } from "@/hooks/use-toast"
+import {
+  getCalendarDayDetail,
+  getCalendarSummary,
+  updateCalendarDayLog,
+  uploadPlantPhoto,
+  deletePlantPhoto,
+  ApiError,
+  type CalendarDayDetail,
+} from "@/lib/calendar-api"
 import {
   ChevronLeft,
   ChevronRight,
@@ -33,76 +43,19 @@ import {
 } from "lucide-react"
 
 const milestones = [
-  { id: "sprout", label: "发芽", icon: Sprout, color: "text-green-500" },
-  { id: "flower", label: "开花", icon: Flower2, color: "text-pink-500" },
-  { id: "fruit", label: "结果", icon: Apple, color: "text-orange-500" },
-  { id: "repot", label: "换盆", icon: FlowerIcon, color: "text-amber-600" },
+  { id: "sprout", apiValue: "SPROUT", label: "萌芽", icon: Sprout, color: "text-green-500" },
+  { id: "flower", apiValue: "FLOWER", label: "开花", icon: Flower2, color: "text-pink-500" },
+  { id: "fruit", apiValue: "FRUIT", label: "结果", icon: Apple, color: "text-orange-500" },
+  { id: "repot", apiValue: "REPOT", label: "换盆", icon: FlowerIcon, color: "text-amber-600" },
 ]
-
-const plantPhotos = [
-  "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=300&h=300&fit=crop",
-  "https://images.unsplash.com/photo-1463936575829-25148e1db1b8?w=300&h=300&fit=crop",
-  "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?w=300&h=300&fit=crop",
-  "https://images.unsplash.com/photo-1459156212016-c812468e2115?w=300&h=300&fit=crop",
-  "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=300&h=300&fit=crop",
-]
-
-type DayRecord = {
-  hasPhoto: boolean
-  photoUrl?: string
-  originalPhotoUrl?: string
-  milestone?: string
-  note?: string
-  temp?: number
-  humidity?: number
-  light?: number
-  aiStatus?: "idle" | "processing" | "done" | "fallback" | "error"
-}
-
-const allPlantCalendarData: Record<string, Record<number, DayRecord>> = {
-  p1: {
-    3:  { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "sprout", note: "今天发现小芽冒出来了！", temp: 24, humidity: 65, light: 3200 },
-    7:  { hasPhoto: true, photoUrl: plantPhotos[1], note: "叶子长大了一些", temp: 25, humidity: 62, light: 3500 },
-    10: { hasPhoto: true, photoUrl: plantPhotos[2], milestone: "flower", note: "第一朵花开了，太开心了！", temp: 26, humidity: 58, light: 4000 },
-    15: { hasPhoto: true, photoUrl: plantPhotos[3], note: "花朵越来越多", temp: 24, humidity: 60, light: 3800 },
-    18: { hasPhoto: true, photoUrl: plantPhotos[4], milestone: "repot", note: "换了一个更大的花盆", temp: 23, humidity: 65, light: 3200 },
-  },
-  p2: {
-    2:  { hasPhoto: true, photoUrl: plantPhotos[2], note: "多肉状态良好，叶片饱满", temp: 28, humidity: 38, light: 12000 },
-    9:  { hasPhoto: true, photoUrl: plantPhotos[3], milestone: "repot", note: "换了透气性更好的颗粒土", temp: 27, humidity: 35, light: 11000 },
-    14: { hasPhoto: true, photoUrl: plantPhotos[0], note: "发现新的侧芽", temp: 29, humidity: 40, light: 13000 },
-  },
-  p3: {
-    1:  { hasPhoto: true, photoUrl: plantPhotos[1], milestone: "sprout", note: "薰衣草发芽了！", temp: 22, humidity: 72, light: 8000 },
-    6:  { hasPhoto: true, photoUrl: plantPhotos[4], note: "长势喜人，香气浓郁", temp: 21, humidity: 70, light: 7500 },
-    12: { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "flower", note: "第一串花穗开放，紫色很美", temp: 23, humidity: 68, light: 8500 },
-    20: { hasPhoto: true, photoUrl: plantPhotos[2], note: "修剪了部分枝条", temp: 22, humidity: 71, light: 8000 },
-  },
-  p4: {
-    4:  { hasPhoto: true, photoUrl: plantPhotos[3], milestone: "sprout", note: "番茄苗破土而出", temp: 30, humidity: 55, light: 15000 },
-    8:  { hasPhoto: true, photoUrl: plantPhotos[1], note: "茎干变粗，生长旺盛", temp: 32, humidity: 52, light: 14000 },
-    13: { hasPhoto: true, photoUrl: plantPhotos[4], milestone: "flower", note: "开出了第一朵黄花", temp: 31, humidity: 54, light: 15500 },
-    19: { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "fruit", note: "结出了第一颗小番茄！", temp: 33, humidity: 50, light: 16000 },
-  },
-  p5: {
-    5:  { hasPhoto: true, photoUrl: plantPhotos[2], note: "薄荷叶片翠绿，香气清新", temp: 20, humidity: 80, light: 3000 },
-    11: { hasPhoto: true, photoUrl: plantPhotos[0], milestone: "repot", note: "换了更大的花盆，施了有机肥", temp: 19, humidity: 78, light: 2800 },
-    17: { hasPhoto: true, photoUrl: plantPhotos[3], note: "采摘了一些叶片泡茶", temp: 21, humidity: 82, light: 3200 },
-  },
-  p6: {
-    3:  { hasPhoto: true, photoUrl: plantPhotos[4], note: "仙人掌状态稳定", temp: 30, humidity: 25, light: 22000 },
-    10: { hasPhoto: true, photoUrl: plantPhotos[1], note: "顶部出现新刺", temp: 31, humidity: 23, light: 23000 },
-    22: { hasPhoto: true, photoUrl: plantPhotos[2], milestone: "flower", note: "开出了一朵白色小花，难得一见！", temp: 29, humidity: 26, light: 21000 },
-  },
-}
 
 const plants = [
-  { id: "p1", name: "绿萝", emoji: "🌿" },
+  { id: "p1", name: "薄荷", emoji: "🌿" },
   { id: "p2", name: "多肉植物", emoji: "🌵" },
-  { id: "p3", name: "薰衣草", emoji: "💜" },
-  { id: "p4", name: "番茄苗", emoji: "🍅" },
-  { id: "p5", name: "薄荷", emoji: "🌱" },
-  { id: "p6", name: "仙人掌", emoji: "🌴" },
+  { id: "p3", name: "小雏菊", emoji: "🌼" },
+  { id: "p4", name: "向日葵", emoji: "🌻" },
+  { id: "p5", name: "绿萝", emoji: "🍀" },
+  { id: "p6", name: "仙人掌", emoji: "🌵" },
 ]
 
 const weekDays = ["日", "一", "二", "三", "四", "五", "六"]
@@ -116,23 +69,61 @@ const plantApiIds: Record<string, number> = {
   p6: 6,
 }
 
-const cloneCalendarData = () =>
-  Object.fromEntries(
-    Object.entries(allPlantCalendarData).map(([plantId, records]) => [
-      plantId,
-      Object.fromEntries(
-        Object.entries(records).map(([day, record]) => [day, { ...record }])
-      ),
-    ])
-  ) as Record<string, Record<number, DayRecord>>
+type DayRecord = {
+  hasPhoto: boolean
+  photoUrl?: string
+  originalPhotoUrl?: string
+  milestone?: string
+  note?: string
+  temp?: number
+  humidity?: number
+  light?: number
+  aiStatus?: "idle" | "processing" | "done" | "fallback" | "error"
+}
 
-const readFileAsDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
+function milestoneFromApi(value?: string | null) {
+  return milestones.find((item) => item.apiValue === value)?.id
+}
+
+function milestoneToApi(value?: string | null) {
+  return milestones.find((item) => item.id === value)?.apiValue
+}
+
+function formatDate(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
+function createEmptyDetail(plantId: number, date: string): CalendarDayDetail {
+  return {
+    plantId,
+    date,
+    photoUrl: null,
+    originPhotoUrl: null,
+    note: null,
+    milestone: null,
+    temperature: null,
+    humidity: null,
+    light: null,
+    hasPhoto: false,
+  }
+}
+
+function detailToDayRecord(detail: CalendarDayDetail | null): DayRecord {
+  if (!detail) {
+    return { hasPhoto: false }
+  }
+  return {
+    hasPhoto: detail.hasPhoto,
+    photoUrl: detail.photoUrl ?? undefined,
+    originalPhotoUrl: detail.originPhotoUrl ?? undefined,
+    milestone: milestoneFromApi(detail.milestone) ?? undefined,
+    note: detail.note ?? "",
+    temp: detail.temperature ?? undefined,
+    humidity: detail.humidity ?? undefined,
+    light: detail.light ?? undefined,
+    aiStatus: "done",
+  }
+}
 
 export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1))
@@ -141,12 +132,15 @@ export default function CalendarPage() {
   const [selectedMilestones, setSelectedMilestones] = useState<string[]>([])
   const [noteText, setNoteText] = useState("")
   const [selectedPlantId, setSelectedPlantId] = useState("p1")
-  const [calendarRecords, setCalendarRecords] = useState(cloneCalendarData)
+  const [calendarData, setCalendarData] = useState<Record<number, DayRecord>>({})
+  const [selectedDayDetail, setSelectedDayDetail] = useState<CalendarDayDetail | null>(null)
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false)
+  const [isMonthLoading, setIsMonthLoading] = useState(false)
+  const [isDetailLoading, setIsDetailLoading] = useState(false)
   const [photoProcessMessage, setPhotoProcessMessage] = useState("")
 
   const currentPlant = plants.find((p) => p.id === selectedPlantId) ?? plants[0]
-  const calendarData = calendarRecords[selectedPlantId] ?? {}
+  const currentPlantApiId = plantApiIds[selectedPlantId] ?? plantApiIds.p1
 
   const gridRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -176,40 +170,99 @@ export default function CalendarPage() {
   for (let day = 1; day <= daysInMonth; day++) calendarCells.push(day)
   while (calendarCells.length < 42) calendarCells.push(null)
 
+  const syncDetailState = useCallback((detail: CalendarDayDetail | null) => {
+    setSelectedDayDetail(detail)
+    setNoteText(detail?.note ?? "")
+    const milestone = milestoneFromApi(detail?.milestone)
+    setSelectedMilestones(milestone ? [milestone] : [])
+  }, [])
+
+  const loadMonthSummary = useCallback(async () => {
+    setIsMonthLoading(true)
+    try {
+      const records = await getCalendarSummary(currentPlantApiId, year, month + 1)
+      const nextData: Record<number, DayRecord> = {}
+      records.forEach((record) => {
+        const day = new Date(record.date).getDate()
+        nextData[day] = {
+          hasPhoto: record.hasPhoto,
+          photoUrl: record.thumbnailUrl ?? undefined,
+          milestone: milestoneFromApi(record.milestone) ?? undefined,
+        }
+      })
+      setCalendarData(nextData)
+    } catch (error) {
+      setCalendarData({})
+      toast({
+        title: "加载失败",
+        description: error instanceof Error ? error.message : "月历数据加载失败",
+        variant: "destructive",
+      })
+    } finally {
+      setIsMonthLoading(false)
+    }
+  }, [currentPlantApiId, year, month])
+
+  useEffect(() => {
+    void loadMonthSummary()
+  }, [loadMonthSummary])
+
+  const loadDayDetail = useCallback(async (day: number) => {
+    const date = formatDate(year, month, day)
+    setIsDetailLoading(true)
+    try {
+      const detail = await getCalendarDayDetail(currentPlantApiId, date)
+      syncDetailState(detail)
+      return detail
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        const emptyDetail = createEmptyDetail(currentPlantApiId, date)
+        syncDetailState(emptyDetail)
+        return emptyDetail
+      }
+      syncDetailState(null)
+      toast({
+        title: "加载失败",
+        description: error instanceof Error ? error.message : "详情数据加载失败",
+        variant: "destructive",
+      })
+      return null
+    } finally {
+      setIsDetailLoading(false)
+    }
+  }, [currentPlantApiId, year, month, syncDetailState])
+
   const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1))
   const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1))
   const handleToday = () => setCurrentDate(new Date(2026, 3, 1))
 
   const handleDayClick = (day: number) => {
     setSelectedDay(day)
-    const data = calendarData[day]
-    setSelectedMilestones(data?.milestone ? [data.milestone] : [])
-    setNoteText(data?.note || "")
+    const summary = calendarData[day]
+    setNoteText(summary?.note ?? "")
+    setSelectedMilestones(summary?.milestone ? [summary.milestone] : [])
+    setSelectedDayDetail(null)
     setPhotoProcessMessage("")
     setDialogOpen(true)
+    void loadDayDetail(day)
   }
 
-  const updateSelectedDayRecord = (updater: (record: DayRecord) => DayRecord) => {
-    if (!selectedDay) return
-
-    setCalendarRecords((prev) => {
-      const plantRecords = prev[selectedPlantId] ?? {}
-      const currentRecord = plantRecords[selectedDay] ?? { hasPhoto: false }
-
-      return {
-        ...prev,
-        [selectedPlantId]: {
-          ...plantRecords,
-          [selectedDay]: updater(currentRecord),
-        },
-      }
-    })
-  }
+  const selectedDayRecord =
+    selectedDayDetail && selectedDay === Number.parseInt(selectedDayDetail.date.slice(-2), 10)
+      ? detailToDayRecord(selectedDayDetail)
+      : (selectedDay ? calendarData[selectedDay] : undefined) ?? { hasPhoto: false }
 
   const handlePhotoButtonClick = () => {
     if (!selectedDay || isProcessingPhoto) return
     fileInputRef.current?.click()
   }
+
+  const refreshCurrentViews = useCallback(async () => {
+    await loadMonthSummary()
+    if (selectedDay) {
+      await loadDayDetail(selectedDay)
+    }
+  }, [loadDayDetail, loadMonthSummary, selectedDay])
 
   const handlePhotoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -219,89 +272,81 @@ export default function CalendarPage() {
     setIsProcessingPhoto(true)
     setPhotoProcessMessage("正在上传图片并调用 SmartJavaAI 处理...")
 
-    const originalPhotoUrl = await readFileAsDataUrl(file)
-
     try {
       const form = new FormData()
-      form.append("file", file)
-
-      const response = await fetch(`/api/photos/upload?plantId=${plantApiIds[selectedPlantId]}&userId=1`, {
-        method: "POST",
-        body: form,
-      })
-      const data = await response.json()
-      const photoLog = data?.data ?? data
-
-      if (!response.ok || data?.code > 0) {
-        throw new Error(data?.message || "图片上传失败")
+      form.append("plant_id", String(currentPlantApiId))
+      form.append("date", formatDate(year, month, selectedDay))
+      form.append("photo", file)
+      form.append("note", noteText)
+      const milestone = milestoneToApi(selectedMilestones[0])
+      if (milestone) {
+        form.append("milestone", milestone)
       }
 
-      const processedPhotoUrl =
-        photoLog?.processedImageUrl ||
-        photoLog?.thumbnailUrl ||
-        photoLog?.originalImageUrl ||
-        originalPhotoUrl
+      const result = await uploadPlantPhoto(form)
+      await refreshCurrentViews()
 
-      const nextAiStatus =
-        photoLog?.aiStatus === "PENDING"
-          ? "processing"
-          : photoLog?.aiStatus === "FAILED"
-            ? "error"
-            : "done"
-
-      updateSelectedDayRecord((record) => ({
-        ...record,
-        hasPhoto: true,
-        photoUrl: processedPhotoUrl,
-        originalPhotoUrl: photoLog?.originalImageUrl || originalPhotoUrl,
-        aiStatus: nextAiStatus,
-        note: record.note ?? noteText,
-      }))
       setPhotoProcessMessage(
-        photoLog?.processedImageUrl
-          ? "SmartJavaAI 已完成主体识别和背景替换"
-          : photoLog?.aiStatus === "FAILED"
-            ? `SmartJavaAI 处理失败：${photoLog?.note || "请检查 ONNX Runtime 本机依赖"}`
-          : "图片已上传，等待后端返回 SmartJavaAI 处理结果"
+        result.aiStatus === "DONE"
+          ? "SmartJavaAI 处理完成，图片已更新"
+          : "图片已上传，后端已返回最新结果",
       )
     } catch (error) {
-      updateSelectedDayRecord((record) => ({
-        ...record,
-        hasPhoto: true,
-        photoUrl: originalPhotoUrl,
-        originalPhotoUrl,
-        aiStatus: "error",
-        note: record.note ?? noteText,
-      }))
       setPhotoProcessMessage(error instanceof Error ? error.message : "图片上传失败")
+      toast({
+        title: "上传失败",
+        description: error instanceof Error ? error.message : "图片上传失败",
+        variant: "destructive",
+      })
     } finally {
       setIsProcessingPhoto(false)
     }
   }
 
-  const handleDeletePhoto = () => {
-    updateSelectedDayRecord((record) => ({
-      ...record,
-      hasPhoto: false,
-      photoUrl: undefined,
-      originalPhotoUrl: undefined,
-      aiStatus: "idle",
-    }))
-    setPhotoProcessMessage("")
+  const handleDeletePhoto = async () => {
+    if (!selectedDay) return
+    try {
+      await deletePlantPhoto(currentPlantApiId, formatDate(year, month, selectedDay))
+      setPhotoProcessMessage("")
+      await refreshCurrentViews()
+    } catch (error) {
+      toast({
+        title: "删除失败",
+        description: error instanceof Error ? error.message : "图片删除失败",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleViewPhoto = () => {
-    const photoUrl = calendarData[selectedDay || 0]?.photoUrl
-    if (photoUrl) window.open(photoUrl, "_blank", "noopener,noreferrer")
+    const photoUrl = selectedDayRecord.photoUrl
+    if (photoUrl) {
+      window.open(photoUrl, "_blank", "noopener,noreferrer")
+    }
   }
 
-  const handleSave = () => {
-    updateSelectedDayRecord((record) => ({
-      ...record,
-      note: noteText,
-      milestone: selectedMilestones[0],
-    }))
-    setDialogOpen(false)
+  const handleSave = async () => {
+    if (!selectedDay) return
+
+    try {
+      const updatedDetail = await updateCalendarDayLog(
+        currentPlantApiId,
+        formatDate(year, month, selectedDay),
+        {
+          note: noteText,
+          milestone: milestoneToApi(selectedMilestones[0]) ?? null,
+        },
+      )
+      syncDetailState(updatedDetail)
+      await loadMonthSummary()
+      setDialogOpen(false)
+    } catch (error) {
+      toast({
+        title: "保存失败",
+        description: error instanceof Error ? error.message : "备注或里程碑保存失败",
+        variant: "destructive",
+      })
+    }
   }
 
   const getMilestoneIcon = (milestoneId: string) => {
@@ -311,7 +356,7 @@ export default function CalendarPage() {
     return <Icon className={`h-4 w-4 ${milestone.color}`} />
   }
 
-  const photoSize = rowHeight > 0 ? Math.floor(rowHeight * 0.70) : 60
+  const photoSize = rowHeight > 0 ? Math.floor(rowHeight * 0.7) : 60
 
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
@@ -319,7 +364,7 @@ export default function CalendarPage() {
         rightSlot={
           <div className="flex items-center gap-2">
             <Leaf className="h-4 w-4 text-primary" />
-            <span className="text-sm text-muted-foreground">绑定植物：</span>
+            <span className="text-sm text-muted-foreground">当前植物</span>
             <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
               <SelectTrigger className="w-36 h-8 text-sm">
                 <SelectValue />
@@ -343,7 +388,7 @@ export default function CalendarPage() {
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <h2 className="text-xl font-bold">
-              {year}年 {String(month + 1).padStart(2, "0")}月
+              {year}年{String(month + 1).padStart(2, "0")}月
             </h2>
             <Button variant="outline" size="icon" onClick={handleNextMonth}>
               <ChevronRight className="h-4 w-4" />
@@ -351,10 +396,10 @@ export default function CalendarPage() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
-              {currentPlant.emoji} {currentPlant.name} 的生长日志
+              {currentPlant.emoji} {currentPlant.name} 的成长记录
             </span>
             <Button variant="outline" size="sm" onClick={handleToday}>
-              回到今天
+              今天
             </Button>
           </div>
         </div>
@@ -424,7 +469,6 @@ export default function CalendarPage() {
         </Card>
       </main>
 
-      {/* 弹窗：加宽至 max-w-3xl，内部布局优化 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-4xl w-full">
           <DialogHeader>
@@ -433,22 +477,19 @@ export default function CalendarPage() {
             </DialogTitle>
           </DialogHeader>
 
-          {/* 上半区：照片列 + 数据列 */}
           <div className="grid grid-cols-2 gap-8 mt-4">
-
-            {/* 左列：照片预览 + 2×2 按钮 */}
             <div className="flex flex-col gap-3">
               <div className="aspect-square rounded-2xl bg-muted flex items-center justify-center overflow-hidden">
-                {calendarData[selectedDay || 0]?.hasPhoto && calendarData[selectedDay || 0]?.photoUrl ? (
+                {selectedDayRecord.hasPhoto && selectedDayRecord.photoUrl ? (
                   <img
-                    src={calendarData[selectedDay || 0].photoUrl}
+                    src={selectedDayRecord.photoUrl}
                     alt="Plant"
                     className="w-full h-full object-cover"
                   />
                 ) : (
                   <div className="text-center">
                     <ImageIcon className="h-12 w-12 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">暂无照片</p>
+                    <p className="text-sm text-muted-foreground">暂无图片</p>
                   </div>
                 )}
               </div>
@@ -465,37 +506,37 @@ export default function CalendarPage() {
                   size="sm"
                   className="h-10"
                   onClick={handlePhotoButtonClick}
-                  disabled={isProcessingPhoto}
+                  disabled={isProcessingPhoto || isDetailLoading}
                 >
                   <Upload className="h-4 w-4 mr-1.5" />
-                  {isProcessingPhoto ? "处理中..." : "上传照片"}
+                  {isProcessingPhoto ? "处理中..." : "上传图片"}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-10"
                   onClick={handlePhotoButtonClick}
-                  disabled={isProcessingPhoto}
+                  disabled={isProcessingPhoto || isDetailLoading}
                 >
-                  <RefreshCw className="h-4 w-4 mr-1.5" />更换照片
+                  <RefreshCw className="h-4 w-4 mr-1.5" />更换图片
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-10"
                   onClick={handleViewPhoto}
-                  disabled={!calendarData[selectedDay || 0]?.photoUrl}
+                  disabled={!selectedDayRecord.photoUrl}
                 >
-                  <ImageIcon className="h-4 w-4 mr-1.5" />查看照片
+                  <ImageIcon className="h-4 w-4 mr-1.5" />查看图片
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-10 text-destructive hover:text-destructive"
-                  onClick={handleDeletePhoto}
-                  disabled={!calendarData[selectedDay || 0]?.photoUrl || isProcessingPhoto}
+                  onClick={() => void handleDeletePhoto()}
+                  disabled={!selectedDayRecord.photoUrl || isProcessingPhoto || isDetailLoading}
                 >
-                  <Trash2 className="h-4 w-4 mr-1.5" />删除照片
+                  <Trash2 className="h-4 w-4 mr-1.5" />删除图片
                 </Button>
               </div>
               {photoProcessMessage && (
@@ -503,39 +544,36 @@ export default function CalendarPage() {
               )}
             </div>
 
-            {/* 右列：环境数据 + 里程碑（撑满高度） */}
             <div className="flex flex-col gap-4">
-              {/* 环境数据 */}
               <div>
-                <h4 className="text-sm font-medium mb-3">当日环境数据</h4>
+                <h4 className="text-sm font-medium mb-3">环境信息</h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="p-3 rounded-xl bg-orange-50 text-center">
                     <Thermometer className="h-5 w-5 text-orange-500 mx-auto mb-1" />
                     <p className="text-lg font-bold text-orange-700">
-                      {calendarData[selectedDay || 0]?.temp || "--"}°C
+                      {selectedDayRecord.temp ?? "--"}°C
                     </p>
                     <p className="text-xs text-orange-600">温度</p>
                   </div>
                   <div className="p-3 rounded-xl bg-blue-50 text-center">
                     <Droplets className="h-5 w-5 text-blue-500 mx-auto mb-1" />
                     <p className="text-lg font-bold text-blue-700">
-                      {calendarData[selectedDay || 0]?.humidity || "--"}%
+                      {selectedDayRecord.humidity ?? "--"}%
                     </p>
                     <p className="text-xs text-blue-600">湿度</p>
                   </div>
                   <div className="p-3 rounded-xl bg-amber-50 text-center">
                     <Sun className="h-5 w-5 text-amber-500 mx-auto mb-1" />
                     <p className="text-lg font-bold text-amber-700">
-                      {calendarData[selectedDay || 0]?.light || "--"}
+                      {selectedDayRecord.light ?? "--"}
                     </p>
                     <p className="text-xs text-amber-600">光照lux</p>
                   </div>
                 </div>
               </div>
 
-              {/* 里程碑：flex-1 撑满剩余高度，选项均分 */}
               <div className="flex flex-col flex-1">
-                <h4 className="text-sm font-medium mb-3">里程碑标记</h4>
+                <h4 className="text-sm font-medium mb-3">里程碑</h4>
                 <div className="grid grid-cols-2 gap-2 flex-1">
                   {milestones.map((milestone) => {
                     const Icon = milestone.icon
@@ -556,9 +594,9 @@ export default function CalendarPage() {
                             checked={isChecked}
                             onCheckedChange={(checked) => {
                               if (checked) {
-                                setSelectedMilestones([...selectedMilestones, milestone.id])
+                                setSelectedMilestones([milestone.id])
                               } else {
-                                setSelectedMilestones(selectedMilestones.filter((m) => m !== milestone.id))
+                                setSelectedMilestones([])
                               }
                             }}
                           />
@@ -573,19 +611,20 @@ export default function CalendarPage() {
             </div>
           </div>
 
-          {/* 备注：独占一行，占满宽度 */}
           <div className="mt-5">
             <Textarea
               value={noteText}
               onChange={(e) => setNoteText(e.target.value)}
-              placeholder="记录今天的植物状态..."
+              placeholder="记录今天的成长变化..."
               className="resize-none w-full"
               rows={3}
             />
           </div>
 
           <div className="flex gap-3 mt-4">
-            <Button className="flex-1" onClick={handleSave}>保存</Button>
+            <Button className="flex-1" onClick={() => void handleSave()} disabled={isDetailLoading}>
+              保存
+            </Button>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
           </div>
         </DialogContent>

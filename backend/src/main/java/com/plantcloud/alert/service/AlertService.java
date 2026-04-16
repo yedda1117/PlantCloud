@@ -1,14 +1,25 @@
 package com.plantcloud.alert.service;
 
+import com.plantcloud.alert.entity.AlertLog;
 import com.plantcloud.alert.vo.AlertLogVO;
+import com.plantcloud.alert.vo.AlertVO;
+import com.plantcloud.strategy.vo.PageResult;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface AlertService {
 
-    List<AlertLogVO> getCurrentAlerts(Long plantId);
+    List<AlertVO> listAlerts(String status);
 
-    List<AlertLogVO> getAlertLogs(Long plantId);
+    PageResult<AlertLogVO> getAlertLogs(String alertType,
+                                        String status,
+                                        LocalDateTime startTime,
+                                        LocalDateTime endTime,
+                                        Long current,
+                                        Long pageSize);
 
-    void acknowledge(Long alertId, Long userId);
+    AlertLogVO resolveAlert(Long alertId, Long resolvedBy);
+
+    AlertLogVO createAlert(AlertLog alertLog);
 }

@@ -1,0 +1,81 @@
+### ===============================
+### 基础配置（按需修改）
+### ===============================
+@baseUrl = http://localhost:8080
+
+### ===============================
+### 1. 查询全部告警
+### ===============================
+GET {{baseUrl}}/alerts
+Accept: application/json
+
+
+### ===============================
+### 2. 查询未处理告警
+### ===============================
+GET {{baseUrl}}/alerts?status=UNRESOLVED
+Accept: application/json
+
+
+### ===============================
+### 3. 查询已处理告警
+### ===============================
+GET {{baseUrl}}/alerts?status=RESOLVED
+Accept: application/json
+
+
+### ===============================
+### 4. 查询告警日志（默认分页）
+### ===============================
+GET {{baseUrl}}/alerts/logs
+Accept: application/json
+
+
+### ===============================
+### 5. 按状态筛选日志（未处理）
+### ===============================
+GET {{baseUrl}}/alerts/logs?status=UNRESOLVED
+Accept: application/json
+
+
+### ===============================
+### 6. 按告警类型筛选（倾斜告警）
+### ===============================
+GET {{baseUrl}}/alerts/logs?alert_type=TILT_ABNORMAL
+Accept: application/json
+
+
+### ===============================
+### 7. 按时间范围筛选
+### ===============================
+GET {{baseUrl}}/alerts/logs?start_time=2026-04-01T00:00:00&end_time=2026-04-16T23:59:59
+Accept: application/json
+
+
+### ===============================
+### 8. 分页查询
+### ===============================
+GET {{baseUrl}}/alerts/logs?page=1&page_size=10
+Accept: application/json
+
+
+### ===============================
+### 9. 多条件组合查询
+### ===============================
+GET {{baseUrl}}/alerts/logs?status=UNRESOLVED&alert_type=TILT_ABNORMAL&page=1&page_size=5
+Accept: application/json
+
+
+
+### ===============================
+### 11. 错误测试：非法状态
+### ===============================
+GET {{baseUrl}}/alerts?status=XXX
+Accept: application/json
+
+
+### ===============================
+### 12. 错误测试：时间格式错误
+### ===============================
+GET {{baseUrl}}/alerts/logs?start_time=abc
+Accept: application/json

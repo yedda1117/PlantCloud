@@ -7,11 +7,16 @@ import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("/photos")
@@ -20,22 +25,21 @@ public class PhotoController {
 
     private final PhotoService photoService;
 
-    @Operation(summary = "上传每日植物图片")
+    @Operation(summary = "Upload or replace daily photo")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Result<PhotoLogVO> upload(@RequestParam Long plantId,
-                                     @RequestParam Long userId,
-                                     @RequestPart("file") MultipartFile file) {
-        return Result.ok(photoService.upload(plantId, file, userId));
+    public Result<PhotoLogVO> upload(@RequestParam("plant_id") Long plantId,
+                                     @RequestParam("date")
+                                     @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date,
+                                     @RequestPart("photo") MultipartFile photo,
+                                     @RequestParam(value = "note", required = false) String note,
+                                     @RequestParam(value = "milestone", required = false) String milestone) {
+        return Result.ok(photoService.upload(plantId, date, photo, note, milestone));
     }
 
-    @GetMapping
-    public Result<List<PhotoLogVO>> list(@RequestParam Long plantId) {
-        return Result.ok(photoService.list(plantId));
-    }
-
-    @GetMapping("/{date}")
-    public Result<PhotoLogVO> getByDate(@RequestParam Long plantId,
-                                        @PathVariable @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date) {
-        return Result.ok(photoService.getByDate(plantId, date));
+    @DeleteMapping("/{date}")
+    public Result<Void> deletePhoto(@PathVariable @DateTimeFormat(pattern = "yyyy-MM-dd") LocalDate date,
+                                    @RequestParam("plant_id") Long plantId) {
+        photoService.deletePhoto(plantId, date);
+        return Result.ok(null);
     }
 }

@@ -1,0 +1,147 @@
+### ====================================
+### 基础配置（记得改端口 / 图片路径）
+### ====================================
+@baseUrl = http://localhost:8080
+@plantId = 1
+@date = 2026-04-10
+@year = 2026
+@month = 4
+
+
+### ====================================
+### 1. 获取月视图摘要（核心接口）
+### 只返回：缩略图 + 里程碑
+### ====================================
+GET {{baseUrl}}/calendar?plant_id={{plantId}}&year={{year}}&month={{month}}
+Accept: application/json
+
+
+### ====================================
+### 2. 获取某天完整主日志详情
+### ====================================
+GET {{baseUrl}}/calendar/{{date}}?plant_id={{plantId}}
+Accept: application/json
+
+
+### ====================================
+### 3. 更新某天备注 + 里程碑（首次创建）
+### 如果当天没有记录，应自动创建（upsert）
+### ====================================
+PUT {{baseUrl}}/calendar/{{date}}?plant_id={{plantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "note": "今天第一次测试日志功能",
+  "milestone": "SPROUT"
+}
+
+
+### ====================================
+### 4. 再次查询（确认写入成功）
+### ====================================
+GET {{baseUrl}}/calendar/{{date}}?plant_id={{plantId}}
+Accept: application/json
+
+
+### ====================================
+### 5. 上传图片（最重要）
+### ⚠️ 把路径改成你电脑真实图片路径
+### Windows 示例：D:/test/plant.jpg
+### ====================================
+POST {{baseUrl}}/photos/upload
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+Accept: application/json
+
+--WebAppBoundary
+Content-Disposition: form-data; name="plant_id"
+
+{{plantId}}
+--WebAppBoundary
+Content-Disposition: form-data; name="date"
+
+{{date}}
+--WebAppBoundary
+Content-Disposition: form-data; name="note"
+
+上传图片测试
+--WebAppBoundary
+Content-Disposition: form-data; name="milestone"
+
+FLOWER
+--WebAppBoundary
+Content-Disposition: form-data; name="photo"; filename="plant.jpg"
+Content-Type: image/jpeg
+
+< C:\Users\x\Pictures\Saved Pictures\plant.png
+--WebAppBoundary--
+
+
+### ====================================
+### 6. 再查详情（确认图片写入成功）
+### 预期：
+### - photoUrl 有值
+### - originPhotoUrl 有值
+### - hasPhoto = true
+### ====================================
+GET {{baseUrl}}/calendar/{{date}}?plant_id={{plantId}}
+Accept: application/json
+
+
+### ====================================
+### 7. 获取月视图（确认缩略图出现）
+### 预期：
+### - 当前 date 有 thumbnailUrl
+### - milestone = FLOWER
+### ====================================
+GET {{baseUrl}}/calendar?plant_id={{plantId}}&year={{year}}&month={{month}}
+Accept: application/json
+
+
+### ====================================
+### 8. 删除图片
+### 只清空图片，不删日志
+### ====================================
+DELETE {{baseUrl}}/photos/{{date}}?plant_id={{plantId}}
+Accept: application/json
+
+
+### ====================================
+### 9. 删除后再查详情（关键验证）
+### 预期：
+### - photoUrl = null
+### - hasPhoto = false
+### - note 还在
+### - milestone 还在
+### ====================================
+GET {{baseUrl}}/calendar/{{date}}?plant_id={{plantId}}
+Accept: application/json
+
+
+### ====================================
+### 10. 错误测试：缺少 plant_id
+### 应该返回 400 或参数错误
+### ====================================
+GET {{baseUrl}}/calendar/{{date}}
+Accept: application/json
+
+
+### ====================================
+### 11. 错误测试：非法里程碑
+### 应该返回校验错误
+### ====================================
+PUT {{baseUrl}}/calendar/{{date}}?plant_id={{plantId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "note": "测试非法值",
+  "milestone": "INVALID_TYPE"
+}
+
+
+### ====================================
+### 12. 错误测试：非法月份
+### ====================================
+GET {{baseUrl}}/calendar?plant_id={{plantId}}&year=2026&month=13
+Accept: application/json

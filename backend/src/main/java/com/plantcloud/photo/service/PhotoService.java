@@ -4,13 +4,14 @@ import com.plantcloud.photo.vo.PhotoLogVO;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
-import java.util.List;
 
 public interface PhotoService {
 
-    PhotoLogVO upload(Long plantId, MultipartFile file, Long userId);
+    PhotoLogVO upload(Long plantId,
+                      LocalDate date,
+                      MultipartFile photo,
+                      String note,
+                      String milestone);
 
-    List<PhotoLogVO> list(Long plantId);
-
-    PhotoLogVO getByDate(Long plantId, LocalDate date);
+    void deletePhoto(Long plantId, LocalDate date);
 }

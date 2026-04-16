@@ -8,10 +8,13 @@ import lombok.Data;
 public class PhotoLogVO {
 
     private Long id;
+    private Long plantId;
     private String date;
-    private String originalImageUrl;
-    private String processedImageUrl;
+    private String originPhotoUrl;
+    private String photoUrl;
     private String thumbnailUrl;
-    private String aiStatus;
+    private String milestone;
     private String note;
+    private Boolean hasPhoto;
+    private String aiStatus;
 }
