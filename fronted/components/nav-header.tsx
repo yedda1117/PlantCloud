@@ -1,42 +1,47 @@
 "use client"
 
-import React from "react"
+import type { ReactNode } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { Bell, Leaf, LogOut, User } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Leaf, Bell, User } from "lucide-react"
 
 const navItems = [
-  { href: "/", label: "首页总览" },
-  { href: "/chat", label: "智能问答" },
-  { href: "/dashboard", label: "数据可视化" },
+  { href: "/home", label: "主页" },
+  { href: "/dashboard", label: "植物总览" },
+  { href: "/chat", label: "AI 问答" },
   { href: "/calendar", label: "生长日历" },
-  { href: "/settings", label: "设置" },
+  { href: "/settings", label: "系统设置" },
 ]
 
 interface NavHeaderProps {
-  rightSlot?: React.ReactNode
+  rightSlot?: ReactNode
 }
 
 export function NavHeader({ rightSlot }: NavHeaderProps) {
   const pathname = usePathname()
+  const router = useRouter()
+
+  const handleLogout = () => {
+    window.localStorage.removeItem("plantcloud_token")
+    window.localStorage.removeItem("plantcloud_user")
+    router.push("/login")
+  }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-card/95 backdrop-blur-sm">
-      <div className="flex h-16 items-center px-6">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 mr-8">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
-            <Leaf className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-foreground">云端植物</span>
-            <span className="text-[10px] text-muted-foreground">小生态箱照护系统</span>
-          </div>
+    <header className="sticky top-0 z-50 w-full border-b border-zinc-200 bg-white/92 backdrop-blur-md">
+      <div className="flex h-16 items-center px-5 sm:px-6">
+        <Link href="/" className="mr-7 flex items-center gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+            <Leaf className="h-5 w-5" />
+          </span>
+          <span className="flex flex-col">
+            <span className="text-sm font-semibold text-zinc-950">PlantCloud</span>
+            <span className="text-[10px] text-zinc-500">智能植物云端养护</span>
+          </span>
         </Link>
 
-        {/* Navigation */}
-        <nav className="flex items-center gap-1 flex-1">
+        <nav className="hidden flex-1 items-center gap-1 md:flex">
           {navItems.map((item) => {
             const isActive = pathname === item.href
             return (
@@ -44,10 +49,8 @@ export function NavHeader({ rightSlot }: NavHeaderProps) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "px-4 py-2 text-sm font-medium rounded-lg transition-colors",
-                  isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  isActive ? "bg-emerald-100 text-emerald-800" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
                 )}
               >
                 {item.label}
@@ -56,19 +59,21 @@ export function NavHeader({ rightSlot }: NavHeaderProps) {
           })}
         </nav>
 
-        {/* Right side */}
-        <div className="flex items-center gap-3">
-          {rightSlot && (
-            <div className="flex items-center gap-2 mr-2 border-r border-border/40 pr-3">
-              {rightSlot}
-            </div>
-          )}
-          <button className="relative p-2 rounded-lg hover:bg-muted transition-colors">
-            <Bell className="h-5 w-5 text-muted-foreground" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive" />
+        <div className="ml-auto flex items-center gap-3">
+          {rightSlot ? <div className="mr-1 hidden items-center gap-2 border-r border-zinc-200 pr-3 lg:flex">{rightSlot}</div> : null}
+          <button className="relative rounded-lg p-2 transition hover:bg-zinc-100" aria-label="通知">
+            <Bell className="h-5 w-5 text-zinc-500" />
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
           </button>
-          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-            <User className="h-5 w-5 text-primary" />
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700">
+            <User className="h-5 w-5" />
+          </span>
+          <button
+            onClick={handleLogout}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100"
+          >
+            <LogOut className="h-4 w-4" />
+            退出
           </button>
         </div>
       </div>

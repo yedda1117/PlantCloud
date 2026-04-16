@@ -1,2 +1,38 @@
+# Java / Maven
+*.class
+target/
 backend/target/
 *.jar
+
+# local env and IDE
+.env
+.env.*
+!.env.example
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+
+# frontend
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# backend runtime data
+backend/data/
+backend/uploads/
+*.db
+*.sqlite
+*.sqlite3
+
+# local debug and crash files
+*.log
+hs_err_pid*.log
+replay_pid*.log
+*.argfile
+cp.txt
+compile.log
+
+# local tooling
+.zhanlu/

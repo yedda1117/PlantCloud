@@ -1,25 +1,27 @@
 package com.plantcloud.strategy.service;
 
-import com.plantcloud.strategy.dto.StrategyLogQueryDTO;
-import com.plantcloud.strategy.dto.StrategyQueryDTO;
-import com.plantcloud.strategy.dto.StrategyUpsertDTO;
-import com.plantcloud.strategy.vo.PageResult;
-import com.plantcloud.strategy.vo.StrategyExecutionLogVO;
+import com.plantcloud.strategy.dto.AutoControlStrategyUpsertDTO;
+import com.plantcloud.strategy.dto.ScheduleStrategyCreateDTO;
+import com.plantcloud.strategy.dto.ThresholdStrategyUpsertDTO;
 import com.plantcloud.strategy.vo.StrategyVO;
 
 import java.util.List;
 
 public interface StrategyService {
 
-    List<StrategyVO> listStrategies(StrategyQueryDTO query);
+    StrategyVO getThresholdStrategy(Long plantId);
 
-    StrategyVO getStrategy(Long strategyId);
+    StrategyVO upsertThresholdStrategy(ThresholdStrategyUpsertDTO request);
 
-    StrategyVO createStrategy(StrategyUpsertDTO request);
+    StrategyVO getAutoControlStrategy(Long plantId);
 
-    StrategyVO updateStrategy(Long strategyId, StrategyUpsertDTO request);
+    StrategyVO upsertAutoControlStrategy(AutoControlStrategyUpsertDTO request);
 
-    void deleteStrategy(Long strategyId);
+    List<StrategyVO> getScheduleStrategies(Long plantId);
 
-    PageResult<StrategyExecutionLogVO> getStrategyLogs(Long strategyId, StrategyLogQueryDTO query);
+    StrategyVO createScheduleStrategy(ScheduleStrategyCreateDTO request);
+
+    StrategyVO updateScheduleStrategy(Long scheduleId, ScheduleStrategyCreateDTO request);
+
+    void deleteScheduleStrategy(Long scheduleId);
 }

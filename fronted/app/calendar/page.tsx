@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
+import { AuthGuard } from "@/components/auth-guard"
 import { NavHeader } from "@/components/nav-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -359,6 +360,7 @@ export default function CalendarPage() {
   const photoSize = rowHeight > 0 ? Math.floor(rowHeight * 0.7) : 60
 
   return (
+    <AuthGuard>
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       <NavHeader
         rightSlot={
@@ -630,5 +632,6 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </AuthGuard>
   )
 }

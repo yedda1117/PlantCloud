@@ -6,7 +6,6 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Data
 @TableName("strategies")
@@ -22,12 +21,10 @@ public class Strategy extends BaseEntity {
     private String operatorType;
     private BigDecimal thresholdMin;
     private BigDecimal thresholdMax;
-    private String actionType;
+    private String actionCommand;
     private String actionValue;
     private String cronExpr;
     private Boolean enabled;
     private Integer priority;
     private String configJson;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
 }
