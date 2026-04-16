@@ -40,3 +40,13 @@ app:
     model-path:
     threshold: 0.35
     background-color: "#EEF8E8"
+    face:
+      enabled: true
+      detect-model: RETINA_FACE
+      detect-model-path:
+      detect-confidence-threshold: 0.5
+      rec-model: FACENET_MODEL
+      rec-model-path:
+      similarity-threshold: 0.85
+      sqlite-db-path: data/face.db
+      similarity-type: IP

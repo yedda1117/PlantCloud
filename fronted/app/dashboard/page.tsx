@@ -2,6 +2,7 @@
 
 import { useSearchParams, useRouter } from "next/navigation"
 import { Suspense } from "react"
+import { AuthGuard } from "@/components/auth-guard"
 import { NavHeader } from "@/components/nav-header"
 import DashMain, { type PlantData } from "./DashMain"
 import DashDetail from "./DashDetail"
@@ -72,8 +73,10 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense>
-      <DashboardContent />
-    </Suspense>
+    <AuthGuard>
+      <Suspense>
+        <DashboardContent />
+      </Suspense>
+    </AuthGuard>
   )
 }
