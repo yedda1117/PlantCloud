@@ -1,4 +1,3 @@
 {
-    "kiroAgent.configureMCP": "Disabled",
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "kiroAgent.configureMCP": "Disabled"
 }

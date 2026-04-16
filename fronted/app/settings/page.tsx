@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { AuthGuard } from "@/components/auth-guard"
 import { NavHeader } from "@/components/nav-header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -316,6 +317,7 @@ export default function SettingsPage() {
   const [logs] = useState<PolicyLog[]>(initialLogs)
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-background">
       <NavHeader />
 
@@ -570,5 +572,6 @@ export default function SettingsPage() {
         onSave={addRule}
       />
     </div>
+    </AuthGuard>
   )
 }
