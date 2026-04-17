@@ -77,7 +77,21 @@
         }
         ```
 
-### 2.5 高亮 LED 补光模块 (E53_SC1)
+### 2.5 GPS 定位模块 (E53_ST1)
+[cite_start]**作用**: 调取 GPS 位置信息，报告设备所在位置。 [cite: 17, 24]
+
+* **位置信息上报 (设备 → 后端)**
+    * [cite_start]**Topic**: `device/{id}/st1/location`
+    * **Payload**:
+        ```json
+        {
+          "longitude": 113.9433,
+          "latitude": 22.5407,
+          "timestamp": 1713123456
+        }
+        ```
+
+### 2.6 高亮 LED 补光模块 (E53_SC1)
 [cite_start]**作用**: 作为额外的状态提示灯或夜间高亮补光。 [cite: 17, 22]
 
 * **远程控制 (后端 → 设备)**

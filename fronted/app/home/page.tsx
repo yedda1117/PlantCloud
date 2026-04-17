@@ -4,12 +4,11 @@ import { useState, useEffect } from "react"
 import { AuthGuard } from "@/components/auth-guard"
 import { NavHeader } from "@/components/nav-header"
 import { PixelPlant, PlantState } from "@/components/pixel-plant"
-import { GPSStatus } from "@/components/gps-status"
+import { GpsBadge } from "@/components/gps-badge"
 import { DeviceControl } from "@/components/device-control"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { getHomeRealtime, type HomeRealtimeData } from "@/lib/home-api"
 import {
   Select,
   SelectContent,
@@ -30,6 +29,7 @@ import {
 // ─── 植物数据 ──────────────────────────────────────────────────────────────────
 interface PlantProfile {
   id: string
+  plantId: number
   name: string
   emoji: string
   sensorData: {
@@ -39,129 +39,236 @@ interface PlantProfile {
     hasHuman: boolean
     isFallen: boolean
   }
-  logs: { time: string; event: string; type: "info" | "success" | "error" }[]
 }
 
 const plantProfiles: PlantProfile[] = [
   {
     id: "p1",
+    plantId: 1,
     name: "绿萝",
     emoji: "🌿",
     sensorData: { temperature: 24.5, humidity: 65, light: 320, hasHuman: true, isFallen: false },
-    logs: [
-      { time: "10:30", event: "E53_IS1 陪伴记录：主人来访，植物状态良好", type: "info" },
-      { time: "10:05", event: "光照已达到设定值（320 lux）", type: "success" },
-      { time: "10:00", event: "补光灯开启（光照<300 lux）", type: "info" },
-      { time: "09:15", event: "E53_IS1 陪伴记录：人体红外检测到有人", type: "info" },
-      { time: "08:45", event: "自动浇水完成", type: "success" },
-      { time: "08:00", event: "系统启动，开始监测绿萝", type: "info" },
-    ],
   },
   {
     id: "p2",
+    plantId: 2,
     name: "多肉植物",
     emoji: "🌵",
     sensorData: { temperature: 28, humidity: 38, light: 12000, hasHuman: false, isFallen: true },
-    logs: [
-      { time: "11:20", event: "E53_SC2 倾斜警报：花盆检测到倾斜，请检查！", type: "error" },
-      { time: "11:00", event: "E53_SC2 倾斜警报：角度超过阈值 15°", type: "error" },
-      { time: "10:30", event: "湿度偏低（38% RH），建议适量补水", type: "info" },
-      { time: "09:50", event: "光照强度正常（12000 lux）", type: "success" },
-      { time: "09:00", event: "系统启动，开始监测多肉植物", type: "info" },
-    ],
   },
   {
     id: "p3",
+    plantId: 3,
     name: "薰衣草",
     emoji: "💜",
     sensorData: { temperature: 22, humidity: 72, light: 8000, hasHuman: false, isFallen: false },
-    logs: [
-      { time: "10:45", event: "环境指标正常，薰衣草生长良好", type: "success" },
-      { time: "10:00", event: "湿度适宜（72% RH）", type: "success" },
-      { time: "09:30", event: "温度正常（22°C）", type: "success" },
-      { time: "08:00", event: "系统启动，开始监测薰衣草", type: "info" },
-    ],
   },
   {
     id: "p4",
+    plantId: 4,
     name: "番茄苗",
     emoji: "🍅",
     sensorData: { temperature: 34, humidity: 55, light: 15000, hasHuman: false, isFallen: false },
-    logs: [
-      { time: "11:30", event: "温度过高（34°C），已自动开启风扇降温", type: "error" },
-      { time: "11:00", event: "E53_IA1 风扇启动：温度>28°C 触发自动通风", type: "info" },
-      { time: "10:30", event: "烟雾传感器 E53_SF1 警报：检测到异常烟雾", type: "error" },
-      { time: "09:00", event: "系统启动，开始监测番茄苗", type: "info" },
-    ],
   },
   {
     id: "p5",
+    plantId: 5,
     name: "薄荷",
     emoji: "🌱",
     sensorData: { temperature: 20, humidity: 80, light: 3000, hasHuman: true, isFallen: false },
-    logs: [
-      { time: "10:50", event: "E53_IS1 陪伴记录：检测到主人靠近", type: "info" },
-      { time: "10:20", event: "湿度偏高（80% RH），建议通风", type: "info" },
-      { time: "09:45", event: "光照不足（3000 lux），补光灯已开启", type: "info" },
-      { time: "08:00", event: "系统启动，开始监测薄荷", type: "info" },
-    ],
   },
   {
     id: "p6",
+    plantId: 6,
     name: "仙人掌",
     emoji: "🌴",
     sensorData: { temperature: 30, humidity: 25, light: 22000, hasHuman: false, isFallen: false },
-    logs: [
-      { time: "11:00", event: "湿度极低（25% RH），仙人掌正常状态", type: "success" },
-      { time: "10:00", event: "光照充足（22000 lux）", type: "success" },
-      { time: "09:00", event: "系统启动，开始监测仙人掌", type: "info" },
-    ],
   },
 ]
+
+const POLL_INTERVAL_MS = 30000
+
+function formatNumericValue(value: number | null | undefined, unit: string, digits = 1) {
+  if (value === null || value === undefined) {
+    return "--"
+  }
+  return `${value.toFixed(digits)}${unit}`
+}
+
+function formatLightValue(value: number | null | undefined) {
+  if (value === null || value === undefined) {
+    return "--"
+  }
+  return `${value.toLocaleString()} lux`
+}
+
+function formatLogTime(value: string | null | undefined) {
+  if (!value) {
+    return "--:--"
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return "--:--"
+  }
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+}
+
+function getLogVisualType(status: string | null | undefined) {
+  switch ((status || "").toUpperCase()) {
+    case "UNRESOLVED":
+      return "error"
+    case "RESOLVED":
+      return "success"
+    default:
+      return "info"
+  }
+}
+
+function getLogText(title: string | null | undefined) {
+  return title || "告警日志"
+}
 
 export default function HomePage() {
   const [lightOn, setLightOn] = useState(true)
   const [fanOn, setFanOn] = useState(true)
   const [plantState, setPlantState] = useState<PlantState>("healthy")
   const [selectedPlantId, setSelectedPlantId] = useState("p1")
+  const [realtimeData, setRealtimeData] = useState<HomeRealtimeData | null>(null)
+  const [realtimeError, setRealtimeError] = useState<string | null>(null)
 
   const currentPlant = plantProfiles.find((p) => p.id === selectedPlantId) ?? plantProfiles[0]
-  const sensorData = currentPlant.sensorData
+  const previewSensorData = realtimeData
+    ? {
+        temperature: realtimeData.environment.temperature ?? currentPlant.sensorData.temperature,
+        humidity: realtimeData.environment.humidity ?? currentPlant.sensorData.humidity,
+        light: realtimeData.environment.lightLux ?? currentPlant.sensorData.light,
+        hasHuman: realtimeData.infrared.currentDetected,
+        isFallen: realtimeData.tilt.hasAlert,
+      }
+    : currentPlant.sensorData
 
-  // 根据环境数据计算植物状态
   useEffect(() => {
-    if (sensorData.isFallen) {
+    let cancelled = false
+    let firstLoad = true
+
+    const loadRealtime = async () => {
+      const token = window.localStorage.getItem("plantcloud_token") || ""
+      if (!token) {
+        return
+      }
+
+      try {
+        const nextData = await getHomeRealtime(currentPlant.plantId, token)
+        if (cancelled) {
+          return
+        }
+        setRealtimeData(nextData)
+        setRealtimeError(null)
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        setRealtimeError(error instanceof Error ? error.message : "实时数据加载失败")
+      } finally {
+        firstLoad = false
+      }
+    }
+
+    void loadRealtime()
+    const timer = window.setInterval(() => {
+      void loadRealtime()
+    }, POLL_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [currentPlant.plantId])
+
+  useEffect(() => {
+    if (previewSensorData.isFallen) {
       setPlantState("fallen")
-    } else if (sensorData.temperature > 30) {
+    } else if (previewSensorData.temperature > 30) {
       setPlantState("hot")
-    } else if (sensorData.temperature < 15) {
+    } else if (previewSensorData.temperature < 15) {
       setPlantState("cold")
-    } else if (sensorData.humidity < 40) {
+    } else if (previewSensorData.humidity < 40) {
       setPlantState("thirsty")
-    } else if (sensorData.light < 200) {
+    } else if (previewSensorData.light < 200) {
       setPlantState("dark")
-    } else if (sensorData.hasHuman) {
+    } else if (previewSensorData.hasHuman) {
       setPlantState("happy")
     } else {
       setPlantState("healthy")
     }
-  }, [sensorData])
+  }, [previewSensorData])
 
   const getTempStatus = () => {
-    if (sensorData.temperature > 30 || sensorData.temperature < 15) return { label: "异常", cls: "bg-red-100 text-red-700" }
-    if (sensorData.temperature > 28) return { label: "偏高", cls: "bg-yellow-100 text-yellow-700" }
-    return { label: "正常", cls: "bg-green-100 text-green-700" }
+    switch (realtimeData?.environment.temperatureStatus) {
+      case "HIGH":
+        return { label: "偏高", cls: "bg-amber-100 text-amber-700" }
+      case "LOW":
+        return { label: "偏低", cls: "bg-sky-100 text-sky-700" }
+      case "NORMAL":
+        return { label: "正常", cls: "bg-green-100 text-green-700" }
+      default:
+        return { label: "未知", cls: "bg-gray-100 text-gray-600" }
+    }
   }
+
   const getHumidStatus = () => {
-    if (sensorData.humidity < 30 || sensorData.humidity > 85) return { label: "异常", cls: "bg-red-100 text-red-700" }
-    if (sensorData.humidity < 40 || sensorData.humidity > 80) return { label: "偏高", cls: "bg-yellow-100 text-yellow-700" }
-    return { label: "正常", cls: "bg-green-100 text-green-700" }
+    switch (realtimeData?.environment.humidityStatus) {
+      case "HIGH":
+        return { label: "偏高", cls: "bg-amber-100 text-amber-700" }
+      case "LOW":
+        return { label: "偏低", cls: "bg-sky-100 text-sky-700" }
+      case "NORMAL":
+        return { label: "正常", cls: "bg-green-100 text-green-700" }
+      default:
+        return { label: "未知", cls: "bg-gray-100 text-gray-600" }
+    }
   }
+
   const getLuxStatus = () => {
-    if (sensorData.light > 30000) return { label: "过强", cls: "bg-red-100 text-red-700" }
-    if (sensorData.light < 300) return { label: "不足", cls: "bg-yellow-100 text-yellow-700" }
-    return { label: "适宜", cls: "bg-green-100 text-green-700" }
+    switch (realtimeData?.environment.lightStatus) {
+      case "HIGH":
+        return { label: "过强", cls: "bg-red-100 text-red-700" }
+      case "LOW":
+        return { label: "不足", cls: "bg-amber-100 text-amber-700" }
+      case "NORMAL":
+        return { label: "适宜", cls: "bg-green-100 text-green-700" }
+      default:
+        return { label: "未知", cls: "bg-gray-100 text-gray-600" }
+    }
   }
+
+  const getAlertStatus = () => {
+    const severity = (realtimeData?.abnormal.latestSeverity || "").toUpperCase()
+    if (!realtimeData?.abnormal.hasAlert) {
+      return { label: "正常", cls: "bg-green-100 text-green-700" }
+    }
+    if (severity === "HIGH" || severity === "DANGER") {
+      return { label: "严重", cls: "bg-red-100 text-red-700" }
+    }
+    if (severity === "MEDIUM" || severity === "WARNING") {
+      return { label: "警告", cls: "bg-amber-100 text-amber-700" }
+    }
+    return { label: "提示", cls: "bg-sky-100 text-sky-700" }
+  }
+
+  const infraredText = realtimeData?.infrared.currentDetected
+    ? realtimeData.infrared.latestEventTitle || "有人来查看植物"
+    : realtimeData?.infrared.latestEventTitle || "无人检测到"
+
+  const abnormalText = realtimeData?.abnormal.hasAlert
+    ? realtimeData.abnormal.latestTitle || realtimeData.abnormal.latestContent || "检测到异常，请及时处理"
+    : "一切正常"
+
+  const activityLogs = realtimeData?.activityLogs ?? []
 
   return (
     <AuthGuard>
@@ -188,12 +295,12 @@ export default function HomePage() {
       />
 
       <main className="container mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
 
-          {/* 左侧栏：植物动态日志 + GPS 定位 */}
-          <div className="lg:col-span-3 space-y-6">
-            <Card>
-              <CardHeader className="pb-3">
+          {/* 左侧栏：植物动态日志 */}
+          <div className="lg:col-span-3">
+            <Card className="flex flex-col h-[730px]">
+              <CardHeader className="pb-3 shrink-0">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Activity className="h-4 w-4 text-primary" />
                   植物动态日志
@@ -202,50 +309,73 @@ export default function HomePage() {
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[400px] pr-4">
-                  <div className="space-y-3">
-                    {currentPlant.logs.map((log, index) => (
-                      <div
-                        key={index}
-                        className="flex items-start gap-3 p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
-                      >
-                        <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                          [{log.time}]
-                        </span>
-                        <span className={`text-sm flex-1 ${
-                          log.type === "error" ? "text-destructive" :
-                          log.type === "success" ? "text-primary" :
-                          "text-foreground"
-                        }`}>
-                          {log.event}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
+              <CardContent className="flex-1 min-h-0 pb-4">
+                {/* 日志列表：固定高度 + 自定义滚动条 */}
+                <div
+                  className="h-full overflow-y-auto pr-1 space-y-3
+                    [&::-webkit-scrollbar]:w-1.5
+                    [&::-webkit-scrollbar-track]:rounded-full
+                    [&::-webkit-scrollbar-track]:bg-muted/30
+                    [&::-webkit-scrollbar-thumb]:rounded-full
+                    [&::-webkit-scrollbar-thumb]:bg-primary/25
+                    [&::-webkit-scrollbar-thumb:hover]:bg-primary/50"
+                >
+                  {activityLogs.length > 0 ? (
+                    activityLogs.map((log) => {
+                      const visualType = getLogVisualType(log.status)
+                      return (
+                        <div
+                          key={log.id}
+                          className="flex items-start gap-3 rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted"
+                        >
+                          <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">
+                            [{formatLogTime(log.createdAt)}]
+                          </span>
+                          <span
+                            className={`flex-1 text-sm ${
+                              visualType === "error"
+                                ? "text-destructive"
+                                : visualType === "success"
+                                  ? "text-primary"
+                                  : "text-foreground"
+                            }`}
+                          >
+                            {getLogText(log.title)}
+                          </span>
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div className="rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">
+                      暂无植物动态日志
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
-
-            {/* GPS 定位状态组件 */}
-            <GPSStatus />
           </div>
 
           {/* 中间区域：植物主体 */}
           <div className="lg:col-span-6">
-            <Card className="h-full">
-              <CardContent className="flex flex-col items-center justify-center py-8">
-                {/* 植物名称 */}
-                <div className="mb-4 text-center">
-                  <p className="text-lg font-semibold">{currentPlant.emoji} {currentPlant.name}</p>
-                  <p className="text-xs text-muted-foreground">当前绑定植物</p>
+            <Card className="flex flex-col h-[730px]">
+              {/* 面板标题行：植物名称（左）+ GPS 徽章（右） */}
+              <CardHeader className="pb-2 pt-4 px-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-semibold">{currentPlant.emoji} {currentPlant.name}</span>
+                    <span className="text-xs text-muted-foreground">当前绑定植物</span>
+                  </div>
+                  {/* GPS 定位徽章 —— 悬停展开地图 */}
+                  <GpsBadge />
                 </div>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center flex-1 min-h-0 py-3">
 
                 {/* 植物像素主体 */}
-                <div className="relative mb-8 w-full flex justify-center">
-                  <div className="border-2 border-primary/20 rounded-3xl p-6 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-md aspect-square flex items-center justify-center">
+                <div className="relative mb-3 w-full flex justify-center flex-1 min-h-0">
+                  <div className="border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-xs flex items-center justify-center">
                     <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl scale-150" />
-                    <div className="scale-125">
+                    <div className="scale-110">
                       <PixelPlant state={plantState} size="xl" />
                     </div>
                   </div>
@@ -281,7 +411,11 @@ export default function HomePage() {
           </div>
 
           {/* 右侧区域：监测与控制 */}
-          <div className="lg:col-span-3 space-y-4">
+          <div className="lg:col-span-3 flex flex-col gap-4">
+            {realtimeError ? (
+              <p className="px-1 text-xs text-destructive">{realtimeError}</p>
+            ) : null}
+
             {/* 温度监测 */}
             <Card>
               <CardContent className="p-4">
@@ -292,7 +426,9 @@ export default function HomePage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">温度监测</p>
-                      <p className="text-xl font-bold">{sensorData.temperature}°C</p>
+                      <p className="text-xl font-bold">
+                        {formatNumericValue(realtimeData?.environment.temperature, "°C")}
+                      </p>
                     </div>
                   </div>
                   <Badge variant="secondary" className={getTempStatus().cls}>{getTempStatus().label}</Badge>
@@ -310,7 +446,9 @@ export default function HomePage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">湿度监测</p>
-                      <p className="text-xl font-bold">{sensorData.humidity}% RH</p>
+                      <p className="text-xl font-bold">
+                        {formatNumericValue(realtimeData?.environment.humidity, "% RH")}
+                      </p>
                     </div>
                   </div>
                   <Badge variant="secondary" className={getHumidStatus().cls}>{getHumidStatus().label}</Badge>
@@ -328,7 +466,7 @@ export default function HomePage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">光照强度</p>
-                      <p className="text-xl font-bold">{sensorData.light.toLocaleString()} lux</p>
+                      <p className="text-xl font-bold">{formatLightValue(realtimeData?.environment.lightLux)}</p>
                     </div>
                   </div>
                   <Badge variant="secondary" className={getLuxStatus().cls}>{getLuxStatus().label}</Badge>
@@ -346,35 +484,40 @@ export default function HomePage() {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">人体红外状态</p>
-                      <p className="text-sm font-medium">
-                        {sensorData.hasHuman ? "有人来查看植物" : "无人检测到"}
+                      <p className="text-sm font-medium">{infraredText}</p>
+                      <p className="text-xs text-muted-foreground">
+                        今日靠近 {realtimeData?.infrared.approachCount ?? 0} 次
                       </p>
                     </div>
                   </div>
-                  <Badge variant="secondary" className={sensorData.hasHuman ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"}>
-                    {sensorData.hasHuman ? "检测到" : "无"}
+                  <Badge
+                    variant="secondary"
+                    className={realtimeData?.infrared.currentDetected ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"}
+                  >
+                    {realtimeData?.infrared.currentDetected ? "检测到" : "未检测"}
                   </Badge>
                 </div>
               </CardContent>
             </Card>
 
             {/* 异常提醒 */}
-            <Card className={sensorData.isFallen ? "border-destructive/50 bg-destructive/5" : ""}>
+            <Card className={realtimeData?.abnormal.hasAlert ? "border-destructive/50 bg-destructive/5" : ""}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-xl ${sensorData.isFallen ? "bg-red-100" : "bg-gray-100"}`}>
-                      <AlertTriangle className={`h-5 w-5 ${sensorData.isFallen ? "text-red-600" : "text-gray-500"}`} />
+                    <div className={`p-2 rounded-xl ${realtimeData?.abnormal.hasAlert ? "bg-red-100" : "bg-gray-100"}`}>
+                      <AlertTriangle className={`h-5 w-5 ${realtimeData?.abnormal.hasAlert ? "text-red-600" : "text-gray-500"}`} />
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">异常提醒</p>
-                      <p className="text-sm font-medium">
-                        {sensorData.isFallen ? "植物倒下，请检查！" : "一切正常"}
+                      <p className="text-sm font-medium">{abnormalText}</p>
+                      <p className="text-xs text-muted-foreground">
+                        未处理告警 {realtimeData?.abnormal.count ?? 0} 条
                       </p>
                     </div>
                   </div>
-                  <Badge variant={sensorData.isFallen ? "destructive" : "secondary"}>
-                    {sensorData.isFallen ? "警告" : "正常"}
+                  <Badge variant="secondary" className={getAlertStatus().cls}>
+                    {getAlertStatus().label}
                   </Badge>
                 </div>
               </CardContent>

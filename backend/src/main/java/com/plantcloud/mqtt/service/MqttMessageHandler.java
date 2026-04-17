@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plantcloud.mqtt.listener.Is1EventMqttListener;
 import com.plantcloud.mqtt.listener.MqttUpMessageListener;
 import com.plantcloud.mqtt.listener.Sf1AlertMqttListener;
+import com.plantcloud.mqtt.listener.St1LocationMqttListener;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -24,11 +25,14 @@ public class MqttMessageHandler {
             Pattern.compile("^device/(\\d+)/is1/event$");
     private static final Pattern DEVICE_SF1_TOPIC_PATTERN =
             Pattern.compile("^device/([^/]+)/sf1/(alert|event)$");
+    private static final Pattern DEVICE_ST1_ALERT_TOPIC_PATTERN =
+            Pattern.compile("^device/(\\d+)/st1/alert$");
 
     private final ObjectMapper objectMapper;
     private final MqttUpMessageListener mqttUpMessageListener;
     private final Is1EventMqttListener is1EventMqttListener;
     private final Sf1AlertMqttListener sf1AlertMqttListener;
+    private final St1LocationMqttListener st1LocationMqttListener;
 
     /**
      * Unified MQTT message entry. It keeps the original payload string and
@@ -53,6 +57,10 @@ public class MqttMessageHandler {
             sf1AlertMqttListener.onMessage(topic, payload);
             return;
         }
+        if (DEVICE_ST1_ALERT_TOPIC_PATTERN.matcher(topic).matches()) {
+            st1LocationMqttListener.onMessage(topic, payload);
+            return;
+        }
 
         throw new IllegalArgumentException("Unsupported MQTT topic: " + topic);
     }
@@ -69,6 +77,10 @@ public class MqttMessageHandler {
         Matcher sf1Matcher = DEVICE_SF1_TOPIC_PATTERN.matcher(topic);
         if (sf1Matcher.matches()) {
             return sf1Matcher.group(1);
+        }
+        Matcher st1Matcher = DEVICE_ST1_ALERT_TOPIC_PATTERN.matcher(topic);
+        if (st1Matcher.matches()) {
+            return st1Matcher.group(1);
         }
         log.warn("MQTT topic ignored because it does not match supported patterns. topic={}", topic);
         throw new IllegalArgumentException("Unsupported MQTT topic: " + topic);
