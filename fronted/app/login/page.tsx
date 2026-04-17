@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
 
 type LoginResult = {
-  userId: number
+  userId: string
   username: string
   role: string
   accessToken: string
@@ -21,6 +21,20 @@ type ApiResponse<T> = {
   code: number
   message?: string
   data: T
+}
+
+const LONG_ID_FIELDS = ["userId", "id", "plantId", "createdBy", "targetDeviceId"] as const
+
+function stringifyLongIdFields(responseText: string) {
+  return LONG_ID_FIELDS.reduce((text, field) => {
+    const pattern = new RegExp(`("${field}"\\s*:\\s*)(-?\\d{16,})`, "g")
+    return text.replace(pattern, '$1"$2"')
+  }, responseText)
+}
+
+async function parseApiResponsePreservingLongIds<T>(response: Response): Promise<ApiResponse<T>> {
+  const responseText = await response.text()
+  return JSON.parse(stringifyLongIdFields(responseText)) as ApiResponse<T>
 }
 
 export default function LoginPage() {
@@ -142,7 +156,7 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ faceImage }),
       })
-      const result = (await response.json()) as ApiResponse<LoginResult>
+      const result = await parseApiResponsePreservingLongIds<LoginResult>(response)
 
       if (!response.ok || result.code !== 0) {
         throw new Error(result.message || "人脸识别未通过")
@@ -176,7 +190,7 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       })
-      const result = (await response.json()) as ApiResponse<LoginResult>
+      const result = await parseApiResponsePreservingLongIds<LoginResult>(response)
 
       if (!response.ok || result.code !== 0) {
         throw new Error(result.message || "账号或密码不正确")

@@ -1,17 +1,12 @@
-package com.plantcloud.strategy.entity;
+package com.plantcloud.strategy.dto;
 
-import com.baomidou.mybatisplus.annotation.TableName;
-import com.plantcloud.common.model.BaseEntity;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Data
-@TableName("strategies")
-@EqualsAndHashCode(callSuper = true)
-public class Strategy extends BaseEntity {
+public class StrategyUpsertRequest {
 
     private Long plantId;
     private Long createdBy;
@@ -27,7 +22,5 @@ public class Strategy extends BaseEntity {
     private String cronExpr;
     private Boolean enabled;
     private Integer priority;
-    private String configJson;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private JsonNode configJson;
 }

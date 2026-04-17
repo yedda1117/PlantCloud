@@ -1,4 +1,4 @@
-@baseUrl = http://150.158.76.53:8080
+@baseUrl = http://localhost:8080
 @plantId = 1
 @createdBy = 1
 @lightDeviceId = 1

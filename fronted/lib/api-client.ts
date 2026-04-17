@@ -1,0 +1,39 @@
+export type ApiResult<T> = {
+  code?: number
+  message?: string
+  data?: T
+  timestamp?: number
+}
+
+export class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
+export async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, {
+    ...init,
+    cache: "no-store",
+  })
+
+  let payload: ApiResult<T> | null = null
+  try {
+    payload = (await response.json()) as ApiResult<T>
+  } catch {
+    payload = null
+  }
+
+  const businessCode = typeof payload?.code === "number" ? payload.code : undefined
+  const hasBusinessCode = typeof businessCode === "number"
+  const isBusinessSuccess = !hasBusinessCode || businessCode === 0
+
+  if (!response.ok || !isBusinessSuccess) {
+    throw new ApiError(payload?.message || response.statusText || "Request failed", response.status)
+  }
+
+  return (payload?.data ?? payload) as T
+}

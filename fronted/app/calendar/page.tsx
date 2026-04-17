@@ -129,7 +129,7 @@ function detailToDayRecord(detail: CalendarDayDetail | null): DayRecord {
 }
 
 export default function CalendarPage() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 3, 1))
+  const [currentDate, setCurrentDate] = useState(() => new Date())
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedMilestones, setSelectedMilestones] = useState<string[]>([])
@@ -163,7 +163,8 @@ export default function CalendarPage() {
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
-  const today = 10
+  const realToday = new Date()
+  const today = realToday.getFullYear() === year && realToday.getMonth() === month ? realToday.getDate() : null
 
   const firstDayOfMonth = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
