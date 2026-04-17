@@ -4,11 +4,10 @@ import { useState, useEffect } from "react"
 import { AuthGuard } from "@/components/auth-guard"
 import { NavHeader } from "@/components/nav-header"
 import { PixelPlant, PlantState } from "@/components/pixel-plant"
-import { GPSStatus } from "@/components/gps-status"
+import { GpsBadge } from "@/components/gps-badge"
 import { DeviceControl } from "@/components/device-control"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { getHomeRealtime, type HomeRealtimeData } from "@/lib/home-api"
 import {
   Select,
@@ -139,7 +138,6 @@ export default function HomePage() {
   const [plantState, setPlantState] = useState<PlantState>("healthy")
   const [selectedPlantId, setSelectedPlantId] = useState("p1")
   const [realtimeData, setRealtimeData] = useState<HomeRealtimeData | null>(null)
-  const [isLoadingRealtime, setIsLoadingRealtime] = useState(true)
   const [realtimeError, setRealtimeError] = useState<string | null>(null)
 
   const currentPlant = plantProfiles.find((p) => p.id === selectedPlantId) ?? plantProfiles[0]
@@ -163,10 +161,6 @@ export default function HomePage() {
         return
       }
 
-      if (firstLoad) {
-        setIsLoadingRealtime(true)
-      }
-
       try {
         const nextData = await getHomeRealtime(currentPlant.plantId, token)
         if (cancelled) {
@@ -180,9 +174,6 @@ export default function HomePage() {
         }
         setRealtimeError(error instanceof Error ? error.message : "实时数据加载失败")
       } finally {
-        if (!cancelled && firstLoad) {
-          setIsLoadingRealtime(false)
-        }
         firstLoad = false
       }
     }
@@ -269,10 +260,6 @@ export default function HomePage() {
     return { label: "提示", cls: "bg-sky-100 text-sky-700" }
   }
 
-  const lastUpdatedText = realtimeData?.environment.collectedAt
-    ? new Date(realtimeData.environment.collectedAt).toLocaleString("zh-CN", { hour12: false })
-    : "暂无数据"
-
   const infraredText = realtimeData?.infrared.currentDetected
     ? realtimeData.infrared.latestEventTitle || "有人来查看植物"
     : realtimeData?.infrared.latestEventTitle || "无人检测到"
@@ -308,12 +295,12 @@ export default function HomePage() {
       />
 
       <main className="container mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
 
-          {/* 左侧栏：植物动态日志 + GPS 定位 */}
-          <div className="lg:col-span-3 space-y-6">
-            <Card>
-              <CardHeader className="pb-3">
+          {/* 左侧栏：植物动态日志 */}
+          <div className="lg:col-span-3">
+            <Card className="flex flex-col h-[730px]">
+              <CardHeader className="pb-3 shrink-0">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Activity className="h-4 w-4 text-primary" />
                   植物动态日志
@@ -322,63 +309,73 @@ export default function HomePage() {
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-[400px] pr-4">
-                  <div className="space-y-3">
-                    {activityLogs.length > 0 ? (
-                      activityLogs.map((log) => {
-                        const visualType = getLogVisualType(log.status)
-                        return (
-                          <div
-                            key={log.id}
-                            className="flex items-start gap-3 rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted"
+              <CardContent className="flex-1 min-h-0 pb-4">
+                {/* 日志列表：固定高度 + 自定义滚动条 */}
+                <div
+                  className="h-full overflow-y-auto pr-1 space-y-3
+                    [&::-webkit-scrollbar]:w-1.5
+                    [&::-webkit-scrollbar-track]:rounded-full
+                    [&::-webkit-scrollbar-track]:bg-muted/30
+                    [&::-webkit-scrollbar-thumb]:rounded-full
+                    [&::-webkit-scrollbar-thumb]:bg-primary/25
+                    [&::-webkit-scrollbar-thumb:hover]:bg-primary/50"
+                >
+                  {activityLogs.length > 0 ? (
+                    activityLogs.map((log) => {
+                      const visualType = getLogVisualType(log.status)
+                      return (
+                        <div
+                          key={log.id}
+                          className="flex items-start gap-3 rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted"
+                        >
+                          <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">
+                            [{formatLogTime(log.createdAt)}]
+                          </span>
+                          <span
+                            className={`flex-1 text-sm ${
+                              visualType === "error"
+                                ? "text-destructive"
+                                : visualType === "success"
+                                  ? "text-primary"
+                                  : "text-foreground"
+                            }`}
                           >
-                            <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">
-                              [{formatLogTime(log.createdAt)}]
-                            </span>
-                            <span
-                              className={`flex-1 text-sm ${
-                                visualType === "error"
-                                  ? "text-destructive"
-                                  : visualType === "success"
-                                    ? "text-primary"
-                                    : "text-foreground"
-                              }`}
-                            >
-                              {getLogText(log.title)}
-                            </span>
-                          </div>
-                        )
-                      })
-                    ) : (
-                      <div className="rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">
-                        暂无植物动态日志
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
+                            {getLogText(log.title)}
+                          </span>
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <div className="rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">
+                      暂无植物动态日志
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
-
-            {/* GPS 定位状态组件 */}
-            <GPSStatus />
           </div>
 
           {/* 中间区域：植物主体 */}
           <div className="lg:col-span-6">
-            <Card className="h-full">
-              <CardContent className="flex flex-col items-center justify-center py-8">
-                {/* 植物名称 */}
-                <div className="mb-4 text-center">
-                  <p className="text-lg font-semibold">{currentPlant.emoji} {currentPlant.name}</p>
-                  <p className="text-xs text-muted-foreground">当前绑定植物</p>
+            <Card className="flex flex-col h-[730px]">
+              {/* 面板标题行：植物名称（左）+ GPS 徽章（右） */}
+              <CardHeader className="pb-2 pt-4 px-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-semibold">{currentPlant.emoji} {currentPlant.name}</span>
+                    <span className="text-xs text-muted-foreground">当前绑定植物</span>
+                  </div>
+                  {/* GPS 定位徽章 —— 悬停展开地图 */}
+                  <GpsBadge />
                 </div>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center flex-1 min-h-0 py-3">
 
                 {/* 植物像素主体 */}
-                <div className="relative mb-8 w-full flex justify-center">
-                  <div className="border-2 border-primary/20 rounded-3xl p-6 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-md aspect-square flex items-center justify-center">
+                <div className="relative mb-3 w-full flex justify-center flex-1 min-h-0">
+                  <div className="border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-xs flex items-center justify-center">
                     <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl scale-150" />
-                    <div className="scale-125">
+                    <div className="scale-110">
                       <PixelPlant state={plantState} size="xl" />
                     </div>
                   </div>
@@ -414,16 +411,10 @@ export default function HomePage() {
           </div>
 
           {/* 右侧区域：监测与控制 */}
-          <div className="lg:col-span-3 space-y-4">
-            <div className="px-1">
-              <p className="text-xs text-muted-foreground">实时数据来自数据库最新记录</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {isLoadingRealtime ? "正在加载实时数据..." : `最近更新：${lastUpdatedText}`}
-              </p>
-              {realtimeError ? (
-                <p className="mt-1 text-xs text-destructive">{realtimeError}</p>
-              ) : null}
-            </div>
+          <div className="lg:col-span-3 flex flex-col gap-4">
+            {realtimeError ? (
+              <p className="px-1 text-xs text-destructive">{realtimeError}</p>
+            ) : null}
 
             {/* 温度监测 */}
             <Card>
