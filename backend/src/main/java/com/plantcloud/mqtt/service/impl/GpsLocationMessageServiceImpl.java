@@ -1,7 +1,6 @@
 package com.plantcloud.mqtt.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plantcloud.device.entity.Device;
 import com.plantcloud.device.mapper.DeviceMapper;
 import com.plantcloud.gps.entity.GpsLocationLog;
@@ -12,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -22,70 +20,82 @@ import java.time.ZoneId;
 @Service
 @RequiredArgsConstructor
 public class GpsLocationMessageServiceImpl implements GpsLocationMessageService {
+
     private static final ZoneId MQTT_EVENT_ZONE = ZoneId.of("Asia/Shanghai");
-    private static final long EPOCH_MILLI_THRESHOLD = 100000000000L;
+    private static final long EPOCH_MILLI_THRESHOLD = 100_000_000_000L;
 
     private final DeviceMapper deviceMapper;
     private final GpsLocationLogMapper gpsLocationLogMapper;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void handleGpsLocation(String topicDeviceToken, String rawPayload) {
-        GpsLocationMessage message;
-        try {
-            message = objectMapper.readValue(rawPayload, GpsLocationMessage.class);
-        } catch (Exception e) {
-            log.warn("Failed to parse GPS location payload: {}", rawPayload, e);
-            return;
-        }
-        Device device = resolveDevice(topicDeviceToken);
+    public void handleGpsLocation(Long deviceId, GpsLocationMessage message, String rawPayload) {
+        // 1. 设备校验
+        Device device = deviceMapper.selectById(deviceId);
         if (device == null) {
-            log.warn("Device not found for token={}", topicDeviceToken);
+            log.error("Cannot persist GPS location because device does not exist. deviceId={}", deviceId);
+            throw new IllegalArgumentException("Device not found, deviceId=" + deviceId);
+        }
+
+        // 2. 植物绑定校验
+        if (device.getPlantId() == null) {
+            log.error("Cannot persist GPS location because device is not bound to a plant. deviceId={}", deviceId);
+            throw new IllegalArgumentException("Plant binding missing for deviceId=" + deviceId);
+        }
+
+        Double longitude = message.getLongitude();
+        Double latitude  = message.getLatitude();
+
+        if (longitude == null || latitude == null) {
+            log.warn("GPS location message has null coordinates, skipping. deviceId={}, payload={}",
+                    deviceId, rawPayload);
             return;
         }
+
+        // 3. 位置去重：与最新一条记录经纬度相同则跳过
+        if (shouldIgnoreLocation(deviceId, longitude, latitude)) {
+            log.info("GPS location unchanged, skipping insert. deviceId={}, plantId={}, longitude={}, latitude={}",
+                    deviceId, device.getPlantId(), longitude, latitude);
+            return;
+        }
+
+        // 4. 插入新记录
         LocalDateTime eventTime = resolveEventTime(message.getTimestamp());
-        // 可选：只在经纬度变化时插入
-        GpsLocationLog lastLog = findLatestLocation(device.getId());
-        if (lastLog != null &&
-                lastLog.getLongitude().equals(message.getLongitude()) &&
-                lastLog.getLatitude().equals(message.getLatitude())) {
-            log.info("GPS位置未变动，不插入日志。deviceId={}, longitude={}, latitude={}", device.getId(), message.getLongitude(), message.getLatitude());
-            return;
-        }
-        GpsLocationLog logEntry = new GpsLocationLog();
-        logEntry.setDeviceId(device.getId());
-        logEntry.setLongitude(message.getLongitude());
-        logEntry.setLatitude(message.getLatitude());
-        logEntry.setCreatedAt(eventTime);
-        gpsLocationLogMapper.insert(logEntry);
-        log.info("插入GPS位置日志成功。deviceId={}, longitude={}, latitude={}, eventTime={}", device.getId(), message.getLongitude(), message.getLatitude(), eventTime);
+
+        GpsLocationLog locationLog = new GpsLocationLog();
+        locationLog.setDeviceId(deviceId);
+        locationLog.setLongitude(longitude);
+        locationLog.setLatitude(latitude);
+        locationLog.setCreatedAt(eventTime);
+        gpsLocationLogMapper.insert(locationLog);
+
+        log.info("Inserted GPS location log successfully. logId={}, deviceId={}, plantId={}, longitude={}, latitude={}, createdAt={}",
+                locationLog.getId(), deviceId, device.getPlantId(), longitude, latitude, eventTime);
     }
 
-    private Device resolveDevice(String topicDeviceToken) {
-        Device device = null;
-        if (isNumeric(topicDeviceToken)) {
-            device = deviceMapper.selectById(Long.valueOf(topicDeviceToken));
-        }
-        if (device == null && StringUtils.hasText(topicDeviceToken)) {
-            device = deviceMapper.selectOne(
-                    new LambdaQueryWrapper<Device>()
-                            .eq(Device::getDeviceCode, topicDeviceToken)
-                            .last("limit 1")
-            );
-        }
-        return device;
-    }
-
-    private GpsLocationLog findLatestLocation(Long deviceId) {
-        return gpsLocationLogMapper.selectOne(
+    /**
+     * 如果最新一条记录的经纬度与当前上报值完全一致，则忽略本次插入。
+     */
+    private boolean shouldIgnoreLocation(Long deviceId, Double longitude, Double latitude) {
+        GpsLocationLog latest = gpsLocationLogMapper.selectOne(
                 new LambdaQueryWrapper<GpsLocationLog>()
                         .eq(GpsLocationLog::getDeviceId, deviceId)
                         .orderByDesc(GpsLocationLog::getCreatedAt)
+                        .orderByDesc(GpsLocationLog::getId)
                         .last("limit 1")
         );
+
+        if (latest == null) {
+            return false;
+        }
+
+        return longitude.equals(latest.getLongitude()) && latitude.equals(latest.getLatitude());
     }
 
+    /**
+     * 解析时间戳，自动识别秒级（10位）和毫秒级（13位）。
+     * 若时间戳为空或无效，则回退到当前时间。
+     */
     private LocalDateTime resolveEventTime(Long timestamp) {
         if (timestamp == null || timestamp <= 0) {
             LocalDateTime now = LocalDateTime.now(MQTT_EVENT_ZONE);
@@ -93,21 +103,13 @@ public class GpsLocationMessageServiceImpl implements GpsLocationMessageService 
                     timestamp, now);
             return now;
         }
+
         Instant instant = timestamp >= EPOCH_MILLI_THRESHOLD
                 ? Instant.ofEpochMilli(timestamp)
                 : Instant.ofEpochSecond(timestamp);
-        return LocalDateTime.ofInstant(instant, MQTT_EVENT_ZONE);
-    }
-
-    private boolean isNumeric(String value) {
-        if (!StringUtils.hasText(value)) {
-            return false;
-        }
-        for (int i = 0; i < value.length(); i++) {
-            if (!Character.isDigit(value.charAt(i))) {
-                return false;
-            }
-        }
-        return true;
+        LocalDateTime eventTime = LocalDateTime.ofInstant(instant, MQTT_EVENT_ZONE);
+        log.info("Resolved GPS event time. rawTimestamp={}, resolvedEventTime={}, zone={}",
+                timestamp, eventTime, MQTT_EVENT_ZONE);
+        return eventTime;
     }
 }
