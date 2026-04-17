@@ -5,6 +5,7 @@ import lombok.Data;
 
 @Data
 public class GpsLocationMessage {
+
     @JsonProperty("longitude")
     private Double longitude;
 

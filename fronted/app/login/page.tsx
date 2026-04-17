@@ -242,8 +242,8 @@ export default function LoginPage() {
 
               <div className="mt-5 flex flex-col gap-4 rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className={`text-sm font-semibold ${statusClass}`}>{status}</p>
-                  {message ? <p className="mt-1 text-sm leading-6 text-zinc-200">{message}</p> : null}
+                  <p className={`text-sm font-semibold ${statusClass}`}>{status}</p >
+                  {message ? <p className="mt-1 text-sm leading-6 text-zinc-200">{message}</p > : null}
                 </div>
                 <Button
                   className="h-11 rounded-lg bg-emerald-400 px-5 text-zinc-950 hover:bg-emerald-300"
@@ -268,9 +268,9 @@ export default function LoginPage() {
         <aside className="flex items-center justify-center px-5 py-10 sm:px-8">
           <div className="w-full max-w-sm">
             <div className="mb-8">
-              <p className="text-sm font-semibold text-emerald-700">备用入口</p>
+              <p className="text-sm font-semibold text-emerald-700">备用入口</p >
               <h1 className="mt-3 text-3xl font-semibold">账号密码登录</h1>
-              <p className="mt-3 leading-7 text-zinc-600">人脸未注册、摄像头不可用或识别失败时，可以使用账号密码进入系统。</p>
+              <p className="mt-3 leading-7 text-zinc-600">人脸未注册、摄像头不可用或识别失败时，可以使用账号密码进入系统。</p >
             </div>
 
             <form className="space-y-4" onSubmit={handlePasswordLogin}>
