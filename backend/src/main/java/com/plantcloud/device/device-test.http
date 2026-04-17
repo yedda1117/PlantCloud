@@ -1,0 +1,36 @@
+@baseUrl = http://localhost:8080
+@contentType = application/json
+@deviceId = 2
+@plantId = 6
+
+### 1. 设备绑定植物
+POST {{baseUrl}}/devices/{{deviceId}}/bind-plant
+Content-Type: {{contentType}}
+
+{
+  "plantId": {{plantId}}
+}
+
+### 2. 设备解绑植物
+POST {{baseUrl}}/devices/{{deviceId}}/unbind-plant
+Content-Type: {{contentType}}
+
+### 3. 绑定接口测试 - 设备不存在
+POST {{baseUrl}}/devices/999999/bind-plant
+Content-Type: {{contentType}}
+
+{
+  "plantId": {{plantId}}
+}
+
+### 4. 绑定接口测试 - 植物不存在
+POST {{baseUrl}}/devices/{{deviceId}}/bind-plant
+Content-Type: {{contentType}}
+
+{
+  "plantId": 999999
+}
+
+### 5. 解绑接口测试 - 设备不存在
+POST {{baseUrl}}/devices/999999/unbind-plant
+Content-Type: {{contentType}}
