@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
 import {
-  AlertCircle,
-  AlertTriangle,
   ArrowLeft,
+  Bot,
   CheckCircle,
   Droplets,
   Leaf,
   ShieldAlert,
+  Sparkles,
   Sun,
   Thermometer,
   Wifi,
@@ -35,7 +35,13 @@ import {
 } from "recharts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { getDashboardData, type DashboardData } from "@/lib/dashboard-api"
 import type { PlantMeta } from "./page"
 
@@ -241,6 +247,24 @@ export default function DashDetail({ plant, onBack }: Props) {
       }))
   }, [dashboardData])
 
+  // 只取最近 15 天，并附加 15 日平均值（avg）
+  const monthChartData15 = useMemo(() => {
+    const raw = monthChartData.slice(-15)
+    // 计算各指标的 15 日平均（排除 null）
+    const avg = (key: MetricTab) => {
+      const vals = raw.map((d) => d[key]).filter((v): v is number => v !== null)
+      if (vals.length === 0) return null
+      return vals.reduce((s, v) => s + v, 0) / vals.length
+    }
+    const avgValues: Record<MetricTab, number | null> = {
+      temperature: avg("temperature"),
+      humidity: avg("humidity"),
+      light: avg("light"),
+      air: avg("air"),
+    }
+    return { data: raw, avgValues }
+  }, [monthChartData])
+
   const dayChartData = useMemo(() => {
     const temperatureMap = new Map((dashboardData?.dayHistory.temperature || []).map((item) => [item.time, item.value]))
     const humidityMap = new Map((dashboardData?.dayHistory.humidity || []).map((item) => [item.time, item.value]))
@@ -279,7 +303,6 @@ export default function DashDetail({ plant, onBack }: Props) {
     ]
   }, [airSummary.value, current?.humidity, current?.lightLux, current?.temperature])
 
-  const recentLogs = (dashboardData?.activityLogs || []).slice(0, 12)
   const lastUpdatedText = formatTimestamp(current?.collectedAt)
 
   const monthlyMetricMeta = {
@@ -445,72 +468,97 @@ export default function DashDetail({ plant, onBack }: Props) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-10">
-          <Card className="lg:col-span-7">
+          <Card className="lg:col-span-6">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-sm">
                 <div>
                   <span>{currentMetric.title}</span>
                   <p className="mt-1 text-xs font-normal text-muted-foreground">{currentMetric.description}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {([
-                    ["temperature", "温度"],
-                    ["humidity", "湿度"],
-                    ["light", "光照"],
-                    ["air", "空气质量"],
-                  ] as const).map(([key, label]) => {
-                    const active = metricTab === key
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => setMetricTab(key)}
-                        className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                          active
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-muted/60 text-muted-foreground hover:bg-muted"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    )
-                  })}
-                </div>
+                {/* 指标选择下拉框 */}
+                <Select value={metricTab} onValueChange={(v) => setMetricTab(v as MetricTab)}>
+                  <SelectTrigger className="h-8 w-32 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="temperature">🌡️ 温度</SelectItem>
+                    <SelectItem value="humidity">💧 湿度</SelectItem>
+                    <SelectItem value="light">☀️ 光照</SelectItem>
+                    <SelectItem value="air">🌫️ 空气质量</SelectItem>
+                  </SelectContent>
+                </Select>
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={monthChartData} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
+                <BarChart
+                  data={monthChartData15.data}
+                  margin={{ top: 8, right: 16, left: -12, bottom: 0 }}
+                  barCategoryGap="20%"
+                  barGap={2}
+                >
                   <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="#94a3b8" />
                   <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" />
                   <Tooltip
                     contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 16px rgba(15, 23, 42, 0.12)" }}
-                    formatter={(value) => {
-                      if (value === null || value === undefined) {
-                        return ["暂无数据", currentMetric.unit]
-                      }
-                      return [
-                        metricTab === "light" ? Number(value).toLocaleString() : Number(value).toFixed(1),
-                        currentMetric.unit,
-                      ]
+                    formatter={(value, name) => {
+                      if (value === null || value === undefined) return ["暂无数据", String(name)]
+                      const formatted = metricTab === "light"
+                        ? Number(value).toLocaleString()
+                        : Number(value).toFixed(1)
+                      const label = name === "avg" ? "15日均值" : "当日值"
+                      return [`${formatted} ${currentMetric.unit}`, label]
                     }}
                     labelFormatter={(label) => `日期：${label}`}
                   />
-                  <Bar dataKey={metricTab} radius={[6, 6, 0, 0]}>
-                    {monthChartData.map((entry) => (
+                  {/* 当日值柱 */}
+                  <Bar dataKey={metricTab} name="当日值" radius={[4, 4, 0, 0]} barSize={10}>
+                    {monthChartData15.data.map((entry) => (
                       <Cell
-                        key={`${metricTab}-${entry.time}`}
+                        key={`val-${entry.time}`}
                         fill={entry[metricTab] === null ? "#cbd5e1" : currentMetric.color}
-                        fillOpacity={entry[metricTab] === null ? 0.45 : 0.95}
+                        fillOpacity={entry[metricTab] === null ? 0.4 : 0.9}
                       />
                     ))}
                   </Bar>
+                  {/* 15日平均值柱（固定柔和灰蓝色） */}
+                  <Bar
+                    dataKey={() => monthChartData15.avgValues[metricTab]}
+                    name="avg"
+                    radius={[4, 4, 0, 0]}
+                    barSize={8}
+                    fill="#94a3b8"
+                    fillOpacity={0.55}
+                  />
                 </BarChart>
               </ResponsiveContainer>
+              {/* 图例 */}
+              <div className="mt-2 flex items-center gap-4 px-1">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className="inline-block h-2.5 w-4 rounded-sm"
+                    style={{ backgroundColor: currentMetric.color, opacity: 0.9 }}
+                  />
+                  <span className="text-xs text-muted-foreground">当日值</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-4 rounded-sm bg-slate-400/55" />
+                  <span className="text-xs text-muted-foreground">
+                    15日均值（
+                    {monthChartData15.avgValues[metricTab] !== null
+                      ? metricTab === "light"
+                        ? Number(monthChartData15.avgValues[metricTab]).toLocaleString()
+                        : Number(monthChartData15.avgValues[metricTab]).toFixed(1)
+                      : "--"}
+                    {" "}{currentMetric.unit}）
+                  </span>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-3">
+          <Card className="lg:col-span-4">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="text-sm">环境平衡指数</CardTitle>
             </CardHeader>
@@ -529,7 +577,7 @@ export default function DashDetail({ plant, onBack }: Props) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-9">
-          <Card className="lg:col-span-5">
+          <Card className="lg:col-span-4">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="text-sm">近 24 小时光照曲线</CardTitle>
             </CardHeader>
@@ -579,47 +627,28 @@ export default function DashDetail({ plant, onBack }: Props) {
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-4">
+          <Card className="lg:col-span-5">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="flex items-center gap-2 text-sm">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                最近异常事件日志
+                <Bot className="h-4 w-4 text-primary" />
+                AI 生长趋势分析
+                <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                  即将上线
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <ScrollArea className="h-[170px]">
-                <div className="space-y-2">
-                  {recentLogs.length > 0 ? (
-                    recentLogs.map((log) => {
-                      const isError = (log.severity || "").toUpperCase() === "HIGH"
-                      return (
-                        <div
-                          key={log.id}
-                          className={`flex items-center gap-3 rounded-xl p-3 ${isError ? "border border-red-200 bg-red-50" : "bg-muted/50 hover:bg-muted"}`}
-                        >
-                          {isError ? (
-                            <AlertCircle className="h-4 w-4 shrink-0 text-red-500" />
-                          ) : (
-                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{log.title || log.content || "环境事件"}</p>
-                            <p className="text-xs text-muted-foreground">{formatTimestamp(log.createdAt)}</p>
-                          </div>
-                          <Badge
-                            variant="secondary"
-                            className={isError ? "bg-red-100 text-red-700 hover:bg-red-100" : "bg-amber-100 text-amber-700 hover:bg-amber-100"}
-                          >
-                            {isError ? "严重" : "警告"}
-                          </Badge>
-                        </div>
-                      )
-                    })
-                  ) : (
-                    <div className="rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">当前没有可展示的异常日志</div>
-                  )}
+              <div className="flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-primary/25 bg-primary/3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                  <Sparkles className="h-6 w-6 text-primary/60" />
                 </div>
-              </ScrollArea>
+                <div className="text-center">
+                  <p className="text-sm font-medium text-muted-foreground">AI 模型接入中</p>
+                  <p className="mt-1 text-xs text-muted-foreground/70">
+                    将基于历史环境数据，自动生成植物生长趋势预测与养护建议
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
