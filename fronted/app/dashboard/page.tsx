@@ -43,7 +43,7 @@ function DashboardContent() {
             点击任意植物卡片查看环境分析详情
           </p>
         </div>
-        <DashMain />
+        <DashMain plants={plants} />
       </main>
     </div>
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { AuthGuard } from "@/components/auth-guard"
 import { NavHeader } from "@/components/nav-header"
@@ -517,7 +517,7 @@ function StrategyDialog({
   )
 }
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const searchParams = useSearchParams()
   const [devices, setDevices] = useState<DeviceCard[]>(initialDevices)
   const [selectedPlantId, setSelectedPlantId] = useState(DEFAULT_PLANT_ID)
@@ -1161,5 +1161,13 @@ export default function SettingsPage() {
         />
       </div>
     </AuthGuard>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageContent />
+    </Suspense>
   )
 }

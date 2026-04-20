@@ -1,152 +1,266 @@
 "use client"
 
+import { useEffect, useState, type ReactNode } from "react"
 import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
-import { Thermometer, Droplets, Sun, AlertTriangle, Flame, RotateCcw } from "lucide-react"
+import { AlertCircle, Droplets, Sun, Thermometer } from "lucide-react"
+import { getCurrentEnvironment, type CurrentEnvironment } from "@/lib/dashboard-api"
+import type { PlantMeta } from "./page"
 
-export interface PlantData {
-  id: string
-  name: string
-  emoji: string
-  temp: number
-  humidity: number
-  lux: number
-  tempStatus: "normal" | "warning" | "error"
-  humidStatus: "normal" | "warning" | "error"
-  luxStatus: "normal" | "warning" | "error"
-  smokeAlert: boolean   // E53_SF1
-  tiltAlert: boolean    // E53_SC2
+type MetricStatus = "normal" | "warning" | "error" | "unknown"
+
+type PlantCardState = {
+  data: CurrentEnvironment | null
+  loading: boolean
+  error: string | null
 }
 
-const plants: PlantData[] = [
-  {
-    id: "p1", name: "绿萝", emoji: "🌿",
-    temp: 25, humidity: 65, lux: 40000,
-    tempStatus: "normal", humidStatus: "normal", luxStatus: "error",
-    smokeAlert: false, tiltAlert: false,
-  },
-  {
-    id: "p2", name: "多肉植物", emoji: "🌵",
-    temp: 28, humidity: 38, lux: 12000,
-    tempStatus: "normal", humidStatus: "warning", luxStatus: "normal",
-    smokeAlert: false, tiltAlert: true,
-  },
-  {
-    id: "p3", name: "薰衣草", emoji: "💜",
-    temp: 22, humidity: 72, lux: 8000,
-    tempStatus: "normal", humidStatus: "normal", luxStatus: "normal",
-    smokeAlert: false, tiltAlert: false,
-  },
-  {
-    id: "p4", name: "番茄苗", emoji: "🍅",
-    temp: 34, humidity: 55, lux: 15000,
-    tempStatus: "error", humidStatus: "normal", luxStatus: "normal",
-    smokeAlert: true, tiltAlert: false,
-  },
-  {
-    id: "p5", name: "薄荷", emoji: "🌱",
-    temp: 20, humidity: 80, lux: 3000,
-    tempStatus: "normal", humidStatus: "warning", luxStatus: "normal",
-    smokeAlert: false, tiltAlert: false,
-  },
-  {
-    id: "p6", name: "仙人掌", emoji: "🌴",
-    temp: 30, humidity: 25, lux: 22000,
-    tempStatus: "normal", humidStatus: "error", luxStatus: "normal",
-    smokeAlert: false, tiltAlert: false,
-  },
-]
-
-const statusColor = {
+const statusColor: Record<MetricStatus, string> = {
   normal: "text-green-600",
   warning: "text-amber-500",
   error: "text-red-500",
+  unknown: "text-zinc-400",
 }
 
-const statusBg = {
+const statusBg: Record<MetricStatus, string> = {
   normal: "bg-green-50",
   warning: "bg-amber-50",
   error: "bg-red-50",
+  unknown: "bg-zinc-50",
 }
 
-export default function DashMain() {
+function hasEnvironmentData(data: CurrentEnvironment | null) {
+  return data?.temperature != null || data?.humidity != null || data?.lightLux != null
+}
+
+function mapMetricStatus(status: string | null | undefined): MetricStatus {
+  switch ((status || "").toUpperCase()) {
+    case "NORMAL":
+      return "normal"
+    case "LOW":
+    case "HIGH":
+      return "warning"
+    case "ERROR":
+      return "error"
+    default:
+      return "unknown"
+  }
+}
+
+function getOverallStatus(data: CurrentEnvironment | null): MetricStatus {
+  if (!hasEnvironmentData(data)) {
+    return "unknown"
+  }
+
+  const statuses = [
+    data?.temperature == null ? "unknown" : mapMetricStatus(data.temperatureStatus),
+    data?.humidity == null ? "unknown" : mapMetricStatus(data.humidityStatus),
+    data?.lightLux == null ? "unknown" : mapMetricStatus(data.lightStatus),
+  ]
+
+  if (statuses.includes("error")) {
+    return "error"
+  }
+  if (statuses.includes("warning")) {
+    return "warning"
+  }
+  return "normal"
+}
+
+function getStatusText(status: MetricStatus) {
+  switch (status) {
+    case "normal":
+      return "状态正常"
+    case "warning":
+      return "状态异常"
+    case "error":
+      return "严重异常"
+    default:
+      return "暂无数据"
+  }
+}
+
+function formatNumber(value: number | null | undefined, suffix: string) {
+  if (value == null) {
+    return "--"
+  }
+
+  return `${Math.round(Number(value))}${suffix}`
+}
+
+function formatLight(value: number | null | undefined) {
+  if (value == null) {
+    return "--"
+  }
+
+  const numeric = Number(value)
+  return numeric >= 1000 ? `${Math.round(numeric / 1000)}k` : `${Math.round(numeric)}`
+}
+
+function MetricCell({
+  icon,
+  value,
+  label,
+  status,
+}: {
+  icon: ReactNode
+  value: string
+  label: string
+  status: MetricStatus
+}) {
+  return (
+    <div className={`flex min-h-24 flex-col items-center justify-center gap-0.5 py-3 ${statusBg[status]}`}>
+      <div className={statusColor[status]}>{icon}</div>
+      <span className={`text-lg font-bold ${statusColor[status]}`}>{value}</span>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
+export default function DashMain({ plants }: { plants: PlantMeta[] }) {
   const router = useRouter()
+  const [plantStates, setPlantStates] = useState<Record<string, PlantCardState>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    const token = window.localStorage.getItem("plantcloud_token") || ""
+
+    setPlantStates(
+      Object.fromEntries(
+        plants.map((plant) => [
+          plant.id,
+          {
+            data: null,
+            loading: true,
+            error: null,
+          },
+        ]),
+      ),
+    )
+
+    const loadCurrentEnvironment = async () => {
+      const results = await Promise.allSettled(
+        plants.map(async (plant) => ({
+          id: plant.id,
+          data: await getCurrentEnvironment(plant.plantId, token),
+        })),
+      )
+
+      if (cancelled) {
+        return
+      }
+
+      setPlantStates(
+        Object.fromEntries(
+          results.map((result, index) => {
+            const plant = plants[index]
+            if (result.status === "fulfilled") {
+              return [
+                plant.id,
+                {
+                  data: result.value.data,
+                  loading: false,
+                  error: null,
+                },
+              ]
+            }
+
+            return [
+              plant.id,
+              {
+                data: null,
+                loading: false,
+                error: result.reason instanceof Error ? result.reason.message : "加载失败",
+              },
+            ]
+          }),
+        ),
+      )
+    }
+
+    void loadCurrentEnvironment()
+
+    return () => {
+      cancelled = true
+    }
+  }, [plants])
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-      {plants.map((plant, i) => {
-        const hasAlert = plant.smokeAlert || plant.tiltAlert
+    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      {plants.map((plant, index) => {
+        const state = plantStates[plant.id]
+        const data = state?.data ?? null
+        const overallStatus = getOverallStatus(data)
+        const hasData = hasEnvironmentData(data)
+        const hasAlert = overallStatus === "warning" || overallStatus === "error"
+        const temperatureStatus = data?.temperature == null ? "unknown" : mapMetricStatus(data.temperatureStatus)
+        const humidityStatus = data?.humidity == null ? "unknown" : mapMetricStatus(data.humidityStatus)
+        const lightStatus = data?.lightLux == null ? "unknown" : mapMetricStatus(data.lightStatus)
+
         return (
           <motion.div
             key={plant.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.07, duration: 0.4, ease: "easeOut" }}
+            transition={{ delay: index * 0.07, duration: 0.4, ease: "easeOut" }}
             whileHover={{ y: -4, scale: 1.02 }}
-            className="relative cursor-pointer group"
+            className="group relative cursor-pointer"
             onClick={() => router.push(`/dashboard?plant=${plant.id}`)}
           >
-            {/* 红色呼吸灯 — 仅在传感器报警时显示 */}
-            {hasAlert && (
-              <span className="absolute -top-1.5 -right-1.5 z-10 flex h-4 w-4">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500" />
+            {hasAlert ? (
+              <span className="absolute -right-1.5 -top-1.5 z-10 flex h-4 w-4">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex h-4 w-4 rounded-full bg-red-500" />
               </span>
-            )}
+            ) : null}
 
-            <div className={`rounded-2xl border bg-card shadow-sm overflow-hidden transition-shadow group-hover:shadow-lg ${hasAlert ? "border-red-300" : "border-border"}`}>
-              {/* 顶部：植物图标 + 名称 */}
-              <div className="flex items-center gap-4 px-5 pt-5 pb-3">
-                <div className={`flex items-center justify-center w-14 h-14 rounded-2xl text-3xl ${hasAlert ? "bg-red-50" : "bg-muted"}`}>
+            <div className={`overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow group-hover:shadow-lg ${hasAlert ? "border-red-300" : "border-border"}`}>
+              <div className="flex items-center gap-4 px-5 pb-3 pt-5">
+                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl text-3xl ${hasAlert ? "bg-red-50" : "bg-muted"}`}>
                   {plant.emoji}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-base text-foreground">{plant.name}</p>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    {plant.smokeAlert && (
-                      <span className="flex items-center gap-1 text-xs text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
-                        <Flame className="h-3 w-3" /> 烟雾警报
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-semibold text-foreground">{plant.name}</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    {state?.loading ? (
+                      <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">加载中</span>
+                    ) : state?.error ? (
+                      <span className="flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-600">
+                        <AlertCircle className="h-3 w-3" />
+                        数据加载失败
                       </span>
-                    )}
-                    {plant.tiltAlert && (
-                      <span className="flex items-center gap-1 text-xs text-red-600 bg-red-100 px-2 py-0.5 rounded-full">
-                        <RotateCcw className="h-3 w-3" /> 倾斜警报
+                    ) : (
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${statusBg[overallStatus]} ${statusColor[overallStatus]}`}>
+                        {getStatusText(hasData ? overallStatus : "unknown")}
                       </span>
-                    )}
-                    {!hasAlert && (
-                      <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">状态正常</span>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* 数据行 */}
               <div className="grid grid-cols-3 divide-x divide-border border-t border-border">
-                {/* 温度 */}
-                <div className={`flex flex-col items-center py-3 gap-0.5 ${statusBg[plant.tempStatus]}`}>
-                  <Thermometer className={`h-4 w-4 ${statusColor[plant.tempStatus]}`} />
-                  <span className={`text-lg font-bold ${statusColor[plant.tempStatus]}`}>{plant.temp}°</span>
-                  <span className="text-[10px] text-muted-foreground">温度</span>
-                </div>
-                {/* 湿度 */}
-                <div className={`flex flex-col items-center py-3 gap-0.5 ${statusBg[plant.humidStatus]}`}>
-                  <Droplets className={`h-4 w-4 ${statusColor[plant.humidStatus]}`} />
-                  <span className={`text-lg font-bold ${statusColor[plant.humidStatus]}`}>{plant.humidity}%</span>
-                  <span className="text-[10px] text-muted-foreground">湿度</span>
-                </div>
-                {/* 光照 */}
-                <div className={`flex flex-col items-center py-3 gap-0.5 ${statusBg[plant.luxStatus]}`}>
-                  <Sun className={`h-4 w-4 ${statusColor[plant.luxStatus]}`} />
-                  <span className={`text-lg font-bold ${statusColor[plant.luxStatus]}`}>
-                    {plant.lux >= 1000 ? `${(plant.lux / 1000).toFixed(0)}k` : plant.lux}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">lux</span>
-                </div>
+                <MetricCell
+                  icon={<Thermometer className="h-4 w-4" />}
+                  value={state?.loading ? "..." : formatNumber(data?.temperature, "°")}
+                  label="温度"
+                  status={state?.loading ? "unknown" : temperatureStatus}
+                />
+                <MetricCell
+                  icon={<Droplets className="h-4 w-4" />}
+                  value={state?.loading ? "..." : formatNumber(data?.humidity, "%")}
+                  label="湿度"
+                  status={state?.loading ? "unknown" : humidityStatus}
+                />
+                <MetricCell
+                  icon={<Sun className="h-4 w-4" />}
+                  value={state?.loading ? "..." : formatLight(data?.lightLux)}
+                  label="lux"
+                  status={state?.loading ? "unknown" : lightStatus}
+                />
               </div>
 
-              {/* Hover 提示遮罩 */}
-              <div className="absolute inset-0 rounded-2xl flex items-center justify-center bg-black/0 group-hover:bg-black/5 transition-colors pointer-events-none">
-                <span className="opacity-0 group-hover:opacity-100 transition-opacity text-xs font-medium text-foreground bg-background/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow">
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-2xl bg-black/0 transition-colors group-hover:bg-black/5">
+                <span className="rounded-full bg-background/90 px-3 py-1.5 text-xs font-medium text-foreground opacity-0 shadow backdrop-blur-sm transition-opacity group-hover:opacity-100">
                   点击查看详情 →
                 </span>
               </div>

@@ -23,7 +23,7 @@ type EnvironmentHistory = {
   light: HistoryPoint[]
 }
 
-type CurrentEnvironment = {
+export type CurrentEnvironment = {
   plantId: number
   temperature: number | null
   humidity: number | null
@@ -172,4 +172,13 @@ export async function getDashboardData(plantId: number, token: string): Promise<
     airLogs,
     activityLogs: effectiveLogs,
   }
+}
+
+export async function getCurrentEnvironment(plantId: number, token: string): Promise<CurrentEnvironment> {
+  const response = await fetch(`${BACKEND_BASE_URL}/monitoring/environment/current?plantId=${plantId}`, {
+    cache: "no-store",
+    headers: buildHeaders(token),
+  })
+
+  return parseResponse<CurrentEnvironment>(response)
 }
