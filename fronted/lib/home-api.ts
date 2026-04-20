@@ -28,7 +28,7 @@ type InfraredData = {
 }
 
 type AlertItem = {
-  id: number
+  id: string
   plantId: number | null
   alertType: string | null
   severity: string | null

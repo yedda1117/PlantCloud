@@ -321,11 +321,11 @@ export default function HomePage() {
                     [&::-webkit-scrollbar-thumb:hover]:bg-primary/50"
                 >
                   {activityLogs.length > 0 ? (
-                    activityLogs.map((log) => {
+                    activityLogs.map((log, index) => {
                       const visualType = getLogVisualType(log.status)
                       return (
                         <div
-                          key={log.id}
+                          key={`${log.id}-${index}`}
                           className="flex items-start gap-3 rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted"
                         >
                           <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">
