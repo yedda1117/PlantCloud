@@ -9,6 +9,8 @@ import { DeviceControl } from "@/components/device-control"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { getHomeRealtime, type HomeRealtimeData } from "@/lib/home-api"
+import { SELECTED_PLANT_PROFILE_STORAGE_KEY } from "@/lib/plant-context"
+import { SELECTED_PLANT_STORAGE_KEY } from "@/lib/plants"
 import {
   Select,
   SelectContent,
@@ -150,6 +152,26 @@ export default function HomePage() {
         isFallen: realtimeData.tilt.hasAlert,
       }
     : currentPlant.sensorData
+
+  useEffect(() => {
+    const storedPlant = window.localStorage.getItem(SELECTED_PLANT_STORAGE_KEY)
+    if (storedPlant && plantProfiles.some((plant) => plant.id === storedPlant)) {
+      setSelectedPlantId(storedPlant)
+    }
+  }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem(SELECTED_PLANT_STORAGE_KEY, selectedPlantId)
+    window.localStorage.setItem(
+      SELECTED_PLANT_PROFILE_STORAGE_KEY,
+      JSON.stringify({
+        id: currentPlant.id,
+        plantId: currentPlant.plantId,
+        name: currentPlant.name,
+        emoji: currentPlant.emoji,
+      }),
+    )
+  }, [currentPlant, selectedPlantId])
 
   useEffect(() => {
     let cancelled = false

@@ -10,6 +10,19 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { getDevicesStatus } from "@/lib/device-api"
+import { getPlantContextPayload, type PlantContextPayload } from "@/lib/plant-context"
+import { createStrategy, type StrategyUpsertPayload } from "@/lib/strategy-api"
+import {
   Upload,
   FileText,
   Database,
@@ -41,11 +54,40 @@ type UploadedFileItem = {
   status: "已入库" | "解析中" | "失败"
 }
 
+type StrategyAgentProposal = {
+  shouldSuggest: boolean
+  detected: string
+  strategyName: string
+  metricType: "LIGHT" | "TEMPERATURE" | "HUMIDITY"
+  operatorType: "LT" | "GT" | "EQ"
+  thresholdMin: number
+  actionType: "AUTO_LIGHT" | "AUTO_FAN" | "NOTIFY_USER"
+  actionValue: "ON" | "OFF" | "LOW" | "HIGH" | "INFO" | "WARNING" | "DANGER"
+  timeLimitEnabled?: boolean
+  startTime?: string | null
+  endTime?: string | null
+  reason: string
+}
+
+function normalizeProposalActionValue(proposal: StrategyAgentProposal) {
+  if (proposal.actionType === "AUTO_LIGHT") {
+    return proposal.actionValue === "OFF" ? "OFF" : "ON"
+  }
+  if (proposal.actionType === "AUTO_FAN") {
+    return proposal.actionValue === "LOW" ? "LOW" : "HIGH"
+  }
+  if (proposal.actionValue === "DANGER" || proposal.actionValue === "WARNING") {
+    return proposal.actionValue
+  }
+  return "INFO"
+}
+
 const suggestedQuestions = [
   "绿萝叶子发黄怎么办",
   "多肉多久浇一次水",
   "植物适合多少湿度",
   "光照不足会有什么表现",
+  "策略是否要更改",
 ]
 
 const initialMessages: ChatMessage[] = [
@@ -57,6 +99,125 @@ const initialMessages: ChatMessage[] = [
   },
 ]
 
+function isStrategyChangeQuestion(message: string) {
+  return /策略/.test(message) && /(更改|修改|调整|新增|优化|要不要|是否)/.test(message)
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/")
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=")
+  return atob(padded)
+}
+
+function getCurrentUserId() {
+  if (typeof window === "undefined") {
+    return undefined
+  }
+
+  const token = window.localStorage.getItem("plantcloud_token")
+  if (token) {
+    try {
+      const [, payload = ""] = token.split(".")
+      const decoded = decodeBase64Url(payload)
+      const matched = decoded.match(/"userId"\s*:\s*("?)(-?\d+)\1/)
+      if (matched?.[2]) {
+        return matched[2]
+      }
+    } catch {
+      // Fallback to stored user below.
+    }
+  }
+
+  const rawUser = window.localStorage.getItem("plantcloud_user")
+  if (!rawUser) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(rawUser) as { userId?: string | number; id?: string | number }
+    return parsed.userId != null
+      ? String(parsed.userId)
+      : parsed.id != null
+        ? String(parsed.id)
+        : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function buildStrategyPayloadFromProposal(
+  proposal: StrategyAgentProposal,
+  plantContext: PlantContextPayload,
+  userId: string | undefined,
+  targetDeviceId: string | null,
+): StrategyUpsertPayload {
+  return {
+    plantId: String(plantContext.selectedPlant.plantId),
+    createdBy: userId,
+    strategyName: proposal.strategyName,
+    strategyType: "CONDITION",
+    metricType: proposal.metricType,
+    operatorType: proposal.operatorType,
+    thresholdMin: proposal.thresholdMin,
+    actionType: proposal.actionType,
+    actionValue: normalizeProposalActionValue(proposal),
+    targetDeviceId,
+    enabled: true,
+    priority: 10,
+    timeLimitEnabled: Boolean(proposal.timeLimitEnabled),
+    startTime: proposal.timeLimitEnabled ? proposal.startTime ?? null : null,
+    endTime: proposal.timeLimitEnabled ? proposal.endTime ?? null : null,
+    configJson: {
+      timeLimitEnabled: Boolean(proposal.timeLimitEnabled),
+      ...(proposal.timeLimitEnabled
+        ? {
+            ...(proposal.startTime ? { startTime: proposal.startTime } : {}),
+            ...(proposal.endTime ? { endTime: proposal.endTime } : {}),
+          }
+        : {}),
+      notifyTitleTemplate: proposal.strategyName,
+      notifyContentTemplate: proposal.reason,
+    },
+  }
+}
+
+const metricLabels: Record<StrategyAgentProposal["metricType"], string> = {
+  LIGHT: "光照强度",
+  TEMPERATURE: "温度",
+  HUMIDITY: "湿度",
+}
+
+const metricUnits: Record<StrategyAgentProposal["metricType"], string> = {
+  LIGHT: "lux",
+  TEMPERATURE: "°C",
+  HUMIDITY: "%",
+}
+
+const operatorLabels: Record<StrategyAgentProposal["operatorType"], string> = {
+  LT: "<",
+  GT: ">",
+  EQ: "=",
+}
+
+const actionLabels: Record<StrategyAgentProposal["actionType"], string> = {
+  AUTO_LIGHT: "开启补光灯",
+  AUTO_FAN: "启动风扇",
+  NOTIFY_USER: "通知用户",
+}
+
+function formatProposalCondition(proposal: StrategyAgentProposal) {
+  const timeLimit =
+    proposal.timeLimitEnabled && proposal.startTime && proposal.endTime
+      ? `，且时间在 ${proposal.startTime}–${proposal.endTime}`
+      : ""
+
+  return `${metricLabels[proposal.metricType]} ${operatorLabels[proposal.operatorType]} ${proposal.thresholdMin} ${metricUnits[proposal.metricType]}${timeLimit}`
+}
+
+function formatProposalAction(proposal: StrategyAgentProposal) {
+  return actionLabels[proposal.actionType]
+}
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [inputValue, setInputValue] = useState("")
@@ -67,6 +228,9 @@ export default function ChatPage() {
   const [isFilesLoading, setIsFilesLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+  const [pendingProposal, setPendingProposal] = useState<StrategyAgentProposal | null>(null)
+  const [pendingPlantContext, setPendingPlantContext] = useState<PlantContextPayload | null>(null)
+  const [isCreatingStrategy, setIsCreatingStrategy] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -116,6 +280,7 @@ export default function ChatPage() {
     setIsLoading(true)
 
     try {
+      const plantContext = await getPlantContextPayload()
       const history = messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -129,6 +294,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           message: userText,
           history,
+          plantContextText: plantContext.contextText,
         }),
       })
 
@@ -151,6 +317,26 @@ export default function ChatPage() {
       }
 
       setMessages((prev) => [...prev, aiResponse])
+
+      if (isStrategyChangeQuestion(userText)) {
+        const strategyRes = await fetch("/api/ragflow/strategy-agent", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: userText,
+            plantContext,
+            plantContextText: plantContext.contextText,
+          }),
+        })
+
+        const strategyData = await strategyRes.json()
+        if (strategyData.success && strategyData.proposal?.shouldSuggest) {
+          setPendingPlantContext(plantContext)
+          setPendingProposal(strategyData.proposal)
+        }
+      }
     } catch (error: any) {
       const errorMessage: ChatMessage = {
         role: "assistant",
@@ -169,6 +355,64 @@ export default function ChatPage() {
 
   const handleSuggestedQuestion = (question: string) => {
     setInputValue(question)
+  }
+
+  const handleConfirmStrategyProposal = async () => {
+    if (!pendingProposal || !pendingPlantContext || isCreatingStrategy) return
+
+    setIsCreatingStrategy(true)
+    try {
+      const currentUserId = getCurrentUserId()
+      if (!currentUserId) {
+        throw new Error("当前登录信息缺少 userId，请重新登录后再新增策略")
+      }
+
+      const devicesStatus = await getDevicesStatus()
+      const targetDeviceId =
+        pendingProposal.actionType === "AUTO_LIGHT"
+          ? (devicesStatus?.light?.deviceId != null ? String(devicesStatus.light.deviceId) : null)
+          : pendingProposal.actionType === "AUTO_FAN"
+            ? (devicesStatus?.fan?.deviceId != null ? String(devicesStatus.fan.deviceId) : null)
+            : null
+
+      if (pendingProposal.actionType !== "NOTIFY_USER" && !targetDeviceId) {
+        throw new Error("未获取到对应执行设备，暂时无法创建自动控制策略")
+      }
+
+      await createStrategy(
+        buildStrategyPayloadFromProposal(
+          pendingProposal,
+          pendingPlantContext,
+          currentUserId,
+          targetDeviceId,
+        ),
+      )
+
+      const successMessage: ChatMessage = {
+        role: "assistant",
+        content: `已新增策略：${pendingProposal.strategyName}。您可以到设置页查看或调整。`,
+        time: new Date().toLocaleTimeString("zh-CN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      }
+
+      setMessages((prev) => [...prev, successMessage])
+      setPendingProposal(null)
+      setPendingPlantContext(null)
+    } catch (error: any) {
+      const errorMessage: ChatMessage = {
+        role: "assistant",
+        content: `新增策略失败：${error.message || "未知错误"}`,
+        time: new Date().toLocaleTimeString("zh-CN", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
+      setIsCreatingStrategy(false)
+    }
   }
 
   const uploadFiles = async (files: FileList | File[]) => {
@@ -553,6 +797,56 @@ export default function ChatPage() {
         </div>
       </main>
     </div>
+    <AlertDialog
+      open={Boolean(pendingProposal)}
+      onOpenChange={(open) => {
+        if (!open && !isCreatingStrategy) {
+          setPendingProposal(null)
+          setPendingPlantContext(null)
+        }
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>策略建议</AlertDialogTitle>
+          <AlertDialogDescription>
+            {pendingProposal
+              ? `检测到${pendingProposal.detected}，是否要新增这条自动化策略？`
+              : ""}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {pendingProposal ? (
+          <div className="space-y-3 rounded-lg bg-muted/50 p-3 text-sm">
+            <div>
+              <p className="font-medium text-foreground">{pendingProposal.strategyName}</p>
+              <p className="mt-1 text-muted-foreground">{pendingProposal.reason}</p>
+            </div>
+            <div className="space-y-1 rounded-lg border bg-background p-3">
+              <p>
+                <span className="font-medium text-blue-600">如果</span>{" "}
+                {formatProposalCondition(pendingProposal)}
+              </p>
+              <p>
+                <span className="font-medium text-green-600">则</span>{" "}
+                {formatProposalAction(pendingProposal)}
+              </p>
+            </div>
+          </div>
+        ) : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isCreatingStrategy}>否</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault()
+              void handleConfirmStrategyProposal()
+            }}
+            disabled={isCreatingStrategy}
+          >
+            {isCreatingStrategy ? "新增中..." : "是"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </AuthGuard>
   )
 }

@@ -12,17 +12,14 @@ type RAGFlowChunkRef = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, history = [] } = await req.json()
+    const { message, history = [], plantContextText } = await req.json()
 
-    const sensorContext = `
-当前环境数据：
-- 温度：26.4℃
-- 湿度：61%
-- 光照：偏弱
-- 风扇：关
-`
+    const plantContext =
+      typeof plantContextText === "string" && plantContextText.trim()
+        ? plantContextText.trim()
+        : "当前主页所选植物数据：前端未提供实时植物上下文。"
 
-    const finalMessage = `${sensorContext}
+    const finalMessage = `${plantContext}
 
 用户问题：
 ${message}`
