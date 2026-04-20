@@ -50,3 +50,8 @@ app:
       similarity-threshold: 0.85
       sqlite-db-path: data/face.db
       similarity-type: IP
+
+deepseek:
+  api-key: sk-9460599ee06142d5ab80d71f56575b20
+  base-url: https://api.deepseek.com
+  model: deepseek-chat

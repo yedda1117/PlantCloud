@@ -7,6 +7,7 @@ import {
   Bot,
   CheckCircle,
   Droplets,
+  LoaderCircle,
   ShieldAlert,
   Sparkles,
   Sun,
@@ -42,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { getDashboardData, type DashboardData } from "@/lib/dashboard-api"
+import { analyzePlantRisk, type PlantRiskAnalysis } from "@/lib/plant-api"
 import type { PlantMeta } from "./page"
 
 const POLL_INTERVAL_MS = 30000
@@ -53,6 +55,29 @@ type MetricTab = "temperature" | "humidity" | "light" | "air"
 type Props = {
   plant: PlantMeta
   onBack: () => void
+}
+
+const riskTypeLabelMap: Record<string, string> = {
+  HIGH_TEMP_RISK: "高温风险",
+  DRYNESS_RISK: "干燥风险",
+  STRONG_LIGHT_RISK: "强光风险",
+  HOT_DRY_TREND_RISK: "高温干燥趋势风险",
+  NO_RISK: "暂无明显风险",
+}
+
+const riskLevelStyleMap: Record<string, { label: string; className: string }> = {
+  HIGH: {
+    label: "高风险",
+    className: "border-red-200 bg-red-50 text-red-700",
+  },
+  MEDIUM: {
+    label: "中风险",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  LOW: {
+    label: "低风险",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
 }
 
 function formatTimestamp(value: string | null | undefined) {
@@ -158,11 +183,25 @@ function normalizeRange(value: number | null | undefined, idealMin: number, idea
   return Math.round(ratio * 100)
 }
 
+function mapRiskTypeLabel(value: string) {
+  return riskTypeLabelMap[value] ?? value
+}
+
+function getRiskLevelMeta(level: string | null | undefined) {
+  return riskLevelStyleMap[level || ""] ?? {
+    label: level || "未知风险",
+    className: "border-slate-200 bg-slate-50 text-slate-700",
+  }
+}
+
 export default function DashDetail({ plant, onBack }: Props) {
   const [metricTab, setMetricTab] = useState<MetricTab>("temperature")
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [riskAnalysis, setRiskAnalysis] = useState<PlantRiskAnalysis | null>(null)
+  const [riskLoading, setRiskLoading] = useState(true)
+  const [riskError, setRiskError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -202,6 +241,40 @@ export default function DashDetail({ plant, onBack }: Props) {
     return () => {
       cancelled = true
       window.clearInterval(timer)
+    }
+  }, [plant.plantId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadRiskAnalysis = async () => {
+      const token = window.localStorage.getItem("plantcloud_token") || ""
+      setRiskLoading(true)
+      setRiskError(null)
+
+      try {
+        const nextData = await analyzePlantRisk(plant.plantId, token)
+        if (cancelled) {
+          return
+        }
+        setRiskAnalysis(nextData)
+      } catch (loadError) {
+        if (cancelled) {
+          return
+        }
+        setRiskAnalysis(null)
+        setRiskError(loadError instanceof Error ? loadError.message : "AI 生长趋势分析加载失败")
+      } finally {
+        if (!cancelled) {
+          setRiskLoading(false)
+        }
+      }
+    }
+
+    void loadRiskAnalysis()
+
+    return () => {
+      cancelled = true
     }
   }, [plant.plantId])
 
@@ -335,6 +408,7 @@ export default function DashDetail({ plant, onBack }: Props) {
   const temperatureBadge = mapStatusBadge(current?.temperatureStatus, "temperature")
   const humidityBadge = mapStatusBadge(current?.humidityStatus, "humidity")
   const lightBadge = mapStatusBadge(current?.lightStatus, "light")
+  const riskLevelMeta = getRiskLevelMeta(riskAnalysis?.riskLevel)
 
   return (
     <div className="min-h-screen bg-background">
@@ -611,26 +685,85 @@ export default function DashDetail({ plant, onBack }: Props) {
 
           <Card className="lg:col-span-5">
             <CardHeader className="px-4 pb-2 pt-4">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Bot className="h-4 w-4 text-primary" />
-                AI 生长趋势分析
-                <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                  即将上线
-                </span>
+              <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-primary" />
+                  AI 植物管家
+                </div>
+                {!riskLoading && !riskError && riskAnalysis ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${riskLevelMeta.className}`}>
+                      {riskLevelMeta.label}
+                    </span>
+                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                      风险分 {riskAnalysis.riskScore}
+                    </span>
+                    {riskAnalysis.riskType.map((item) => (
+                      <Badge
+                        key={item}
+                        variant="secondary"
+                        className="rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                      >
+                        {mapRiskTypeLabel(item)}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-primary/25 bg-primary/3">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                  <Sparkles className="h-6 w-6 text-primary/60" />
+              {riskLoading ? (
+                <div className="flex h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-primary/10 bg-gradient-to-br from-emerald-50 via-white to-sky-50 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                    <LoaderCircle className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">正在生成植物风险分析</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      正在结合环境数据与 AI 建议整理本株植物的健康提示
+                    </p>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-muted-foreground">AI 模型接入中</p>
-                  <p className="mt-1 text-xs text-muted-foreground/70">
-                    将基于历史环境数据，自动生成植物生长趋势预测与养护建议
-                  </p>
+              ) : riskError ? (
+                <div className="flex h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-red-100 bg-red-50/70 px-6 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
+                    <ShieldAlert className="h-6 w-6 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-red-700">风险分析暂时不可用</p>
+                    <p className="mt-1 text-xs text-red-600/80">{riskError}</p>
+                  </div>
                 </div>
-              </div>
+              ) : !riskAnalysis ? (
+                <div className="flex h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                    <Sparkles className="h-6 w-6 text-slate-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">暂无分析结果</p>
+                    <p className="mt-1 text-xs text-slate-500">当前没有可展示的 AI 风险分析数据</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-primary/10 bg-primary/5 p-4">
+                    <p className="text-xs font-semibold tracking-wide text-primary">AI 总结</p>
+                    <p className="mt-2 text-sm leading-6 text-foreground">{riskAnalysis.aiSummary || "暂无总结"}</p>
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                    <p className="text-xs font-semibold tracking-wide text-emerald-700">养护建议</p>
+                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground">
+                      {riskAnalysis.aiAdvice || "暂无建议"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-4">
+                    <p className="text-xs font-semibold tracking-wide text-amber-700">风险提醒</p>
+                    <p className="mt-2 text-sm leading-6 text-foreground">{riskAnalysis.aiWarning || "暂无提醒"}</p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

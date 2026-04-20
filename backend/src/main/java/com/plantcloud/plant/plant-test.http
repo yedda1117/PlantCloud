@@ -6,7 +6,14 @@
 ### ===============================
 
 GET {{baseUrl}}/plants
+### ===============================
+### 风险分析接口测试（蝴蝶兰）
+### ===============================
 
+POST http://localhost:8080/plants/1/analyze-risk
+Content-Type: application/json
+
+###
 
 
 ### ===============================
@@ -17,3 +24,19 @@ GET {{baseUrl}}/plants
 GET {{baseUrl}}/plants
 Accept: application/json
 
+
+### ===============================
+### 植物环境风险分析
+### 根据植物最近 1 小时环境数据进行规则分析
+### ===============================
+
+POST {{baseUrl}}/plants/1/analyze-risk
+Accept: application/json
+
+
+### ===============================
+### 植物环境风险分析（可自行补充鉴权头）
+### ===============================
+
+POST {{baseUrl}}/plants/1/analyze-risk
+Accept: application/json
