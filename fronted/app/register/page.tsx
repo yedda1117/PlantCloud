@@ -148,20 +148,20 @@ export default function RegisterPage() {
             <span className="text-lg font-semibold">PlantCloud</span>
           </Link>
 
-          <p className="text-sm font-semibold text-emerald-700">账号与人脸注册</p >
+          <p className="text-sm font-semibold text-emerald-700">账号与人脸注册</p>
           <h1 className="mt-3 text-4xl font-semibold leading-tight sm:text-5xl">建立属于你的安全入口。</h1>
           <p className="mt-5 max-w-xl leading-8 text-zinc-600">
             现场注册会同时创建账号、保存密码哈希、写入人脸注册图片，并把人脸特征注册到 SmartJavaAI 的 SQLite 特征库。
-          </p >
+          </p>
 
           <div className="mt-8 grid max-w-xl gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="font-semibold">拍摄建议</p >
-              <p className="mt-2 text-sm leading-6 text-zinc-600">正脸、自然光、无遮挡，人脸区域尽量占画面中央。</p >
+              <p className="font-semibold">拍摄建议</p>
+              <p className="mt-2 text-sm leading-6 text-zinc-600">正脸、自然光、无遮挡，人脸区域尽量占画面中央。</p>
             </div>
             <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-              <p className="font-semibold">后续登录</p >
-              <p className="mt-2 text-sm leading-6 text-zinc-600">注册成功后回到登录页，直接使用摄像头刷脸进入。</p >
+              <p className="font-semibold">后续登录</p>
+              <p className="mt-2 text-sm leading-6 text-zinc-600">注册成功后回到登录页，直接使用摄像头刷脸进入。</p>
             </div>
           </div>
         </section>
