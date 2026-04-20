@@ -223,7 +223,7 @@ export default function LoginPage() {
               </div>
 
               <div className="overflow-hidden rounded-lg border border-white/25 bg-zinc-950 shadow-2xl shadow-black/30">
-                <video ref={videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline />
+                <video ref={videoRef} className="aspect-[4/3] w-full scale-x-[-1] object-cover" muted playsInline />
               </div>
 
               <div className="mt-5 flex flex-col gap-4 rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">

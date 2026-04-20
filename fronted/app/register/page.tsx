@@ -168,7 +168,7 @@ export default function RegisterPage() {
 
         <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-xl shadow-zinc-200/70 sm:p-6">
           <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-950">
-            <video ref={videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline />
+            <video ref={videoRef} className="aspect-[4/3] w-full scale-x-[-1] object-cover" muted playsInline />
           </div>
 
           <div className={`mt-4 flex items-start gap-2 rounded-lg border p-3 text-sm leading-6 ${messageType === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : messageType === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>

@@ -1,7 +1,4 @@
-package com.plantcloud.auth.service.impl;
-
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.plantcloud.auth.ai.SmartFaceAiClient;
 import com.plantcloud.auth.dto.FaceLoginRequest;
 import com.plantcloud.auth.dto.FaceRegisterRequest;
 import com.plantcloud.auth.dto.LoginRequest;
@@ -12,6 +9,7 @@ import com.plantcloud.security.jwt.JwtTokenUtil;
 import com.plantcloud.system.exception.BizException;
 import com.plantcloud.user.entity.User;
 import com.plantcloud.user.mapper.UserMapper;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -23,72 +21,29 @@ public class AuthServiceImpl implements AuthService {
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenUtil jwtTokenUtil;
-    private final SmartFaceAiClient smartFaceAiClient;
 
     @Override
     public LoginVO login(LoginRequest request) {
-        User user = findByUsername(request.getUsername());
-        if (user == null || !passwordMatches(request.getPassword(), user.getPasswordHash())) {
-            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "Invalid username or password");
-        }
-        return buildLoginVO(user);
-    }
+        LambdaQueryWrapper<User> query = new LambdaQueryWrapper<>()
+                .eq(User::getUsername, request.getUsername());
 
-    @Override
-    public void registerFace(FaceRegisterRequest request) {
-        validateFaceImage(request.getFaceImage());
-
-        User user = findByUsername(request.getUsername());
+        User user = userMapper.selectOne(query);
         if (user == null) {
-            user = createUser(request.getUsername(), request.getPassword());
-        } else if (!passwordMatches(request.getPassword(), user.getPasswordHash())) {
-            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "Username already exists and password is incorrect");
+            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
         }
 
-        smartFaceAiClient.register(user, request.getFaceImage());
-        user.setFaceImage(request.getFaceImage());
-        userMapper.updateById(user);
-    }
-
-    @Override
-    public LoginVO faceLogin(FaceLoginRequest request) {
-        validateFaceImage(request.getFaceImage());
-
-        SmartFaceAiClient.FaceMatch match = smartFaceAiClient.search(request.getFaceImage());
-        User user = userMapper.selectById(match.userId());
-        if (user == null) {
-            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "Face matched an unknown user");
+        String passwordHash = user.getPasswordHash();
+        boolean passwordMatches = passwordHash != null && passwordEncoder.matches(request.getPassword(), passwordHash);
+        if (!passwordMatches) {
+            // 降级兼容：当 password_hash 直接保存明文时，允许明文比对
+            passwordMatches = passwordHash != null && passwordHash.equals(request.getPassword());
+        }
+        if (!passwordMatches) {
+            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
         }
 
-        return buildLoginVO(user);
-    }
-
-    private User findByUsername(String username) {
-        LambdaQueryWrapper<User> query = new LambdaQueryWrapper<User>()
-                .eq(User::getUsername, username);
-        return userMapper.selectOne(query);
-    }
-
-    private User createUser(String username, String password) {
-        User user = new User();
-        user.setUsername(username);
-        user.setNickname(username);
-        user.setPasswordHash(passwordEncoder.encode(password));
-        user.setRole("USER");
-        user.setStatus("1");
-        userMapper.insert(user);
-        return user;
-    }
-
-    private boolean passwordMatches(String rawPassword, String passwordHash) {
-        if (rawPassword == null || passwordHash == null) {
-            return false;
-        }
-        return passwordEncoder.matches(rawPassword, passwordHash) || passwordHash.equals(rawPassword);
-    }
-
-    private LoginVO buildLoginVO(User user) {
         String token = jwtTokenUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
+
         return LoginVO.builder()
                 .userId(user.getId())
                 .username(user.getUsername())
@@ -98,13 +53,55 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
-    private void validateFaceImage(String faceImage) {
-        if (faceImage == null || faceImage.isBlank()) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "Face image is required");
+    @Override
+    public void registerFace(FaceRegisterRequest request) {
+        // 先验证用户名密码
+        LambdaQueryWrapper<User> query = new LambdaQueryWrapper<>()
+                .eq(User::getUsername, request.getUsername());
+
+        User user = userMapper.selectOne(query);
+        if (user == null) {
+            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
         }
-        if (!faceImage.startsWith("data:image/jpeg;base64,")
-                && !faceImage.startsWith("data:image/png;base64,")) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "Invalid face image format");
+
+        String passwordHash = user.getPasswordHash();
+        boolean passwordMatches = passwordHash != null && passwordEncoder.matches(request.getPassword(), passwordHash);
+        if (!passwordMatches) {
+            passwordMatches = passwordHash != null && passwordHash.equals(request.getPassword());
         }
+        if (!passwordMatches) {
+            throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "用户名或密码错误");
+        }
+
+        // 更新人脸图片
+        user.setFaceImage(request.getFaceImage());
+        userMapper.updateById(user);
+    }
+
+    @Override
+    public LoginVO faceLogin(FaceLoginRequest request) {
+        if (request.getFaceImage() == null || request.getFaceImage().isBlank()) {
+            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "人脸数据不能为空");
+        }
+
+        // 简单实现：遍历所有用户，比较人脸图片（实际应使用 AI 模型）
+        // 这里使用简单的字符串比较作为占位，实际应计算相似度
+        LambdaQueryWrapper<User> query = new LambdaQueryWrapper<>();
+        List<User> users = userMapper.selectList(query);
+
+        for (User user : users) {
+            if (user.getFaceImage() != null && user.getFaceImage().equals(request.getFaceImage())) {
+                String token = jwtTokenUtil.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
+                return LoginVO.builder()
+                        .userId(user.getId())
+                        .username(user.getUsername())
+                        .role(user.getRole())
+                        .accessToken(token)
+                        .refreshToken("")
+                        .build();
+            }
+        }
+
+        throw new BizException(ResultCode.UNAUTHORIZED.getCode(), "人脸识别失败，未找到匹配用户");
     }
 }
