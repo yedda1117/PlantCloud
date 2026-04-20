@@ -45,6 +45,7 @@ public class SecurityConfig {
                                 "/strategies/**",
                                 "/alerts/**",
                                 "/calendar/**",
+                                "/plants/**",
                                 "/devices/**"
 
                         ).permitAll()
