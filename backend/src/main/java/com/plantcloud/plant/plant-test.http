@@ -1,42 +1,225 @@
 @baseUrl = http://localhost:8080
+@contentType = application/json
 
-### ===============================
-### 获取植物列表
-### 默认按当前实现查询 ownerId = 1 的 ACTIVE 植物
-### ===============================
+### 1. AI生成植物模板参数 - 正常测试
+POST {{baseUrl}}/plant-config/ai-generate
+Content-Type: {{contentType}}
 
-GET {{baseUrl}}/plants
-### ===============================
-### 风险分析接口测试（蝴蝶兰）
-### ===============================
-
-POST http://localhost:8080/plants/1/analyze-risk
-Content-Type: application/json
+{
+  "plantName": "网纹草"
+}
 
 ###
 
+### 2. AI生成植物模板参数 - 再测一个品种
+POST {{baseUrl}}/plant-config/ai-generate
+Content-Type: {{contentType}}
 
-### ===============================
-### 获取植物列表（预留鉴权头）
-### 如果后续接口接入登录态，可直接填入 token 测试
-### ===============================
+{
+  "plantName": "秋海棠"
+}
 
-GET {{baseUrl}}/plants
-Accept: application/json
+###
 
+### 3. AI生成植物模板参数 - 再测一个品种
+POST {{baseUrl}}/plant-config/ai-generate
+Content-Type: {{contentType}}
 
-### ===============================
-### 植物环境风险分析
-### 根据植物最近 1 小时环境数据进行规则分析
-### ===============================
+{
+  "plantName": "鹿角蕨"
+}
 
-POST {{baseUrl}}/plants/1/analyze-risk
-Accept: application/json
+###
 
+### 4. AI生成植物模板参数 - 参数校验测试（空名称，预期失败）
+POST {{baseUrl}}/plant-config/ai-generate
+Content-Type: {{contentType}}
 
-### ===============================
-### 植物环境风险分析（可自行补充鉴权头）
-### ===============================
+{
+  "plantName": ""
+}
 
-POST {{baseUrl}}/plants/1/analyze-risk
-Accept: application/json
+###
+
+### 5. 新增植物 - 正常测试（使用AI生成好的模板数据）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "网纹草",
+  "templateData": {
+    "plantName": "网纹草",
+    "species": null,
+    "tempMin": 18,
+    "tempMax": 26,
+    "humidityMin": 65,
+    "humidityMax": 85,
+    "lightMin": 2000,
+    "lightMax": 6000,
+    "tempRiseSensitive": 0.7,
+    "humidityDropSensitive": 1.0,
+    "lightRiseSensitive": 0.6,
+    "careLevel": "hard",
+    "summary": "网纹草喜欢温暖湿润环境，对空气干燥比较敏感。"
+  }
+}
+
+###
+
+### 6. 新增植物 - 正常测试（秋海棠）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "秋海棠",
+  "templateData": {
+    "plantName": "秋海棠",
+    "species": null,
+    "tempMin": 16,
+    "tempMax": 28,
+    "humidityMin": 55,
+    "humidityMax": 75,
+    "lightMin": 3000,
+    "lightMax": 10000,
+    "tempRiseSensitive": 0.6,
+    "humidityDropSensitive": 0.7,
+    "lightRiseSensitive": 0.5,
+    "careLevel": "medium",
+    "summary": "秋海棠适合温暖湿润和明亮散射光环境，怕积水和暴晒。"
+  }
+}
+
+###
+
+### 7. 新增植物 - 参数校验测试（温度范围非法，预期失败）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "测试植物-温度非法",
+  "templateData": {
+    "plantName": "测试植物-温度非法",
+    "species": null,
+    "tempMin": 30,
+    "tempMax": 20,
+    "humidityMin": 50,
+    "humidityMax": 70,
+    "lightMin": 2000,
+    "lightMax": 6000,
+    "tempRiseSensitive": 0.7,
+    "humidityDropSensitive": 0.8,
+    "lightRiseSensitive": 0.6,
+    "careLevel": "medium",
+    "summary": "这是一个用于测试非法温度范围的请求。"
+  }
+}
+
+###
+
+### 8. 新增植物 - 参数校验测试（湿度越界，预期失败）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "测试植物-湿度越界",
+  "templateData": {
+    "plantName": "测试植物-湿度越界",
+    "species": null,
+    "tempMin": 18,
+    "tempMax": 26,
+    "humidityMin": -10,
+    "humidityMax": 120,
+    "lightMin": 2000,
+    "lightMax": 6000,
+    "tempRiseSensitive": 0.7,
+    "humidityDropSensitive": 0.8,
+    "lightRiseSensitive": 0.6,
+    "careLevel": "medium",
+    "summary": "这是一个用于测试非法湿度范围的请求。"
+  }
+}
+
+###
+
+### 9. 新增植物 - 参数校验测试（敏感度越界，预期失败）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "测试植物-敏感度越界",
+  "templateData": {
+    "plantName": "测试植物-敏感度越界",
+    "species": null,
+    "tempMin": 18,
+    "tempMax": 26,
+    "humidityMin": 60,
+    "humidityMax": 80,
+    "lightMin": 2000,
+    "lightMax": 6000,
+    "tempRiseSensitive": 1.2,
+    "humidityDropSensitive": -0.1,
+    "lightRiseSensitive": 2,
+    "careLevel": "medium",
+    "summary": "这是一个用于测试非法敏感度的请求。"
+  }
+}
+
+###
+
+### 10. 新增植物 - 参数校验测试（careLevel非法，预期失败）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "测试植物-careLevel非法",
+  "templateData": {
+    "plantName": "测试植物-careLevel非法",
+    "species": null,
+    "tempMin": 18,
+    "tempMax": 26,
+    "humidityMin": 60,
+    "humidityMax": 80,
+    "lightMin": 2000,
+    "lightMax": 6000,
+    "tempRiseSensitive": 0.7,
+    "humidityDropSensitive": 0.8,
+    "lightRiseSensitive": 0.6,
+    "careLevel": "difficult",
+    "summary": "这是一个用于测试非法careLevel的请求。"
+  }
+}
+
+###
+
+### 11. 新增植物 - 参数校验测试（templateData缺失，预期失败）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "测试植物-templateData缺失"
+}
+
+###
+
+### 12. 新增植物 - 参数校验测试（plantName为空，预期失败）
+POST {{baseUrl}}/plants
+Content-Type: {{contentType}}
+
+{
+  "plantName": "",
+  "templateData": {
+    "plantName": "测试植物",
+    "species": null,
+    "tempMin": 18,
+    "tempMax": 26,
+    "humidityMin": 60,
+    "humidityMax": 80,
+    "lightMin": 2000,
+    "lightMax": 6000,
+    "tempRiseSensitive": 0.7,
+    "humidityDropSensitive": 0.8,
+    "lightRiseSensitive": 0.6,
+    "careLevel": "medium",
+    "summary": "这是一个用于测试空plantName的请求。"
+  }
+}
