@@ -43,7 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { getDashboardData, type DashboardData } from "@/lib/dashboard-api"
-import { analyzePlantRisk, type PlantRiskAnalysis } from "@/lib/plant-api"
+import { getPlantAiAnalysis, type PlantAiAnalysis } from "@/lib/plant-api"
 import type { PlantMeta } from "./page"
 
 const POLL_INTERVAL_MS = 30000
@@ -199,9 +199,9 @@ export default function DashDetail({ plant, onBack }: Props) {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [riskAnalysis, setRiskAnalysis] = useState<PlantRiskAnalysis | null>(null)
-  const [riskLoading, setRiskLoading] = useState(true)
-  const [riskError, setRiskError] = useState<string | null>(null)
+  const [aiAnalysisData, setAiAnalysisData] = useState<PlantAiAnalysis | null>(null)
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(true)
+  const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -247,31 +247,31 @@ export default function DashDetail({ plant, onBack }: Props) {
   useEffect(() => {
     let cancelled = false
 
-    const loadRiskAnalysis = async () => {
+    const loadAiAnalysis = async () => {
       const token = window.localStorage.getItem("plantcloud_token") || ""
-      setRiskLoading(true)
-      setRiskError(null)
+      setAiAnalysisLoading(true)
+      setAiAnalysisError(null)
 
       try {
-        const nextData = await analyzePlantRisk(plant.plantId, token)
+        const nextData = await getPlantAiAnalysis(plant.plantId, token)
         if (cancelled) {
           return
         }
-        setRiskAnalysis(nextData)
+        setAiAnalysisData(nextData)
       } catch (loadError) {
         if (cancelled) {
           return
         }
-        setRiskAnalysis(null)
-        setRiskError(loadError instanceof Error ? loadError.message : "AI 生长趋势分析加载失败")
+        setAiAnalysisData(null)
+        setAiAnalysisError(loadError instanceof Error ? loadError.message : "AI 分析暂时获取失败，请稍后重试")
       } finally {
         if (!cancelled) {
-          setRiskLoading(false)
+          setAiAnalysisLoading(false)
         }
       }
     }
 
-    void loadRiskAnalysis()
+    void loadAiAnalysis()
 
     return () => {
       cancelled = true
@@ -408,7 +408,9 @@ export default function DashDetail({ plant, onBack }: Props) {
   const temperatureBadge = mapStatusBadge(current?.temperatureStatus, "temperature")
   const humidityBadge = mapStatusBadge(current?.humidityStatus, "humidity")
   const lightBadge = mapStatusBadge(current?.lightStatus, "light")
-  const riskLevelMeta = getRiskLevelMeta(riskAnalysis?.riskLevel)
+  const riskLevelMeta = getRiskLevelMeta(aiAnalysisData?.riskLevel)
+  const aiAdviceText = aiAnalysisData?.advice?.join("；") || ""
+  const aiWarningText = aiAnalysisData?.riskWarnings?.join("；") || ""
 
   return (
     <div className="min-h-screen bg-background">
@@ -713,15 +715,17 @@ export default function DashDetail({ plant, onBack }: Props) {
                   <Bot className="h-4 w-4 text-primary" />
                   AI 植物管家
                 </div>
-                {!riskLoading && !riskError && riskAnalysis ? (
+                {!aiAnalysisLoading && !aiAnalysisError && aiAnalysisData?.riskLevel ? (
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${riskLevelMeta.className}`}>
                       {riskLevelMeta.label}
                     </span>
-                    <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                      风险分 {riskAnalysis.riskScore}
-                    </span>
-                    {riskAnalysis.riskType.map((item) => (
+                    {typeof aiAnalysisData.riskScore === "number" ? (
+                      <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                        风险分 {aiAnalysisData.riskScore}
+                      </span>
+                    ) : null}
+                    {(aiAnalysisData.riskType || []).map((item) => (
                       <Badge
                         key={item}
                         variant="secondary"
@@ -735,55 +739,55 @@ export default function DashDetail({ plant, onBack }: Props) {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              {riskLoading ? (
+              {aiAnalysisLoading ? (
                 <div className="flex h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-primary/10 bg-gradient-to-br from-emerald-50 via-white to-sky-50 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <LoaderCircle className="h-6 w-6 animate-spin text-primary" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-foreground">正在生成植物风险分析</p>
+                    <p className="text-sm font-medium text-foreground">正在生成 AI 植物分析</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      正在结合环境数据与 AI 建议整理本株植物的健康提示
+                      正在结合环境数据整理这株植物的管家建议
                     </p>
                   </div>
                 </div>
-              ) : riskError ? (
+              ) : aiAnalysisError ? (
                 <div className="flex h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-red-100 bg-red-50/70 px-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
                     <ShieldAlert className="h-6 w-6 text-red-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-red-700">风险分析暂时不可用</p>
-                    <p className="mt-1 text-xs text-red-600/80">{riskError}</p>
+                    <p className="text-sm font-medium text-red-700">AI 分析暂时获取失败</p>
+                    <p className="mt-1 text-xs text-red-600/80">请稍后重试</p>
                   </div>
                 </div>
-              ) : !riskAnalysis ? (
+              ) : !aiAnalysisData || (!aiAnalysisData.summary && aiAnalysisData.advice.length === 0 && aiAnalysisData.riskWarnings.length === 0) ? (
                 <div className="flex h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
                     <Sparkles className="h-6 w-6 text-slate-500" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-slate-700">暂无分析结果</p>
-                    <p className="mt-1 text-xs text-slate-500">当前没有可展示的 AI 风险分析数据</p>
+                    <p className="mt-1 text-xs text-slate-500">当前没有可展示的 AI 植物管家分析数据</p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-primary/10 bg-primary/5 p-4">
                     <p className="text-xs font-semibold tracking-wide text-primary">AI 总结</p>
-                    <p className="mt-2 text-sm leading-6 text-foreground">{riskAnalysis.aiSummary || "暂无总结"}</p>
+                    <p className="mt-2 text-sm leading-6 text-foreground">{aiAnalysisData.summary || "暂无总结"}</p>
                   </div>
 
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
                     <p className="text-xs font-semibold tracking-wide text-emerald-700">养护建议</p>
                     <p className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground">
-                      {riskAnalysis.aiAdvice || "暂无建议"}
+                      {aiAdviceText || "暂无建议"}
                     </p>
                   </div>
 
                   <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-4">
                     <p className="text-xs font-semibold tracking-wide text-amber-700">风险提醒</p>
-                    <p className="mt-2 text-sm leading-6 text-foreground">{riskAnalysis.aiWarning || "暂无提醒"}</p>
+                    <p className="mt-2 text-sm leading-6 text-foreground">{aiWarningText || "暂无提醒"}</p>
                   </div>
                 </div>
               )}

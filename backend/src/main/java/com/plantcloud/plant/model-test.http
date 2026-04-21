@@ -1,0 +1,52 @@
+### ========================================
+### 1. 健康检查 Python 模型服务（必须先成功）
+### ========================================
+GET http://127.0.0.1:5000/health
+
+
+### ========================================
+### 2. 直接测试 Python 模型预测接口
+### （确认模型服务本身没问题）
+### ========================================
+POST http://127.0.0.1:5000/predict
+Content-Type: application/json
+
+{
+  "plant_type": "phalaenopsis",
+  "temp": 29.2,
+  "humidity": 54.5,
+  "light": 9200,
+  "temp_diff_1h": 1.7,
+  "humidity_diff_1h": -5.5,
+  "light_diff_1h": 1200,
+  "abnormal_duration": 2.0
+}
+
+
+### ========================================
+### 3. 测试新接口（蝴蝶兰 plantId=1）
+### 应该走预测模型 + DeepSeek
+### ========================================
+POST http://localhost:8080/plant/1/analysis
+Content-Type: application/json
+
+{}
+
+
+### ========================================
+### 4. 测试新接口（多肉 plantId=2）
+### 也应该走预测模型
+### ========================================
+POST http://localhost:8080/plant/2/analysis
+Content-Type: application/json
+
+{}
+
+
+### ========================================
+### 5. 测试异常情况（不存在的 plantId）
+### ========================================
+POST http://localhost:8080/plant/999/analysis
+Content-Type: application/json
+
+{}

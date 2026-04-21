@@ -8,10 +8,12 @@ import com.plantcloud.common.enums.ResultCode;
 import com.plantcloud.plant.mapper.PlantMapper;
 import com.plantcloud.plant.mapper.PlantTemplateMapper;
 import com.plantcloud.plant.service.PlantAiExplanationService;
+import com.plantcloud.plant.service.PlantEnvironmentService;
 import com.plantcloud.plant.service.PlantService;
 import com.plantcloud.plant.service.PlantTemplateValidator;
 import com.plantcloud.plant.vo.AiExplanationVO;
 import com.plantcloud.plant.vo.PlantCreateVO;
+import com.plantcloud.plant.vo.PlantEnvironmentSnapshotVO;
 import com.plantcloud.plant.vo.PlantRiskProfileVO;
 import com.plantcloud.plant.vo.PlantSimpleVO;
 import com.plantcloud.plant.vo.RiskAnalysisResultVO;
@@ -55,6 +57,7 @@ public class PlantServiceImpl implements PlantService {
     private final PlantMapper plantMapper;
     private final PlantTemplateMapper plantTemplateMapper;
     private final PlantAiExplanationService plantAiExplanationService;
+    private final PlantEnvironmentService plantEnvironmentService;
     private final PlantTemplateValidator plantTemplateValidator;
 
     @Override
@@ -92,17 +95,13 @@ public class PlantServiceImpl implements PlantService {
     @Override
     public RiskAnalysisResultVO analyzeRisk(Long plantId) {
         PlantRiskProfileVO profile = requirePlantRiskProfile(plantId);
-
-        BigDecimal latestTemperature = defaultValue(plantMapper.selectLatestTemperature(plantId));
-        BigDecimal earliestTemperature = defaultValue(plantMapper.selectEarliestTemperature(plantId));
-        BigDecimal latestHumidity = defaultValue(plantMapper.selectLatestHumidity(plantId));
-        BigDecimal earliestHumidity = defaultValue(plantMapper.selectEarliestHumidity(plantId));
-        BigDecimal latestLight = defaultValue(plantMapper.selectLatestLight(plantId));
-        BigDecimal earliestLight = defaultValue(plantMapper.selectEarliestLight(plantId));
-
-        BigDecimal tempDelta = latestTemperature.subtract(earliestTemperature);
-        BigDecimal humidityDelta = latestHumidity.subtract(earliestHumidity);
-        BigDecimal lightDelta = latestLight.subtract(earliestLight);
+        PlantEnvironmentSnapshotVO snapshot = plantEnvironmentService.getEnvironmentSnapshot(plantId);
+        BigDecimal latestTemperature = snapshot.getTemperature();
+        BigDecimal latestHumidity = snapshot.getHumidity();
+        BigDecimal latestLight = snapshot.getLight();
+        BigDecimal tempDelta = snapshot.getTempDelta();
+        BigDecimal humidityDelta = snapshot.getHumidityDelta();
+        BigDecimal lightDelta = snapshot.getLightDelta();
 
         List<String> riskTypes = new ArrayList<>();
         List<String> triggerReasons = new ArrayList<>();

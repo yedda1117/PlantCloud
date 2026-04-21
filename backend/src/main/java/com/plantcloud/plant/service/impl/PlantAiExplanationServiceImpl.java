@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plantcloud.config.DeepSeekProperties;
 import com.plantcloud.plant.service.PlantAiExplanationService;
 import com.plantcloud.plant.vo.AiExplanationVO;
+import com.plantcloud.plant.vo.PlantPredictionAiVO;
 import com.plantcloud.plant.vo.RiskAnalysisResultVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpEntity;
@@ -19,6 +20,8 @@ import org.springframework.web.client.RestTemplate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -35,8 +38,36 @@ public class PlantAiExplanationServiceImpl implements PlantAiExplanationService 
 
     @Override
     public AiExplanationVO generateExplanation(RiskAnalysisResultVO result) {
+        return requestExplanation(
+                buildRequestBody(result),
+                AiExplanationVO.class,
+                explanation -> StringUtils.hasText(explanation.getSummary())
+                        && StringUtils.hasText(explanation.getAdvice())
+                        && StringUtils.hasText(explanation.getWarning()),
+                this::defaultExplanation
+        );
+    }
+
+    @Override
+    public PlantPredictionAiVO generatePredictionExplanation(String prompt) {
+        return requestExplanation(
+                buildPromptOnlyRequestBody(prompt),
+                PlantPredictionAiVO.class,
+                explanation -> StringUtils.hasText(explanation.getSummary())
+                        && explanation.getAdvice() != null
+                        && !explanation.getAdvice().isEmpty()
+                        && explanation.getRiskWarnings() != null
+                        && !explanation.getRiskWarnings().isEmpty(),
+                this::defaultPredictionExplanation
+        );
+    }
+
+    private <T> T requestExplanation(Map<String, Object> requestBody,
+                                     Class<T> responseType,
+                                     Predicate<T> validator,
+                                     Supplier<T> defaultSupplier) {
         if (!StringUtils.hasText(deepSeekProperties.getApiKey())) {
-            return defaultExplanation();
+            return defaultSupplier.get();
         }
 
         try {
@@ -44,7 +75,7 @@ public class PlantAiExplanationServiceImpl implements PlantAiExplanationService 
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(deepSeekProperties.getApiKey());
 
-            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(buildRequestBody(result), headers);
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
             ResponseEntity<String> response = restTemplate.exchange(
                     buildRequestUrl(),
                     HttpMethod.POST,
@@ -53,23 +84,21 @@ public class PlantAiExplanationServiceImpl implements PlantAiExplanationService 
             );
 
             if (!response.getStatusCode().is2xxSuccessful() || !StringUtils.hasText(response.getBody())) {
-                return defaultExplanation();
+                return defaultSupplier.get();
             }
 
             String content = extractContent(response.getBody());
             if (!StringUtils.hasText(content)) {
-                return defaultExplanation();
+                return defaultSupplier.get();
             }
 
-            AiExplanationVO explanation = objectMapper.readValue(cleanJsonContent(content), AiExplanationVO.class);
-            if (!StringUtils.hasText(explanation.getSummary())
-                    || !StringUtils.hasText(explanation.getAdvice())
-                    || !StringUtils.hasText(explanation.getWarning())) {
-                return defaultExplanation();
+            T explanation = objectMapper.readValue(cleanJsonContent(content), responseType);
+            if (!validator.test(explanation)) {
+                return defaultSupplier.get();
             }
             return explanation;
         } catch (Exception ex) {
-            return defaultExplanation();
+            return defaultSupplier.get();
         }
     }
 
@@ -80,6 +109,14 @@ public class PlantAiExplanationServiceImpl implements PlantAiExplanationService 
                 buildMessage("system", SYSTEM_PROMPT),
                 buildMessage("user", buildUserPrompt(result))
         ));
+        return payload;
+    }
+
+    private Map<String, Object> buildPromptOnlyRequestBody(String prompt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("model", deepSeekProperties.getModel());
+        payload.put("messages", List.of(buildMessage("user", prompt)));
+        payload.put("response_format", Map.of("type", "json_object"));
         return payload;
     }
 
@@ -222,6 +259,14 @@ public class PlantAiExplanationServiceImpl implements PlantAiExplanationService 
         explanation.setSummary(DEFAULT_SUMMARY);
         explanation.setAdvice(DEFAULT_ADVICE);
         explanation.setWarning(DEFAULT_WARNING);
+        return explanation;
+    }
+
+    private PlantPredictionAiVO defaultPredictionExplanation() {
+        PlantPredictionAiVO explanation = new PlantPredictionAiVO();
+        explanation.setSummary("当前环境需要再多留意一下，建议尽快帮植物把状态稳住。");
+        explanation.setAdvice(List.of("先把植物移到更稳定的位置，避免温度和光照继续波动。", "接下来一两个小时多观察一次温湿度变化，及时做小幅调整。"));
+        explanation.setRiskWarnings(List.of("如果这种状态继续维持，叶片和整体精神状态可能会慢慢变差。"));
         return explanation;
     }
 }
