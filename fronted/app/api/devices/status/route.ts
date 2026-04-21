@@ -10,7 +10,15 @@ export async function GET(req: NextRequest) {
       headers.Authorization = authorization
     }
 
-    const backendResponse = await fetch(`${BACKEND_BASE_URL}/devices/status`, {
+    const plantId = req.nextUrl.searchParams.get("plantId")
+    if (!plantId) {
+      return NextResponse.json(
+        { code: 400, message: "plantId is required", data: null },
+        { status: 400 },
+      )
+    }
+
+    const backendResponse = await fetch(`${BACKEND_BASE_URL}/devices/status?plantId=${encodeURIComponent(plantId)}`, {
       method: "GET",
       headers,
       cache: "no-store",

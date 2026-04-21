@@ -27,8 +27,9 @@ public class VisualizationController {
                                                    @RequestParam("end_time") String endTime,
                                                    @RequestParam(required = false, defaultValue = "hour") String granularity,
                                                    @RequestParam(required = false) String metrics,
+                                                   @RequestParam(required = false) Long plantId,
                                                    @RequestParam(value = "plant_type", required = false) String plantType) {
-        return Result.ok(visualizationService.getHistory(startTime, endTime, granularity, metrics, plantType));
+        return Result.ok(visualizationService.getHistory(startTime, endTime, granularity, metrics, plantId, plantType));
     }
 
     @GetMapping("/calendar")

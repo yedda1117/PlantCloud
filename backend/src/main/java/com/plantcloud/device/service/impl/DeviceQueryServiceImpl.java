@@ -37,10 +37,10 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
     private final ObjectMapper objectMapper;
 
     @Override
-    public DevicesStatusVO getDevicesStatus() {
+    public DevicesStatusVO getDevicesStatus(Long plantId) {
         List<Device> devices = deviceMapper.selectList(
                 new LambdaQueryWrapper<Device>()
-                        .eq(Device::getPlantId, DEFAULT_PLANT_ID)
+                        .eq(Device::getPlantId, plantId)
                         .in(Device::getDeviceType, List.of(DEVICE_TYPE_FILL_LIGHT, DEVICE_TYPE_FAN, DEVICE_TYPE_PIR_SENSOR))
                         .orderByAsc(Device::getId)
         );
@@ -51,7 +51,7 @@ public class DeviceQueryServiceImpl implements DeviceQueryService {
         InteractionEvent latestInfraredEvent = getLatestInfraredEvent();
 
         return DevicesStatusVO.builder()
-                .plantId(DEFAULT_PLANT_ID)
+                .plantId(plantId)
                 .light(buildCommonStatus(lightDevice))
                 .fan(buildCommonStatus(fanDevice))
                 .infrared(buildInfraredStatus(infraredDevice, latestInfraredEvent))

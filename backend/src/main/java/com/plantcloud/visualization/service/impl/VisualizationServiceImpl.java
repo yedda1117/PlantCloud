@@ -48,7 +48,7 @@ public class VisualizationServiceImpl implements VisualizationService {
     private final PlantMapper plantMapper;
 
     @Override
-    public EnvironmentHistoryVO getHistory(String startTime, String endTime, String granularity, String metrics, String plantType) {
+    public EnvironmentHistoryVO getHistory(String startTime, String endTime, String granularity, String metrics, Long plantId, String plantType) {
         LocalDateTime start = parseDateTime(startTime);
         LocalDateTime end = parseDateTime(endTime);
         if (end.isBefore(start)) {
@@ -57,7 +57,7 @@ public class VisualizationServiceImpl implements VisualizationService {
 
         String normalizedGranularity = normalizeGranularity(granularity);
         Set<String> selectedMetrics = parseMetrics(metrics);
-        Plant targetPlant = resolvePlant(plantType);
+        Plant targetPlant = resolvePlant(plantId, plantType);
 
         List<EnvironmentHistoryVO.HistoryPointVO> temperatureSeries = selectedMetrics.contains("temperature")
                 ? aggregateTemperatureHistory(targetPlant.getId(), start, end, normalizedGranularity)
@@ -136,7 +136,15 @@ public class VisualizationServiceImpl implements VisualizationService {
         return aggregateSeries(records, LightData::getCollectedAt, LightData::getLightLux, granularity);
     }
 
-    private Plant resolvePlant(String plantType) {
+    private Plant resolvePlant(Long plantId, String plantType) {
+        if (plantId != null) {
+            Plant plant = plantMapper.selectById(plantId);
+            if (plant == null) {
+                throw new IllegalArgumentException("Plant not found, plantId=" + plantId);
+            }
+            return plant;
+        }
+
         if (plantType == null || plantType.isBlank()) {
             Plant plant = plantMapper.selectById(DEFAULT_PLANT_ID);
             if (plant == null) {

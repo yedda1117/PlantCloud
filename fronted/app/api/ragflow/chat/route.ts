@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
 用户问题：
 ${message}`
 
+    console.log("[ragflow-chat] finalMessage", finalMessage)
+
     const messages = [
       ...history,
       { role: "user", content: finalMessage },
