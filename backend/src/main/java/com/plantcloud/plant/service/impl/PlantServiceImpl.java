@@ -1,16 +1,25 @@
 package com.plantcloud.plant.service.impl;
 
+import com.plantcloud.plant.dto.PlantCreateRequest;
+import com.plantcloud.plant.dto.PlantTemplateDataDTO;
+import com.plantcloud.plant.entity.Plant;
+import com.plantcloud.plant.entity.PlantTemplate;
 import com.plantcloud.common.enums.ResultCode;
 import com.plantcloud.plant.mapper.PlantMapper;
+import com.plantcloud.plant.mapper.PlantTemplateMapper;
 import com.plantcloud.plant.service.PlantAiExplanationService;
 import com.plantcloud.plant.service.PlantService;
+import com.plantcloud.plant.service.PlantTemplateValidator;
 import com.plantcloud.plant.vo.AiExplanationVO;
+import com.plantcloud.plant.vo.PlantCreateVO;
 import com.plantcloud.plant.vo.PlantRiskProfileVO;
 import com.plantcloud.plant.vo.PlantSimpleVO;
 import com.plantcloud.plant.vo.RiskAnalysisResultVO;
 import com.plantcloud.system.exception.BizException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -21,6 +30,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PlantServiceImpl implements PlantService {
 
+    private static final Long DEFAULT_OWNER_ID = 1L;
+    private static final String SOURCE_TYPE_AI = "AI";
+    private static final String STATUS_ACTIVE = "ACTIVE";
     private static final String HIGH_TEMP_RISK = "HIGH_TEMP_RISK";
     private static final String DRYNESS_RISK = "DRYNESS_RISK";
     private static final String STRONG_LIGHT_RISK = "STRONG_LIGHT_RISK";
@@ -41,11 +53,40 @@ public class PlantServiceImpl implements PlantService {
     private static final BigDecimal EXTRA_SCORE = new BigDecimal("15");
 
     private final PlantMapper plantMapper;
+    private final PlantTemplateMapper plantTemplateMapper;
     private final PlantAiExplanationService plantAiExplanationService;
+    private final PlantTemplateValidator plantTemplateValidator;
 
     @Override
     public List<PlantSimpleVO> listSimplePlants(Long ownerId) {
         return plantMapper.selectSimplePlants(ownerId);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PlantCreateVO createPlant(PlantCreateRequest request) {
+        String plantName = normalizePlantName(request.getPlantName());
+        PlantTemplateDataDTO templateData = request.getTemplateData();
+        templateData.setPlantName(plantName);
+        plantTemplateValidator.validate(templateData);
+
+        PlantTemplate plantTemplate = buildPlantTemplate(templateData);
+        plantTemplateMapper.insert(plantTemplate);
+        if (plantTemplate.getId() == null) {
+            throw new BizException(ResultCode.SYSTEM_ERROR.getCode(), "植物模板创建失败");
+        }
+
+        Plant plant = new Plant();
+        plant.setOwnerId(DEFAULT_OWNER_ID);
+        plant.setPlantName(plantName);
+        plant.setTemplateId(plantTemplate.getId());
+        plant.setStatus(STATUS_ACTIVE);
+        plantMapper.insert(plant);
+        if (plant.getId() == null) {
+            throw new BizException(ResultCode.SYSTEM_ERROR.getCode(), "植物创建失败");
+        }
+
+        return new PlantCreateVO(plant.getId(), plantTemplate.getId());
     }
 
     @Override
@@ -189,5 +230,31 @@ public class PlantServiceImpl implements PlantService {
 
     private boolean isLessThanOrEqual(BigDecimal left, BigDecimal right) {
         return left != null && right != null && left.compareTo(right) <= 0;
+    }
+
+    private String normalizePlantName(String plantName) {
+        if (!StringUtils.hasText(plantName)) {
+            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "植物名称不能为空");
+        }
+        return plantName.trim();
+    }
+
+    private PlantTemplate buildPlantTemplate(PlantTemplateDataDTO templateData) {
+        PlantTemplate plantTemplate = new PlantTemplate();
+        plantTemplate.setPlantName(templateData.getPlantName());
+        plantTemplate.setSpecies(templateData.getSpecies());
+        plantTemplate.setTempMin(templateData.getTempMin());
+        plantTemplate.setTempMax(templateData.getTempMax());
+        plantTemplate.setHumidityMin(templateData.getHumidityMin());
+        plantTemplate.setHumidityMax(templateData.getHumidityMax());
+        plantTemplate.setLightMin(templateData.getLightMin());
+        plantTemplate.setLightMax(templateData.getLightMax());
+        plantTemplate.setTempRiseSensitive(templateData.getTempRiseSensitive());
+        plantTemplate.setHumidityDropSensitive(templateData.getHumidityDropSensitive());
+        plantTemplate.setLightRiseSensitive(templateData.getLightRiseSensitive());
+        plantTemplate.setCareLevel(templateData.getCareLevel());
+        plantTemplate.setSummary(templateData.getSummary());
+        plantTemplate.setSourceType(SOURCE_TYPE_AI);
+        return plantTemplate;
     }
 }

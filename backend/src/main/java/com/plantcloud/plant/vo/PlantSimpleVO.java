@@ -7,4 +7,5 @@ public class PlantSimpleVO {
 
     private Long plantId;
     private String plantName;
+    private String status;
 }

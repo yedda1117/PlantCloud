@@ -27,4 +27,14 @@ public interface StrategyExecutionLogMapper extends BaseMapper<StrategyExecution
             WHERE strategy_id = #{strategyId}
             """)
     long countByStrategyId(@Param("strategyId") Long strategyId);
+
+    @Select("""
+            SELECT id, strategy_id, plant_id, trigger_source, trigger_metric_value, trigger_payload,
+                   execution_result, result_message, command_log_id, executed_at
+            FROM strategy_execution_logs
+            WHERE strategy_id = #{strategyId}
+            ORDER BY executed_at DESC
+            LIMIT 1
+            """)
+    StrategyExecutionLog selectLatestByStrategyId(@Param("strategyId") Long strategyId);
 }

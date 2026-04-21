@@ -125,11 +125,21 @@ export async function getHomeRealtime(plantId: number, token: string) {
     parseResponse<PageResult<AlertItem>>(alertLogsResponse),
   ])
 
-  const selectedPlantAlerts = alerts.filter((alert) => alert.plantId === plantId)
-  const effectiveAlerts = selectedPlantAlerts.length > 0 ? selectedPlantAlerts : alerts
+  const effectiveAlerts = alerts.filter((alert) => alert.plantId === plantId)
   const allLogs = alertLogs.records || []
-  const selectedPlantLogs = allLogs.filter((log) => log.plantId === plantId)
-  const effectiveLogs = selectedPlantLogs.length > 0 ? selectedPlantLogs : allLogs
+  const effectiveLogs = allLogs.filter((log) => log.plantId === plantId)
+  const effectiveInfrared =
+    infrared.plantId === plantId
+      ? infrared
+      : {
+          plantId,
+          currentDetected: false,
+          latestEventTitle: null,
+          latestEventContent: null,
+          latestDetectedAt: null,
+          approachCount: 0,
+          leaveCount: 0,
+        }
   const tiltAlerts = effectiveAlerts.filter((alert) => (alert.alertType || "").toUpperCase() === "TILT_ABNORMAL")
   const visibleAlerts = effectiveAlerts.filter((alert) => (alert.alertType || "").toUpperCase() !== "TILT_ABNORMAL")
   const latestTiltAlert = tiltAlerts[0] || null
@@ -137,7 +147,7 @@ export async function getHomeRealtime(plantId: number, token: string) {
 
   return {
     environment,
-    infrared,
+    infrared: effectiveInfrared,
     activityLogs: effectiveLogs,
     tilt: {
       count: tiltAlerts.length,

@@ -26,8 +26,8 @@ public class DeviceController {
     private final DeviceBindingService deviceBindingService;
 
     @GetMapping("/status")
-    public Result<DevicesStatusVO> getDevicesStatus() {
-        return Result.ok(deviceQueryService.getDevicesStatus());
+    public Result<DevicesStatusVO> getDevicesStatus(@RequestParam Long plantId) {
+        return Result.ok(deviceQueryService.getDevicesStatus(plantId));
     }
 
     @GetMapping("/infrared")

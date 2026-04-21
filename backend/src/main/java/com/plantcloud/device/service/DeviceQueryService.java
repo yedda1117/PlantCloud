@@ -5,7 +5,7 @@ import com.plantcloud.device.vo.InfraredStatusVO;
 
 public interface DeviceQueryService {
 
-    DevicesStatusVO getDevicesStatus();
+    DevicesStatusVO getDevicesStatus(Long plantId);
 
     InfraredStatusVO getInfraredStatus(String date);
 }

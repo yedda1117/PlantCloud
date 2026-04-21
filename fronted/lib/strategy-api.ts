@@ -41,6 +41,32 @@ export type StrategyListParams = {
   strategyType?: string
 }
 
+export type StrategyExecutionLogItem = {
+  id: string
+  strategyId: string
+  plantId: string
+  triggerSource: string
+  triggerMetricValue?: number | null
+  triggerPayload?: string | null
+  executionResult: string
+  resultMessage?: string | null
+  commandLogId?: string | null
+  executedAt?: string | null
+}
+
+export type PageResult<T> = {
+  current: number
+  pageSize: number
+  total: number
+  records: T[]
+}
+
+export type StrategyExecutionLogListParams = {
+  strategyId: string | number
+  pageNum?: number
+  pageSize?: number
+}
+
 export type StrategyUpsertPayload = {
   plantId: string | number
   createdBy?: string | number | null
@@ -108,4 +134,13 @@ export function deleteStrategy(strategyId: string) {
   return request<void>(`/api/strategies/${strategyId}`, {
     method: "DELETE",
   })
+}
+
+export function listStrategyExecutionLogs(params: StrategyExecutionLogListParams) {
+  const search = new URLSearchParams()
+  search.set("page_num", String(params.pageNum ?? 1))
+  search.set("page_size", String(params.pageSize ?? 10))
+  return request<PageResult<StrategyExecutionLogItem>>(
+    `/api/strategies/${encodeURIComponent(String(params.strategyId))}/logs?${search.toString()}`,
+  )
 }

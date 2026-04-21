@@ -25,6 +25,6 @@ export type DevicesStatus = {
   infrared: InfraredDeviceStatus | null
 }
 
-export function getDevicesStatus() {
-  return request<DevicesStatus>("/api/devices/status")
+export function getDevicesStatus(plantId: number | string) {
+  return request<DevicesStatus>(`/api/devices/status?plantId=${encodeURIComponent(String(plantId))}`)
 }

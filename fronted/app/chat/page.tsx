@@ -21,6 +21,7 @@ import {
 import { getDevicesStatus } from "@/lib/device-api"
 import { getPlantContextPayload, type PlantContextPayload } from "@/lib/plant-context"
 import { createStrategy, type StrategyUpsertPayload } from "@/lib/strategy-api"
+import { usePlantSelection } from "@/context/plant-selection"
 import {
   Upload,
   FileText,
@@ -218,6 +219,7 @@ function formatProposalAction(proposal: StrategyAgentProposal) {
 }
 
 export default function ChatPage() {
+  const { currentPlant } = usePlantSelection()
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages)
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -279,7 +281,7 @@ export default function ChatPage() {
     setIsLoading(true)
 
     try {
-      const plantContext = await getPlantContextPayload()
+      const plantContext = await getPlantContextPayload(currentPlant)
       const history = messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -325,6 +327,7 @@ export default function ChatPage() {
           },
           body: JSON.stringify({
             message: userText,
+            chatAnswer: data.answer || "",
             plantContext,
             plantContextText: plantContext.contextText,
           }),
@@ -366,7 +369,7 @@ export default function ChatPage() {
         throw new Error("当前登录信息缺少 userId，请重新登录后再新增策略")
       }
 
-      const devicesStatus = await getDevicesStatus()
+      const devicesStatus = await getDevicesStatus(pendingPlantContext.selectedPlant.plantId)
       const targetDeviceId =
         pendingProposal.actionType === "AUTO_LIGHT"
           ? (devicesStatus?.light?.deviceId != null ? String(devicesStatus.light.deviceId) : null)

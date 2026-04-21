@@ -6,6 +6,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plantcloud.common.enums.ResultCode;
 import com.plantcloud.device.entity.Device;
 import com.plantcloud.device.mapper.DeviceMapper;
+import com.plantcloud.monitoring.entity.HumidityData;
+import com.plantcloud.monitoring.entity.LightData;
+import com.plantcloud.monitoring.entity.TemperatureData;
+import com.plantcloud.monitoring.mapper.HumidityDataMapper;
+import com.plantcloud.monitoring.mapper.LightDataMapper;
+import com.plantcloud.monitoring.mapper.TemperatureDataMapper;
 import com.plantcloud.plant.entity.Plant;
 import com.plantcloud.plant.mapper.PlantMapper;
 import com.plantcloud.strategy.dto.StrategyLogQueryDTO;
@@ -29,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
@@ -67,6 +74,9 @@ public class StrategyServiceImpl implements StrategyService {
     private final PlantMapper plantMapper;
     private final UserMapper userMapper;
     private final DeviceMapper deviceMapper;
+    private final TemperatureDataMapper temperatureDataMapper;
+    private final HumidityDataMapper humidityDataMapper;
+    private final LightDataMapper lightDataMapper;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -90,6 +100,7 @@ public class StrategyServiceImpl implements StrategyService {
         validateStrategy(strategy, request);
         validateConflict(strategy, null);
         strategyMapper.insert(strategy);
+        evaluateStrategyAgainstLatestData(strategy);
         return toStrategyVO(requireStrategy(strategy.getId()));
     }
 
@@ -102,6 +113,7 @@ public class StrategyServiceImpl implements StrategyService {
         validateStrategy(strategy, request);
         validateConflict(strategy, strategyId);
         strategyMapper.updateById(strategy);
+        evaluateStrategyAgainstLatestData(strategy);
         return toStrategyVO(requireStrategy(strategyId));
     }
 
@@ -129,6 +141,116 @@ public class StrategyServiceImpl implements StrategyService {
                 .total(total)
                 .records(records)
                 .build();
+    }
+
+    private void evaluateStrategyAgainstLatestData(Strategy strategy) {
+        if (!Boolean.TRUE.equals(strategy.getEnabled()) || !TYPE_CONDITION.equals(strategy.getStrategyType())) {
+            return;
+        }
+        BigDecimal currentValue = getLatestMetricValue(strategy);
+        if (currentValue == null || !isConditionTriggered(strategy, currentValue)) {
+            return;
+        }
+
+        String payload = buildTriggerPayload(strategy, currentValue);
+        StrategyExecutionLog latestLog = strategyExecutionLogMapper.selectLatestByStrategyId(strategy.getId());
+        if (isDuplicateTrigger(latestLog, currentValue, payload)) {
+            return;
+        }
+
+        StrategyExecutionLog log = new StrategyExecutionLog();
+        log.setStrategyId(strategy.getId());
+        log.setPlantId(strategy.getPlantId());
+        log.setTriggerSource("REALTIME_DATA");
+        log.setTriggerMetricValue(currentValue);
+        log.setTriggerPayload(payload);
+        log.setExecutionResult("TRIGGERED");
+        log.setResultMessage(buildTriggerResultMessage(strategy, currentValue));
+        log.setExecutedAt(LocalDateTime.now());
+        strategyExecutionLogMapper.insert(log);
+    }
+
+    private boolean isDuplicateTrigger(StrategyExecutionLog latestLog, BigDecimal currentValue, String payload) {
+        if (latestLog == null) {
+            return false;
+        }
+        if (latestLog.getTriggerMetricValue() != null
+                && latestLog.getTriggerMetricValue().compareTo(currentValue) == 0) {
+            return true;
+        }
+        return payload.equals(latestLog.getTriggerPayload());
+    }
+
+    private BigDecimal getLatestMetricValue(Strategy strategy) {
+        return switch (strategy.getMetricType()) {
+            case "TEMPERATURE" -> {
+                TemperatureData data = temperatureDataMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TemperatureData>()
+                        .eq(TemperatureData::getPlantId, strategy.getPlantId())
+                        .orderByDesc(TemperatureData::getCollectedAt)
+                        .last("limit 1"));
+                yield data == null ? null : data.getTemperature();
+            }
+            case "HUMIDITY" -> {
+                HumidityData data = humidityDataMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<HumidityData>()
+                        .eq(HumidityData::getPlantId, strategy.getPlantId())
+                        .orderByDesc(HumidityData::getCollectedAt)
+                        .last("limit 1"));
+                yield data == null ? null : data.getHumidity();
+            }
+            case "LIGHT" -> {
+                LightData data = lightDataMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<LightData>()
+                        .eq(LightData::getPlantId, strategy.getPlantId())
+                        .orderByDesc(LightData::getCollectedAt)
+                        .last("limit 1"));
+                yield data == null ? null : data.getLightLux();
+            }
+            default -> null;
+        };
+    }
+
+    private boolean isConditionTriggered(Strategy strategy, BigDecimal value) {
+        return switch (strategy.getOperatorType()) {
+            case OPERATOR_LT -> strategy.getThresholdMin() != null
+                    && value.compareTo(strategy.getThresholdMin()) < 0;
+            case OPERATOR_LTE -> strategy.getThresholdMin() != null
+                    && value.compareTo(strategy.getThresholdMin()) <= 0;
+            case OPERATOR_GT -> strategy.getThresholdMin() != null
+                    && value.compareTo(strategy.getThresholdMin()) > 0;
+            case OPERATOR_GTE -> strategy.getThresholdMin() != null
+                    && value.compareTo(strategy.getThresholdMin()) >= 0;
+            case OPERATOR_EQ -> strategy.getThresholdMin() != null
+                    && value.compareTo(strategy.getThresholdMin()) == 0;
+            case OPERATOR_BETWEEN -> strategy.getThresholdMin() != null
+                    && strategy.getThresholdMax() != null
+                    && (value.compareTo(strategy.getThresholdMin()) < 0
+                    || value.compareTo(strategy.getThresholdMax()) > 0);
+            default -> false;
+        };
+    }
+
+    private String buildTriggerPayload(Strategy strategy, BigDecimal currentValue) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("strategyId", strategy.getId());
+        payload.put("strategyName", strategy.getStrategyName());
+        payload.put("metricType", strategy.getMetricType());
+        payload.put("operatorType", strategy.getOperatorType());
+        payload.put("thresholdMin", strategy.getThresholdMin());
+        payload.put("thresholdMax", strategy.getThresholdMax());
+        payload.put("actionType", strategy.getActionType());
+        payload.put("actionValue", strategy.getActionValue());
+        payload.put("value", currentValue);
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException ex) {
+            return payload.toString();
+        }
+    }
+
+    private String buildTriggerResultMessage(Strategy strategy, BigDecimal currentValue) {
+        return "策略触发：" + strategy.getStrategyName()
+                + "，当前值=" + currentValue
+                + "，条件=" + strategy.getMetricType() + " " + strategy.getOperatorType() + " " + strategy.getThresholdMin()
+                + "，动作=" + strategy.getActionType();
     }
 
     private Strategy buildStrategy(StrategyUpsertDTO request, Strategy existing) {

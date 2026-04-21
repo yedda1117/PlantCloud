@@ -7,6 +7,6 @@ import lombok.Data;
 @Data
 public class BaseEntity {
 
-    @TableId(type = IdType.AUTO)
+    @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 }

@@ -15,8 +15,17 @@ export class ApiError extends Error {
 }
 
 export async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  if (typeof window !== "undefined" && !headers.has("Authorization")) {
+    const token = window.localStorage.getItem("plantcloud_token")
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`)
+    }
+  }
+
   const response = await fetch(input, {
     ...init,
+    headers,
     cache: "no-store",
   })
 
