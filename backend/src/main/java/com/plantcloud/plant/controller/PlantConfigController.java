@@ -2,6 +2,7 @@ package com.plantcloud.plant.controller;
 
 import com.plantcloud.common.result.Result;
 import com.plantcloud.plant.dto.PlantAiGenerateRequest;
+import com.plantcloud.plant.dto.PlantTemplateCreateRequest;
 import com.plantcloud.plant.service.PlantConfigService;
 import com.plantcloud.plant.vo.PlantTemplateGenerateVO;
 import com.plantcloud.plant.vo.PlantTemplatePublicVO;
@@ -28,6 +29,11 @@ public class PlantConfigController {
     @PostMapping("/ai-generate")
     public Result<PlantTemplateGenerateVO> generateTemplate(@Valid @RequestBody PlantAiGenerateRequest request) {
         return Result.ok(plantConfigService.generateTemplate(request));
+    }
+
+    @PostMapping("/templates")
+    public Result<PlantTemplatePublicVO> createTemplate(@Valid @RequestBody PlantTemplateCreateRequest request) {
+        return Result.ok(plantConfigService.createTemplate(request));
     }
 
     @GetMapping("/templates")
