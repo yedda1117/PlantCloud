@@ -47,8 +47,8 @@ public class SecurityConfig {
                                 "/calendar/**",
                                 "/plant-config/**",
                                 "/plants/**",
-                                "/devices/**"
-
+                                "/devices/**",
+                                "/control/**"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

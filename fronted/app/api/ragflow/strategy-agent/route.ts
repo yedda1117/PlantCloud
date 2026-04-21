@@ -87,16 +87,38 @@ function average(values: Array<number | null | undefined>) {
   return validValues.reduce((sum, value) => sum + value, 0) / validValues.length
 }
 
-function fallbackProposal(plantContext: any): StrategyProposal | null {
+function fallbackProposal(plantContext: any, chatAnswer?: unknown): StrategyProposal | null {
   const plantName = plantContext?.selectedPlant?.name || "当前植物"
   const current = plantContext?.realtime?.environment
   const history = plantContext?.sevenDayHistory
+  const answerText = typeof chatAnswer === "string" ? chatAnswer : ""
   const currentLight = current?.lightLux
   const currentHumidity = current?.humidity
   const currentTemperature = current?.temperature
   const avgLight = average((history?.light || []).map((point: any) => point.value))
   const avgHumidity = average((history?.humidity || []).map((point: any) => point.value))
   const avgTemperature = average((history?.temperature || []).map((point: any) => point.value))
+
+  if (
+    /光照/.test(answerText) &&
+    /(不足|偏低|低于|补光|调整)/.test(answerText) &&
+    ((currentLight != null && currentLight < 1000) || (avgLight != null && avgLight < 1000))
+  ) {
+    return {
+      shouldSuggest: true,
+      detected: `${plantName} 光照不足`,
+      strategyName: `${plantName} 光照不足自动补光`,
+      metricType: "LIGHT",
+      operatorType: "LT",
+      thresholdMin: 1000,
+      actionType: "AUTO_LIGHT",
+      actionValue: "ON",
+      timeLimitEnabled: true,
+      startTime: "08:00",
+      endTime: "20:00",
+      reason: "普通问答已基于知识库判断当前植物光照不足，且当前光照或近七日平均光照低于 1000 lux，建议新增自动补光策略。",
+    }
+  }
 
   if (currentLight != null && (currentLight < 300 || (avgLight != null && avgLight < 500))) {
     return {
@@ -154,7 +176,7 @@ function fallbackProposal(plantContext: any): StrategyProposal | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, plantContext, plantContextText } = await req.json()
+    const { message, chatAnswer, plantContext, plantContextText } = await req.json()
 
     let proposal: StrategyProposal | null = null
     let agentAnswer = ""
@@ -175,14 +197,20 @@ export async function POST(req: NextRequest) {
         "光照不足通常建议 AUTO_LIGHT + ON，可按傍晚到夜间生成时间范围；温度过高通常建议 AUTO_FAN + HIGH；湿度偏低且没有浇水设备时建议 NOTIFY_USER + INFO。",
         "必须阅读“当前已有自动化策略”：如果已有启用策略已经覆盖同一植物、同一指标、同一动作和相近阈值，请输出 {\"shouldSuggest\":false}，不要重复新增会与数据库冲突的策略。",
         "只有当前策略列表没有覆盖该风险，或新策略条件/动作明显不同且不会重复时，才输出 shouldSuggest=true。",
+        "普通问答结论如果已经基于知识库判断当前植物需要调整策略，且当前已有策略没有覆盖该问题，请输出 shouldSuggest=true 并生成一条可保存策略。",
         "如果不需要新增策略，输出 {\"shouldSuggest\":false}。",
         "",
         "植物数据：",
         plantContextText,
         "",
+        "普通问答结论：",
+        typeof chatAnswer === "string" ? chatAnswer : "",
+        "",
         "用户问题：",
         message,
       ].join("\n")
+
+      console.log("[strategy-agent] prompt", prompt)
 
       const resp = await fetch(endpoint, {
         method: "POST",
@@ -203,6 +231,7 @@ export async function POST(req: NextRequest) {
       }
 
       agentAnswer = data?.choices?.[0]?.message?.content || ""
+      console.log("[strategy-agent] answer", agentAnswer)
       const jsonText = extractJsonObject(agentAnswer)
       if (jsonText) {
         try {
@@ -213,7 +242,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    proposal = proposal ?? fallbackProposal(plantContext)
+    proposal = proposal ?? fallbackProposal(plantContext, chatAnswer)
+    console.log("[strategy-agent] proposal", proposal)
 
     return NextResponse.json({
       success: true,

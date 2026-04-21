@@ -18,5 +18,6 @@
         "**/backend/uploads/**": true,
         "**/fronted/.next/**": true,
         "**/fronted/node_modules/**": true
-    }
+    },
+    "java.compile.nullAnalysis.mode": "automatic"
 }

@@ -123,6 +123,7 @@ export async function getSevenDayEnvironmentHistory(
     end_time: range.end,
     granularity: "day",
     metrics: "temperature,humidity,light",
+    plantId: String(plant.plantId),
     plant_type: plant.name,
   })
 
@@ -193,9 +194,9 @@ export function buildPlantContextText(payload: Omit<PlantContextPayload, "contex
   ].join("\n")
 }
 
-export async function getPlantContextPayload(): Promise<PlantContextPayload> {
+export async function getPlantContextPayload(selectedPlantOverride?: SelectedPlantSnapshot): Promise<PlantContextPayload> {
   const token = typeof window === "undefined" ? "" : window.localStorage.getItem("plantcloud_token") || ""
-  const selectedPlant = readSelectedPlantSnapshot()
+  const selectedPlant = selectedPlantOverride ?? readSelectedPlantSnapshot()
   const [realtimeResult, historyResult, strategiesResult] = await Promise.allSettled([
     getHomeRealtime(selectedPlant.plantId, token),
     getSevenDayEnvironmentHistory(selectedPlant, token),

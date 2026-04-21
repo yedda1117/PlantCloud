@@ -581,7 +581,7 @@ function SettingsPageContent() {
   const loadDevicesStatus = async () => {
     setDevicesLoading(true)
     try {
-      const status = await getDevicesStatus()
+      const status = await getDevicesStatus(currentPlantApiId)
       setDevicesStatus(status)
     } catch (error) {
       toast({

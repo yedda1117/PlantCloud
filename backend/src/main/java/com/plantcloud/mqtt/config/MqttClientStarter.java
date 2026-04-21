@@ -4,12 +4,14 @@ import com.plantcloud.config.MqttProperties;
 import com.plantcloud.mqtt.listener.DeviceAlertMqttCallback;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -21,6 +23,7 @@ public class MqttClientStarter {
     private final MqttConnectOptions mqttConnectOptions;
     private final DeviceAlertMqttCallback deviceAlertMqttCallback;
 
+    @Getter
     private MqttClient mqttClient;
 
     @PostConstruct
@@ -39,6 +42,11 @@ public class MqttClientStarter {
         } catch (MqttException ex) {
             throw new IllegalStateException("Failed to start MQTT client", ex);
         }
+    }
+
+    @Bean
+    public MqttClient mqttClient() {
+        return mqttClient;
     }
 
     @PreDestroy
