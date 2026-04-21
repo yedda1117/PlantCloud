@@ -67,11 +67,7 @@ public class PlantServiceImpl implements PlantService {
     public PlantCreateVO createPlant(PlantCreateRequest request) {
         String plantName = normalizePlantName(request.getPlantName());
         PlantTemplateDataDTO templateData = request.getTemplateData();
-        templateData.setPlantName(normalizePlantName(templateData.getPlantName()));
-        if (!plantName.equals(templateData.getPlantName())) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "模板植物名称与请求不一致");
-        }
-
+        templateData.setPlantName(plantName);
         plantTemplateValidator.validate(templateData);
 
         PlantTemplate plantTemplate = buildPlantTemplate(templateData);

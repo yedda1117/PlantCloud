@@ -13,9 +13,12 @@ import java.util.List;
 public interface PlantMapper extends BaseMapper<Plant> {
 
     @Select("""
-            SELECT id AS plantId, plant_name AS plantName
+            SELECT id AS plantId,
+                   plant_name AS plantName,
+                   status
             FROM plants
             WHERE status = 'ACTIVE' AND owner_id = #{ownerId}
+            ORDER BY id ASC
             """)
     List<PlantSimpleVO> selectSimplePlants(@Param("ownerId") Long ownerId);
 

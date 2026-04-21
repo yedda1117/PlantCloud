@@ -9,10 +9,13 @@ import com.plantcloud.plant.service.PlantConfigService;
 import com.plantcloud.plant.service.PlantTemplateAiService;
 import com.plantcloud.plant.service.PlantTemplateValidator;
 import com.plantcloud.plant.vo.PlantTemplateGenerateVO;
+import com.plantcloud.plant.vo.PlantTemplatePublicVO;
 import com.plantcloud.system.exception.BizException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +43,11 @@ public class PlantConfigServiceImpl implements PlantConfigService {
         }
 
         return toGenerateVO(templateData);
+    }
+
+    @Override
+    public List<PlantTemplatePublicVO> listPublicTemplates() {
+        return plantTemplateMapper.selectPublicTemplates();
     }
 
     private String normalizePlantName(String plantName) {

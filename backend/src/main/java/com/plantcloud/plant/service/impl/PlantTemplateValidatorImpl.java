@@ -22,26 +22,41 @@ public class PlantTemplateValidatorImpl implements PlantTemplateValidator {
     @Override
     public void validate(PlantTemplateDataDTO templateData) {
         if (templateData == null) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "templateData不能为空");
-        }
-        if (!StringUtils.hasText(templateData.getPlantName())) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "植物名称不能为空");
+            throw badRequest("templateData is required");
         }
 
-        validateRange(templateData.getTempMin(), templateData.getTempMax(), ZERO, TEMP_MAX_LIMIT, "温度范围不合法");
-        validateRange(templateData.getHumidityMin(), templateData.getHumidityMax(), ZERO, HUMIDITY_MAX_LIMIT, "湿度范围不合法");
-        validateRange(templateData.getLightMin(), templateData.getLightMax(), ZERO, LIGHT_MAX_LIMIT, "光照范围不合法");
+        validateRange(
+                templateData.getTempMin(),
+                templateData.getTempMax(),
+                ZERO,
+                TEMP_MAX_LIMIT,
+                "temperature range is invalid: tempMin must be less than tempMax and both values must be between 0 and 45"
+        );
+        validateRange(
+                templateData.getHumidityMin(),
+                templateData.getHumidityMax(),
+                ZERO,
+                HUMIDITY_MAX_LIMIT,
+                "humidity range is invalid: humidityMin must be less than humidityMax and both values must be between 0 and 100"
+        );
+        validateRange(
+                templateData.getLightMin(),
+                templateData.getLightMax(),
+                ZERO,
+                LIGHT_MAX_LIMIT,
+                "light range is invalid: lightMin must be less than lightMax and both values must be between 0 and 100000"
+        );
 
-        validateSensitive(templateData.getTempRiseSensitive());
-        validateSensitive(templateData.getHumidityDropSensitive());
-        validateSensitive(templateData.getLightRiseSensitive());
+        validateSensitive(templateData.getTempRiseSensitive(), "tempRiseSensitive");
+        validateSensitive(templateData.getHumidityDropSensitive(), "humidityDropSensitive");
+        validateSensitive(templateData.getLightRiseSensitive(), "lightRiseSensitive");
 
         if (!isValidCareLevel(templateData.getCareLevel())) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "养护难度仅支持easy、medium、hard");
+            throw badRequest("careLevel only supports easy, medium, or hard");
         }
 
         if (StringUtils.hasText(templateData.getSummary()) && templateData.getSummary().length() > SUMMARY_MAX_LENGTH) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "养护说明长度不能超过200字");
+            throw badRequest("summary must not exceed 200 characters");
         }
     }
 
@@ -54,17 +69,21 @@ public class PlantTemplateValidatorImpl implements PlantTemplateValidator {
                 || min.compareTo(max) >= 0
                 || min.compareTo(lowerLimit) < 0
                 || max.compareTo(upperLimit) > 0) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), message);
+            throw badRequest(message);
         }
     }
 
-    private void validateSensitive(BigDecimal value) {
+    private void validateSensitive(BigDecimal value, String fieldName) {
         if (value == null || value.compareTo(ZERO) < 0 || value.compareTo(SENSITIVE_MAX_LIMIT) > 0) {
-            throw new BizException(ResultCode.BAD_REQUEST.getCode(), "敏感度必须在0到1之间");
+            throw badRequest(fieldName + " must be between 0 and 1");
         }
     }
 
     private boolean isValidCareLevel(String careLevel) {
         return "easy".equals(careLevel) || "medium".equals(careLevel) || "hard".equals(careLevel);
+    }
+
+    private BizException badRequest(String message) {
+        return new BizException(ResultCode.BAD_REQUEST.getCode(), message);
     }
 }

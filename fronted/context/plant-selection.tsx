@@ -28,6 +28,7 @@ export type PlantOption = {
   id: string
   plantId: number
   name: string
+  status?: "ACTIVE" | "INACTIVE" | "DELETED"
   /** emoji 根据 plantId 循环取 */
   emoji: string
 }
@@ -53,6 +54,7 @@ function formatPlantData(data: any[]): PlantOption[] {
     id: `p${item.plantId}`, 
     plantId: item.plantId,
     name: item.plantName,
+    status: item.status,
     emoji: EMOJI_POOL[(item.plantId - 1) % EMOJI_POOL.length],
   }))
 }
