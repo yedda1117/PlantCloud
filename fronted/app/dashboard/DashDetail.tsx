@@ -632,14 +632,14 @@ export default function DashDetail({ plant, onBack }: Props) {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-9">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-10">
           <Card className="lg:col-span-4">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="text-sm">近 24 小时光照曲线</CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <ResponsiveContainer width="100%" height={170}>
-                <ComposedChart data={dayChartData} margin={{ top: 8, right: 36, left: -12, bottom: 0 }}>
+              <ResponsiveContainer width="100%" height={290}>
+                <ComposedChart data={dayChartData} margin={{ top: 10, right: 28, left: -8, bottom: 2 }}>
                   <defs>
                     <linearGradient id="lightGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.55} />
@@ -680,10 +680,33 @@ export default function DashDetail({ plant, onBack }: Props) {
                   <Line yAxisId="switch" type="stepAfter" dataKey="supplemental" stroke="#16a34a" strokeDasharray="6 3" dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
+              <div className="mt-2 flex flex-wrap items-center gap-4 px-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-block h-0.5 w-5 rounded-full bg-amber-500" />
+                  <span className="text-xs text-muted-foreground">{"\u5149\u7167"}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex w-5 items-center gap-0.5">
+                    <span className="h-0.5 w-1.5 rounded-full bg-green-600" />
+                    <span className="h-0.5 w-1.5 rounded-full bg-green-600" />
+                    <span className="h-0.5 w-1.5 rounded-full bg-green-600" />
+                  </span>
+                  <span className="text-xs text-muted-foreground">{"\u8865\u5149\u706f\u5f00\u542f"}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="inline-flex w-5 items-center gap-0.5">
+                    <span className="h-0.5 w-1 rounded-full bg-slate-400" />
+                    <span className="h-0.5 w-1 rounded-full bg-slate-400" />
+                    <span className="h-0.5 w-1 rounded-full bg-slate-400" />
+                    <span className="h-0.5 w-1 rounded-full bg-slate-400" />
+                  </span>
+                  <span className="text-xs text-muted-foreground">{"\u8865\u5149\u9608\u503c 500 lux"}</span>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-5">
+          <Card className="lg:col-span-6">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-sm">
                 <div className="flex items-center gap-2">

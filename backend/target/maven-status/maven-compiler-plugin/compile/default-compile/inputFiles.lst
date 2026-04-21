@@ -32,6 +32,8 @@ E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\compa
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\companion\service\CompanionService.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\companion\service\impl\CompanionServiceImpl.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\companion\vo\CompanionEventVO.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\config\DeepSeekConfig.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\config\DeepSeekProperties.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\config\MqttClientConfig.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\config\MqttProperties.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\config\MybatisPlusConfig.java
@@ -108,8 +110,17 @@ E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\photo
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\photo\service\impl\PhotoServiceImpl.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\photo\service\PhotoService.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\photo\vo\PhotoLogVO.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\controller\PlantController.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\entity\Plant.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\mapper\PlantMapper.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\service\impl\PlantAiExplanationServiceImpl.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\service\impl\PlantServiceImpl.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\service\PlantAiExplanationService.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\service\PlantService.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\vo\AiExplanationVO.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\vo\PlantRiskProfileVO.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\vo\PlantSimpleVO.java
+E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\plant\vo\RiskAnalysisResultVO.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\PlantCloudApplication.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\qa\controller\QaController.java
 E:\Downloads\shixi\git\PlantCloud_new\backend\src\main\java\com\plantcloud\qa\dto\QaAskRequest.java

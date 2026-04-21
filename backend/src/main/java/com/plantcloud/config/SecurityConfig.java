@@ -45,18 +45,13 @@ public class SecurityConfig {
                                 "/strategies/**",
                                 "/alerts/**",
                                 "/calendar/**",
-<<<<<<< HEAD
-                                "/devices/**",
-                                // ✅ 添加这一行：允许控制接口无需认证
-                                "/control/**"
-=======
                                 "/plants/**",
-                                "/devices/**"
-
->>>>>>> 6e43839fd8fe98fdc0d5be98124959d3980dcb35
+                                "/devices/**",
+                                "/control/**"
                         ).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 

@@ -37,16 +37,53 @@ function formatLogTime(value: string | null | undefined) {
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
-function getLogVisualType(status: string | null | undefined) {
-  switch ((status || "").toUpperCase()) {
-    case "UNRESOLVED": return "error"
-    case "RESOLVED":   return "success"
-    default:           return "info"
-  }
+function getLogText(title: string | null | undefined) {
+  return title || "\u544a\u8b66\u65e5\u5fd7"
 }
 
-function getLogText(title: string | null | undefined) {
-  return title || "告警日志"
+function getSeverityMeta(severity: string | null | undefined) {
+  switch ((severity || "").toUpperCase()) {
+    case "CRITICAL":
+      return {
+        label: "\u7d27\u6025",
+        cardClass: "border-red-200 bg-red-50/80 hover:bg-red-50",
+        iconClass: "bg-red-100 text-red-500",
+        titleClass: "text-red-950",
+        badgeClass: "bg-red-500 text-white hover:bg-red-500",
+      }
+    case "HIGH":
+      return {
+        label: "\u4e25\u91cd",
+        cardClass: "border-red-200 bg-red-50/70 hover:bg-red-50",
+        iconClass: "bg-red-100 text-red-500",
+        titleClass: "text-red-950",
+        badgeClass: "bg-red-100 text-red-700 hover:bg-red-100",
+      }
+    case "MEDIUM":
+      return {
+        label: "\u8b66\u544a",
+        cardClass: "border-amber-200 bg-amber-50/80 hover:bg-amber-50",
+        iconClass: "bg-amber-100 text-amber-600",
+        titleClass: "text-amber-950",
+        badgeClass: "bg-amber-100 text-amber-700 hover:bg-amber-100",
+      }
+    case "LOW":
+      return {
+        label: "\u63d0\u793a",
+        cardClass: "border-sky-200 bg-sky-50/80 hover:bg-sky-50",
+        iconClass: "bg-sky-100 text-sky-600",
+        titleClass: "text-sky-950",
+        badgeClass: "bg-sky-100 text-sky-700 hover:bg-sky-100",
+      }
+    default:
+      return {
+        label: "\u672a\u77e5",
+        cardClass: "border-border bg-muted/50 hover:bg-muted",
+        iconClass: "bg-slate-100 text-slate-500",
+        titleClass: "text-foreground",
+        badgeClass: "bg-slate-100 text-slate-600 hover:bg-slate-100",
+      }
+  }
 }
 
 export default function HomePage() {
@@ -183,24 +220,26 @@ export default function HomePage() {
                   >
                     {activityLogs.length > 0 ? (
                       activityLogs.map((log, index) => {
-                        const visualType = getLogVisualType(log.status)
+                        const severityMeta = getSeverityMeta(log.severity)
                         return (
                           <div
                             key={`${log.id}-${index}`}
-                            className="flex items-start gap-3 rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted"
+                            className={`flex items-center gap-3 rounded-2xl border p-3 transition-colors ${severityMeta.cardClass}`}
                           >
-                            <span className="whitespace-nowrap text-xs font-mono text-muted-foreground">
-                              [{formatLogTime(log.createdAt)}]
+                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${severityMeta.iconClass}`}>
+                              <AlertTriangle className="h-4 w-4" />
                             </span>
-                            <span
-                              className={`flex-1 text-sm ${
-                                visualType === "error"   ? "text-destructive"
-                                : visualType === "success" ? "text-primary"
-                                : "text-foreground"
-                              }`}
-                            >
-                              {getLogText(log.title)}
-                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className={`truncate text-sm font-medium ${severityMeta.titleClass}`}>
+                                {getLogText(log.title)}
+                              </p>
+                              <p className="mt-1 text-xs font-mono text-muted-foreground">
+                                {formatLogTime(log.createdAt)}
+                              </p>
+                            </div>
+                            <Badge className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${severityMeta.badgeClass}`}>
+                              {severityMeta.label}
+                            </Badge>
                           </div>
                         )
                       })
@@ -228,16 +267,16 @@ export default function HomePage() {
                 </CardHeader>
                 <CardContent className="flex flex-col items-center justify-center flex-1 min-h-0 py-3">
                   <div className="relative mb-3 w-full flex justify-center flex-1 min-h-0">
-                    <div className="border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-xs flex items-center justify-center">
-                      <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl scale-150" />
-                      <div className="scale-110">
+                    <div className="relative border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-xs flex items-center justify-center">
+                      <div className="pointer-events-none absolute inset-0 bg-primary/5 rounded-full blur-3xl scale-150" />
+                      <div className="relative z-10 scale-110">
                         <PixelPlant state={plantState} size="xl" />
                       </div>
                     </div>
                   </div>
 
                   {/* 控制面板 */}
-                  <div className="flex items-center justify-between w-full max-w-xl bg-muted/30 rounded-2xl p-4 border">
+                  <div className="pointer-events-auto relative z-20 flex shrink-0 items-center justify-between w-full max-w-xl bg-muted/30 rounded-2xl p-4 border">
                     <DeviceControl type="light" isOn={lightOn} onToggle={setLightOn} />
                     <div className="w-px h-8 bg-border mx-2" />
                     <DeviceControl type="fan" isOn={fanOn} onToggle={setFanOn} />
