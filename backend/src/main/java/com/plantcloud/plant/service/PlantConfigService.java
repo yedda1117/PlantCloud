@@ -13,6 +13,8 @@ public interface PlantConfigService {
 
     PlantTemplatePublicVO createTemplate(PlantTemplateCreateRequest request);
 
+    PlantTemplatePublicVO updateTemplateByPlantId(Long plantId, PlantTemplateCreateRequest request);
+
     List<PlantTemplatePublicVO> listPublicTemplates();
 
     PlantTemplatePublicVO getTemplateByPlantId(Long plantId);

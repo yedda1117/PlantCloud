@@ -4,7 +4,9 @@ import com.plantcloud.common.enums.ResultCode;
 import com.plantcloud.plant.dto.PlantAiGenerateRequest;
 import com.plantcloud.plant.dto.PlantTemplateCreateRequest;
 import com.plantcloud.plant.dto.PlantTemplateDataDTO;
+import com.plantcloud.plant.entity.Plant;
 import com.plantcloud.plant.entity.PlantTemplate;
+import com.plantcloud.plant.mapper.PlantMapper;
 import com.plantcloud.plant.mapper.PlantTemplateMapper;
 import com.plantcloud.plant.service.PlantConfigService;
 import com.plantcloud.plant.service.PlantTemplateAiService;
@@ -25,6 +27,7 @@ import java.util.List;
 public class PlantConfigServiceImpl implements PlantConfigService {
 
     private final PlantTemplateMapper plantTemplateMapper;
+    private final PlantMapper plantMapper;
     private final PlantTemplateAiService plantTemplateAiService;
     private final PlantTemplateValidator plantTemplateValidator;
 
@@ -72,6 +75,40 @@ public class PlantConfigServiceImpl implements PlantConfigService {
         }
 
         return toPublicVO(plantTemplate);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public PlantTemplatePublicVO updateTemplateByPlantId(Long plantId, PlantTemplateCreateRequest request) {
+        validateCreateTemplate(request);
+
+        Plant plant = plantMapper.selectById(plantId);
+        if (plant == null) {
+            throw new BizException(ResultCode.NOT_FOUND.getCode(), "Plant not found, plantId=" + plantId);
+        }
+        if (plant.getTemplateId() == null) {
+            throw new BizException(ResultCode.NOT_FOUND.getCode(), "Plant template not found for plantId=" + plantId);
+        }
+
+        PlantTemplate plantTemplate = plantTemplateMapper.selectById(plant.getTemplateId());
+        if (plantTemplate == null) {
+            throw new BizException(ResultCode.NOT_FOUND.getCode(), "Plant template not found for plantId=" + plantId);
+        }
+
+        plantTemplate.setPlantName(request.getPlantName().trim());
+        plantTemplate.setSpecies(StringUtils.hasText(request.getSpecies()) ? request.getSpecies().trim() : null);
+        plantTemplate.setTempMin(request.getTempMin());
+        plantTemplate.setTempMax(request.getTempMax());
+        plantTemplate.setHumidityMin(request.getHumidityMin());
+        plantTemplate.setHumidityMax(request.getHumidityMax());
+        plantTemplate.setLightMin(request.getLightMin());
+        plantTemplate.setLightMax(request.getLightMax());
+        plantTemplate.setTempRiseSensitive(request.getTempRiseSensitive());
+        plantTemplate.setHumidityDropSensitive(request.getHumidityDropSensitive());
+        plantTemplate.setLightRiseSensitive(request.getLightRiseSensitive());
+
+        plantTemplateMapper.updateById(plantTemplate);
+        return plantTemplateMapper.selectByPlantId(plantId);
     }
 
     @Override
