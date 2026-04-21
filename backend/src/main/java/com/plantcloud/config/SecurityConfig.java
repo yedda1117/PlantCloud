@@ -45,6 +45,7 @@ public class SecurityConfig {
                                 "/strategies/**",
                                 "/alerts/**",
                                 "/calendar/**",
+                                "/plant-config/**",
                                 "/plants/**",
                                 "/devices/**",
                                 "/control/**"

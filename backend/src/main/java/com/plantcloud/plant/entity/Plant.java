@@ -20,4 +20,5 @@ public class Plant extends BaseEntity {
     private String locationDesc;
     private String coverImageUrl;
     private String status;
+    private Long templateId;
 }
