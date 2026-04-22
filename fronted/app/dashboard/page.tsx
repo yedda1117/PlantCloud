@@ -33,8 +33,8 @@ function DashboardContent() {
   }
 
     return (
-    <div className="h-[calc(100vh-4rem)] overflow-hidden bg-background">
-      <main className="container mx-auto flex h-full min-h-0 flex-col overflow-hidden px-6 py-4">
+    <div className="min-h-screen overflow-hidden bg-background">
+      <main className="mx-auto flex min-h-screen w-full max-w-[1560px] flex-col overflow-hidden px-3 pb-1 pt-14 sm:px-4 lg:px-5">
         <div className="min-h-0 flex-1 overflow-hidden">
           <DashMain plants={plants} />
         </div>

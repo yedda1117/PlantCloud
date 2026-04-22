@@ -484,7 +484,7 @@ export default function CalendarPage() {
 
   return (
     <AuthGuard>
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-background overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-background overflow-hidden">
 
       <main className="flex-1 flex flex-col container mx-auto px-6 py-3 overflow-hidden min-h-0">
         <div className="flex items-center justify-between mb-2 flex-shrink-0">
