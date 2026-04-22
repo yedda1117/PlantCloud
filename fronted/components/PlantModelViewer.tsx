@@ -8,9 +8,10 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 type PlantModelViewerProps = {
   modelPath: string
   className?: string
+  minimal?: boolean
 }
 
-export function PlantModelViewer({ modelPath, className }: PlantModelViewerProps) {
+export function PlantModelViewer({ modelPath, className, minimal = false }: PlantModelViewerProps) {
   const mountRef = useRef<HTMLDivElement | null>(null)
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [errorText, setErrorText] = useState("模型加载失败，请检查文件路径或模型内容。")
@@ -204,16 +205,16 @@ export function PlantModelViewer({ modelPath, className }: PlantModelViewerProps
   }, [modelPath])
 
   return (
-    <div className={`relative h-full w-full overflow-hidden rounded-[2rem] ${className ?? ""}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.88),_rgba(240,252,244,0.76)_42%,_rgba(232,245,238,0.92)_100%)]" />
-      <div className="pointer-events-none absolute inset-x-[14%] top-[8%] h-24 rounded-full bg-white/60 blur-3xl" />
-      <div className="pointer-events-none absolute inset-x-[18%] bottom-[8%] h-16 rounded-full bg-emerald-100/60 blur-2xl" />
+    <div className={`relative h-full w-full overflow-hidden ${minimal ? "" : "rounded-[2rem]"} ${className ?? ""}`}>
+      {minimal ? null : <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.88),_rgba(240,252,244,0.76)_42%,_rgba(232,245,238,0.92)_100%)]" />}
+      {minimal ? null : <div className="pointer-events-none absolute inset-x-[14%] top-[8%] h-24 rounded-full bg-white/60 blur-3xl" />}
+      {minimal ? null : <div className="pointer-events-none absolute inset-x-[18%] bottom-[8%] h-16 rounded-full bg-emerald-100/60 blur-2xl" />}
 
       <div ref={mountRef} className="relative z-10 h-full w-full" />
 
       {status !== "ready" ? (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-          <div className="rounded-2xl border border-white/60 bg-white/72 px-5 py-4 text-center shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur-md">
+          <div className={minimal ? "px-5 py-4 text-center" : "rounded-2xl border border-white/60 bg-white/72 px-5 py-4 text-center shadow-[0_18px_40px_rgba(15,23,42,0.08)] backdrop-blur-md"}>
             <p className="text-sm font-medium text-zinc-800">
               {status === "loading" ? "正在载入植物 3D 模型..." : errorText}
             </p>

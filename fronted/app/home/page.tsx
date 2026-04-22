@@ -1,24 +1,50 @@
-﻿"use client"
+"use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import { AuthGuard } from "@/components/auth-guard"
 import { PlantModelViewer } from "@/components/PlantModelViewer"
-import { GpsBadge } from "@/components/gps-badge"
-import { DeviceControl } from "@/components/device-control"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { controlHomeDevice, getHomeRealtime, type HomeRealtimeData, type HomeControlTarget } from "@/lib/home-api"
+import { controlHomeDevice, getHomeRealtime, type HomeControlTarget, type HomeRealtimeData } from "@/lib/home-api"
 import { usePlantSelection } from "@/context/plant-selection"
 import {
-  Thermometer,
-  Droplets,
-  Sun,
-  User,
   AlertTriangle,
-  Activity,
+  Droplets,
+  Fan,
+  Lightbulb,
+  MapPin,
+  Thermometer,
+  Trees,
+  Wind,
 } from "lucide-react"
 
+const GpsMap = dynamic(() => import("@/components/gps-map"), {
+  ssr: false,
+  loading: () => <div className="h-full w-full bg-black/5" />,
+})
+
+const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
 const POLL_INTERVAL_MS = 30000
+
+type ApiResult<T> = {
+  code?: number
+  message?: string
+  data?: T
+}
+
+type GpsLocation = {
+  id: number | string
+  plantId: number | string
+  deviceId: number | string | null
+  longitude: number | string | null
+  latitude: number | string | null
+  createdAt: string | null
+}
+
+type GpsState = {
+  latest: GpsLocation | null
+  loading: boolean
+  error: boolean
+}
 
 function formatNumericValue(value: number | null | undefined, unit: string, digits = 1) {
   if (value === null || value === undefined) return "--"
@@ -37,91 +63,28 @@ function formatLogTime(value: string | null | undefined) {
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
-function getConnectionMeta(connected: boolean | null | undefined, statusUpdatedAt: string | null | undefined, onlineStatus: string | null | undefined) {
-  if (connected === true) {
-    return {
-      title: "在线",
-      detail: statusUpdatedAt ? `最近更新 ${formatLogTime(statusUpdatedAt)}` : `状态 ${onlineStatus || "ONLINE"}`,
-      dotClass: "bg-emerald-500",
-      cardClass: "border-emerald-200 bg-emerald-50/70",
-      iconClass: "bg-emerald-100 ring-1 ring-emerald-200/70",
-      badgeClass: "border-emerald-200 bg-emerald-100 text-emerald-700 hover:bg-emerald-100",
-    }
-  }
-
-  if (connected === false) {
-    return {
-      title: "离线",
-      detail: statusUpdatedAt ? `最近更新 ${formatLogTime(statusUpdatedAt)}` : `状态 ${onlineStatus || "OFFLINE"}`,
-      dotClass: "bg-red-500",
-      cardClass: "border-red-200 bg-red-50/70",
-      iconClass: "bg-red-100 ring-1 ring-red-200/70",
-      badgeClass: "border-red-200 bg-red-100 text-red-700 hover:bg-red-100",
-    }
-  }
-
-  return {
-    title: "未知",
-    detail: onlineStatus ? `状态 ${onlineStatus}` : "等待设备上报",
-    dotClass: "bg-gray-400",
-    cardClass: "border-border bg-card",
-    iconClass: "bg-muted",
-    badgeClass: "border-border bg-background text-muted-foreground hover:bg-background",
-  }
+function formatLocationTime(value: string | null | undefined) {
+  if (!value) return "--"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "--"
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
 }
 
-function getLogText(title: string | null | undefined) {
-  return title || "\u544a\u8b66\u65e5\u5fd7"
+function toNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return null
+  const parsed = typeof value === "number" ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
-function getSeverityMeta(severity: string | null | undefined) {
-  switch ((severity || "").toUpperCase()) {
-    case "CRITICAL":
-      return {
-        label: "\u7d27\u6025",
-        cardClass: "border-red-200 bg-red-50/80 hover:bg-red-50",
-        iconClass: "bg-red-100 text-red-500",
-        titleClass: "text-red-950",
-        timeClass: "text-muted-foreground",
-        badgeClass: "bg-red-500 text-white hover:bg-red-500",
-      }
-    case "HIGH":
-      return {
-        label: "\u4e25\u91cd",
-        cardClass: "border-red-200 bg-red-50/70 hover:bg-red-50",
-        iconClass: "bg-red-100 text-red-500",
-        titleClass: "text-red-950",
-        timeClass: "text-muted-foreground",
-        badgeClass: "bg-red-100 text-red-700 hover:bg-red-100",
-      }
-    case "MEDIUM":
-      return {
-        label: "\u8b66\u544a",
-        cardClass: "border-amber-200 bg-amber-50/80 hover:bg-amber-50",
-        iconClass: "bg-amber-100 text-amber-600",
-        titleClass: "text-amber-950",
-        timeClass: "text-muted-foreground",
-        badgeClass: "bg-amber-100 text-amber-700 hover:bg-amber-100",
-      }
-    case "LOW":
-      return {
-        label: "\u63d0\u793a",
-        cardClass: "border-sky-200 bg-sky-50/80 hover:bg-sky-50",
-        iconClass: "bg-sky-100 text-sky-600",
-        titleClass: "text-sky-950",
-        timeClass: "text-muted-foreground",
-        badgeClass: "bg-sky-100 text-sky-700 hover:bg-sky-100",
-      }
-    default:
-      return {
-        label: "\u672a\u77e5",
-        cardClass: "border-border bg-muted/50 hover:bg-muted",
-        iconClass: "bg-slate-100 text-slate-500",
-        titleClass: "text-foreground",
-        timeClass: "text-muted-foreground",
-        badgeClass: "bg-slate-100 text-slate-600 hover:bg-slate-100",
-      }
-  }
+function formatCoordinate(value: number | string | null | undefined) {
+  const parsed = toNumber(value)
+  return parsed === null ? "--" : parsed.toFixed(6)
 }
 
 function isResolvedLog(status: string | null | undefined) {
@@ -132,6 +95,71 @@ function getLogCreatedTime(value: string | null | undefined) {
   if (!value) return 0
   const time = new Date(value).getTime()
   return Number.isNaN(time) ? 0 : time
+}
+
+function getLatestLocation(locations: GpsLocation[]) {
+  if (!locations.length) return null
+  return [...locations].sort((a, b) => {
+    const left = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const right = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    return right - left
+  })[0] ?? null
+}
+
+async function fetchGpsLocations(plantId: number, token: string) {
+  const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {}
+
+  const response = await fetch(`${BACKEND_BASE_URL}/gps/locations?plantId=${encodeURIComponent(String(plantId))}`, {
+    cache: "no-store",
+    headers,
+  })
+
+  let payload: ApiResult<GpsLocation[]> | null = null
+  try {
+    payload = (await response.json()) as ApiResult<GpsLocation[]>
+  } catch {
+    payload = null
+  }
+
+  if (!response.ok || (payload && typeof payload.code === "number" && payload.code !== 0)) {
+    throw new Error(payload?.message || "\u5b9a\u4f4d\u83b7\u53d6\u5931\u8d25")
+  }
+
+  return Array.isArray(payload?.data) ? payload.data : []
+}
+
+function getLogText(title: string | null | undefined) {
+  return title || "\u544a\u8b66\u65e5\u5fd7"
+}
+
+function getSeverityLabel(severity: string | null | undefined) {
+  switch ((severity || "").toUpperCase()) {
+    case "CRITICAL":
+      return "\u7d27\u6025"
+    case "HIGH":
+      return "\u4e25\u91cd"
+    case "MEDIUM":
+      return "\u8b66\u544a"
+    case "LOW":
+      return "\u63d0\u793a"
+    default:
+      return "\u672a\u77e5"
+  }
+}
+
+function getSeverityTone(severity: string | null | undefined, resolved: boolean) {
+  if (resolved) return "text-stone-400"
+  switch ((severity || "").toUpperCase()) {
+    case "CRITICAL":
+    case "HIGH":
+      return "text-red-600"
+    case "MEDIUM":
+      return "text-amber-600"
+    case "LOW":
+      return "text-sky-600"
+    default:
+      return "text-stone-500"
+  }
 }
 
 function sortActivityLogs(logs: HomeRealtimeData["activityLogs"]) {
@@ -147,19 +175,67 @@ function sortActivityLogs(logs: HomeRealtimeData["activityLogs"]) {
   })
 }
 
-function getActivityLogMeta(log: HomeRealtimeData["activityLogs"][number]) {
-  if (!isResolvedLog(log.status)) {
-    return getSeverityMeta(log.severity)
-  }
+function StatusMetric({
+  icon: Icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: typeof Thermometer
+  label: string
+  value: string
+  hint: string
+}) {
+  return (
+    <div className="aspect-[1.08] rounded-[1.8rem] bg-white/20 p-4 shadow-[0_18px_40px_rgba(120,104,74,0.06)] backdrop-blur-[1px]">
+      <div className="flex h-full flex-col justify-between">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-stone-500">
+          <Icon className="h-4 w-4" />
+          <span>{label}</span>
+        </div>
+        <div>
+          <p className="text-2xl font-light tracking-tight text-stone-800">{value}</p>
+          <p className="mt-2 text-xs leading-5 text-stone-500">{hint}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
-  return {
-    label: "已解决",
-    cardClass: "border-slate-200 bg-slate-50/80 hover:bg-slate-50",
-    iconClass: "bg-slate-100 text-slate-400",
-    titleClass: "text-slate-500",
-    timeClass: "text-slate-400",
-    badgeClass: "bg-slate-100 text-slate-500 hover:bg-slate-100",
-  }
+function ControlLine({
+  icon: Icon,
+  label,
+  isOn,
+  disabled,
+  onToggle,
+}: {
+  icon: typeof Fan
+  label: string
+  isOn: boolean | null
+  disabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled || isOn === null}
+      className="group flex w-full items-center justify-between gap-4 py-2 text-left transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <span className="flex items-center gap-3">
+        <Icon className={`h-5 w-5 ${isOn ? "text-emerald-700" : "text-stone-500"} ${label === "风扇" && isOn ? "animate-spin" : ""}`} />
+        <span>
+          <span className="block text-sm uppercase tracking-[0.18em] text-stone-500">{label}</span>
+          <span className="mt-1 block text-lg font-light text-stone-800">
+            {isOn === null ? "\u540c\u6b65\u4e2d" : isOn ? "\u5df2\u5f00\u542f" : "\u5df2\u5173\u95ed"}
+          </span>
+        </span>
+      </span>
+      <span className={`text-xs uppercase tracking-[0.22em] ${isOn ? "text-emerald-700" : "text-stone-500"} group-hover:text-stone-900`}>
+        {isOn === null ? "--" : isOn ? "Turn Off" : "Turn On"}
+      </span>
+    </button>
+  )
 }
 
 export default function HomePage() {
@@ -168,33 +244,33 @@ export default function HomePage() {
   const [realtimeData, setRealtimeData] = useState<HomeRealtimeData | null>(null)
   const [realtimeError, setRealtimeError] = useState<string | null>(null)
   const [controlPending, setControlPending] = useState<HomeControlTarget | null>(null)
+  const [gpsState, setGpsState] = useState<GpsState>({
+    latest: null,
+    loading: true,
+    error: false,
+  })
   const [, setPlantState] = useState<"healthy" | "happy" | "dark" | "thirsty" | "hot" | "cold" | "fallen">("healthy")
 
-  // currentPlant.plantId 对应后端 plantId
   const plantApiId = currentPlant.plantId
 
   const previewSensorData = {
     temperature: realtimeData?.environment.temperature ?? null,
-    humidity:    realtimeData?.environment.humidity    ?? null,
-    light:       realtimeData?.environment.lightLux    ?? null,
-    hasHuman:    realtimeData?.infrared.currentDetected ?? false,
-    isFallen:    realtimeData?.tilt.hasAlert ?? false,
+    humidity: realtimeData?.environment.humidity ?? null,
+    light: realtimeData?.environment.lightLux ?? null,
+    hasHuman: realtimeData?.infrared.currentDetected ?? false,
+    isFallen: realtimeData?.tilt.hasAlert ?? false,
   }
 
-  // 切换植物时重置实时数据
   useEffect(() => {
     setRealtimeData(null)
     setRealtimeError(null)
-  }, [plantApiId])
-
-  useEffect(() => {
-    console.info("[CTRL][HOME] home control bundle active", {
-      plantId: plantApiId,
-      marker: "home-control-click-debug-20260422",
+    setGpsState({
+      latest: null,
+      loading: true,
+      error: false,
     })
   }, [plantApiId])
 
-  // 轮询实时数据
   useEffect(() => {
     let cancelled = false
 
@@ -204,14 +280,6 @@ export default function HomePage() {
       try {
         const nextData = await getHomeRealtime(plantApiId, token)
         if (!cancelled) {
-          console.info("[CTRL][HOME] realtime loaded", {
-            plantId: plantApiId,
-            deviceId: nextData.device.deviceId,
-            deviceCode: nextData.device.deviceCode,
-            onlineStatus: nextData.device.onlineStatus,
-            fanStatus: nextData.device.fanStatus,
-            lightStatus: nextData.device.lightStatus,
-          })
           setRealtimeData(nextData)
           setRealtimeError(null)
         }
@@ -222,72 +290,52 @@ export default function HomePage() {
 
     void loadRealtime()
     const timer = window.setInterval(() => void loadRealtime(), POLL_INTERVAL_MS)
-    return () => { cancelled = true; window.clearInterval(timer) }
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
   }, [plantApiId])
 
-  // 根据传感器数据推断植物状态
   useEffect(() => {
-    if      (previewSensorData.isFallen)                                            setPlantState("fallen")
+    let cancelled = false
+
+    const loadGpsData = async () => {
+      try {
+        const token = window.localStorage.getItem("plantcloud_token") || ""
+        const locations = await fetchGpsLocations(plantApiId, token)
+        if (!cancelled) {
+          setGpsState({
+            latest: getLatestLocation(locations),
+            loading: false,
+            error: false,
+          })
+        }
+      } catch {
+        if (!cancelled) {
+          setGpsState({
+            latest: null,
+            loading: false,
+            error: true,
+          })
+        }
+      }
+    }
+
+    void loadGpsData()
+    return () => {
+      cancelled = true
+    }
+  }, [plantApiId])
+
+  useEffect(() => {
+    if (previewSensorData.isFallen) setPlantState("fallen")
     else if (previewSensorData.temperature !== null && previewSensorData.temperature > 30) setPlantState("hot")
     else if (previewSensorData.temperature !== null && previewSensorData.temperature < 15) setPlantState("cold")
-    else if (previewSensorData.humidity !== null && previewSensorData.humidity < 40)       setPlantState("thirsty")
-    else if (previewSensorData.light !== null && previewSensorData.light < 200)            setPlantState("dark")
-    else if (previewSensorData.hasHuman)                                            setPlantState("happy")
-    else                                                                            setPlantState("healthy")
+    else if (previewSensorData.humidity !== null && previewSensorData.humidity < 40) setPlantState("thirsty")
+    else if (previewSensorData.light !== null && previewSensorData.light < 200) setPlantState("dark")
+    else if (previewSensorData.hasHuman) setPlantState("happy")
+    else setPlantState("healthy")
   }, [previewSensorData])
-
-  const getTempStatus = () => {
-    switch (realtimeData?.environment.temperatureStatus) {
-      case "HIGH":   return { label: "偏高", cls: "bg-amber-100 text-amber-700" }
-      case "LOW":    return { label: "偏低", cls: "bg-sky-100 text-sky-700" }
-      case "NORMAL": return { label: "正常", cls: "bg-green-100 text-green-700" }
-      default:       return { label: "未知", cls: "bg-gray-100 text-gray-600" }
-    }
-  }
-
-  const getHumidStatus = () => {
-    switch (realtimeData?.environment.humidityStatus) {
-      case "HIGH":   return { label: "偏高", cls: "bg-amber-100 text-amber-700" }
-      case "LOW":    return { label: "偏低", cls: "bg-sky-100 text-sky-700" }
-      case "NORMAL": return { label: "正常", cls: "bg-green-100 text-green-700" }
-      default:       return { label: "未知", cls: "bg-gray-100 text-gray-600" }
-    }
-  }
-
-  const getLuxStatus = () => {
-    switch (realtimeData?.environment.lightStatus) {
-      case "HIGH":   return { label: "过强", cls: "bg-red-100 text-red-700" }
-      case "LOW":    return { label: "不足", cls: "bg-amber-100 text-amber-700" }
-      case "NORMAL": return { label: "适宜", cls: "bg-green-100 text-green-700" }
-      default:       return { label: "未知", cls: "bg-gray-100 text-gray-600" }
-    }
-  }
-
-  const getAlertStatus = () => {
-    const severity = (realtimeData?.abnormal.latestSeverity || "").toUpperCase()
-    if (!realtimeData?.abnormal.hasAlert) return { label: "正常", cls: "bg-green-100 text-green-700" }
-    if (severity === "HIGH" || severity === "DANGER")     return { label: "严重", cls: "bg-red-100 text-red-700" }
-    if (severity === "MEDIUM" || severity === "WARNING")  return { label: "警告", cls: "bg-amber-100 text-amber-700" }
-    return { label: "提示", cls: "bg-sky-100 text-sky-700" }
-  }
-
-  const infraredText = realtimeData?.infrared.currentDetected
-    ? realtimeData.infrared.latestEventTitle || "有人来查看植物"
-    : realtimeData?.infrared.latestEventTitle || "无人检测到"
-
-  const abnormalText = realtimeData?.abnormal.hasAlert
-    ? realtimeData.abnormal.latestTitle || realtimeData.abnormal.latestContent || "检测到异常，请及时处理"
-    : "一切正常"
-
-  const activityLogs = sortActivityLogs(realtimeData?.activityLogs ?? [])
-  const connectionMeta = getConnectionMeta(
-    realtimeData?.device.connected,
-    realtimeData?.device.statusUpdatedAt,
-    realtimeData?.device.onlineStatus,
-  )
-
-  const lightOn = realtimeData?.device.lightOn ?? null
-  const fanOn = realtimeData?.device.fanOn ?? null
 
   const refreshRealtimeData = async (token: string) => {
     const nextData = await getHomeRealtime(plantApiId, token)
@@ -297,41 +345,17 @@ export default function HomePage() {
   }
 
   const handleDeviceToggle = async (target: HomeControlTarget, nextValue: boolean) => {
-    const device = realtimeData?.device
-    const deviceId = device?.deviceId
-    console.info("[CTRL][HOME] handleDeviceToggle entered", {
-      target,
-      nextValue,
-      plantId: plantApiId,
-      deviceId,
-      controlPending,
-      deviceCode: device?.deviceCode,
-      onlineStatus: device?.onlineStatus,
-      fanStatus: device?.fanStatus,
-      lightStatus: device?.lightStatus,
-    })
+    const deviceId = realtimeData?.device.deviceId
 
-    if (controlPending) {
-      console.warn("[CTRL][HOME] toggle ignored because another command is pending", {
-        target,
-        controlPending,
-      })
-      return
-    }
+    if (controlPending) return
 
     const token = window.localStorage.getItem("plantcloud_token") || ""
     if (!token) {
-      console.warn("[CTRL][HOME] toggle blocked because token is missing", { target })
       setRealtimeError("请先登录后再控制设备")
       return
     }
 
     if (deviceId === null || deviceId === undefined) {
-      console.warn("[CTRL][HOME] toggle blocked because E53IA1 deviceId is missing", {
-        target,
-        plantId: plantApiId,
-        device,
-      })
       setRealtimeError("未获取到 E53IA1 设备，无法下发控制指令")
       return
     }
@@ -339,262 +363,208 @@ export default function HomePage() {
     try {
       setControlPending(target)
       setRealtimeError(null)
-      console.info("[CTRL][HOME] calling controlHomeDevice", {
-        target,
-        plantId: plantApiId,
-        deviceId,
-        commandValue: nextValue ? "ON" : "OFF",
-      })
       await controlHomeDevice(plantApiId, deviceId, target, nextValue, token)
-      console.info("[CTRL][HOME] controlHomeDevice success", {
-        target,
-        plantId: plantApiId,
-        deviceId,
-        commandValue: nextValue ? "ON" : "OFF",
-      })
       try {
         await refreshRealtimeData(token)
         ;[800, 1800, 3200].forEach((delay) => window.setTimeout(() => {
           void refreshRealtimeData(token).catch(() => undefined)
         }, delay))
       } catch (error) {
-        console.warn("[CTRL][HOME] refresh after control failed", error)
         setRealtimeError(error instanceof Error ? error.message : "实时状态刷新失败")
       }
     } catch (error) {
-      console.error("[CTRL][HOME] controlHomeDevice failed", error)
       setRealtimeError(error instanceof Error ? error.message : "设备控制失败")
     } finally {
       setControlPending(null)
     }
   }
 
+  const activityLogs = useMemo(() => sortActivityLogs(realtimeData?.activityLogs ?? []), [realtimeData?.activityLogs])
+  const unresolvedCount = realtimeData?.abnormal.count ?? 0
+  const resolvedCount = activityLogs.filter((log) => isResolvedLog(log.status)).length
+  const totalAlertCount = Math.max(unresolvedCount + resolvedCount, 1)
+  const unresolvedRatio = Math.min(Math.max(unresolvedCount / totalAlertCount, 0), 1)
+  const latestLocation = gpsState.latest
+  const latitude = toNumber(latestLocation?.latitude)
+  const longitude = toNumber(latestLocation?.longitude)
+  const hasLocation = latestLocation !== null && latitude !== null && longitude !== null
+  const lightOn = realtimeData?.device.lightOn ?? null
+  const fanOn = realtimeData?.device.fanOn ?? null
+  const abnormalText = realtimeData?.abnormal.hasAlert
+    ? realtimeData.abnormal.latestTitle || realtimeData.abnormal.latestContent || "检测到异常，请及时处理"
+    : "当前未发现待处理异常"
+  const infraredText = realtimeData?.infrared.currentDetected
+    ? realtimeData.infrared.latestEventTitle || "检测到有人靠近植物"
+    : realtimeData?.infrared.latestEventTitle || "当前未检测到红外活动"
+
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-background">
-        <main className="container mx-auto px-6 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
-
-            {/* 左侧栏：植物动态日志 */}
-            <div className="lg:col-span-3">
-              <Card className="flex flex-col h-[730px]">
-                <CardHeader className="pb-3 shrink-0">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Activity className="h-4 w-4 text-primary" />
-                    植物动态日志
-                    <Badge variant="outline" className="ml-auto text-xs font-normal">
-                      {currentPlant.emoji} {currentPlant.name}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1 min-h-0 pb-4">
-                  <div
-                    className="h-full overflow-y-auto pr-1 space-y-3
-                      [&::-webkit-scrollbar]:w-1.5
-                      [&::-webkit-scrollbar-track]:rounded-full
-                      [&::-webkit-scrollbar-track]:bg-muted/30
-                      [&::-webkit-scrollbar-thumb]:rounded-full
-                      [&::-webkit-scrollbar-thumb]:bg-primary/25
-                      [&::-webkit-scrollbar-thumb:hover]:bg-primary/50"
-                  >
-                    {activityLogs.length > 0 ? (
-                      activityLogs.map((log, index) => {
-                        const severityMeta = getActivityLogMeta(log)
-                        return (
-                          <div
-                            key={`${log.id}-${index}`}
-                            className={`flex items-center gap-3 rounded-2xl border p-3 transition-colors ${severityMeta.cardClass}`}
-                          >
-                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${severityMeta.iconClass}`}>
-                              <AlertTriangle className="h-4 w-4" />
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className={`truncate text-sm font-medium ${severityMeta.titleClass}`}>
-                                {getLogText(log.title)}
-                              </p>
-                              <p className={`mt-1 text-xs font-mono ${severityMeta.timeClass}`}>
-                                {formatLogTime(log.createdAt)}
-                              </p>
-                            </div>
-                            <Badge className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${severityMeta.badgeClass}`}>
-                              {severityMeta.label}
-                            </Badge>
+      <div className="h-screen overflow-hidden bg-[#ede4d4] text-stone-900">
+        <div className="h-full overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.48),_transparent_38%),linear-gradient(135deg,_rgba(255,248,236,0.96),_rgba(236,226,209,0.98))]">
+          <main className="mx-auto flex h-full max-w-[1600px] items-center overflow-hidden px-6 py-[4vh] xl:px-10">
+            <div className="grid h-full max-h-[92vh] w-full grid-cols-1 items-center gap-8 overflow-hidden xl:grid-cols-[320px_minmax(560px,1fr)_360px] xl:gap-10 2xl:grid-cols-[360px_minmax(680px,1fr)_400px]">
+              <section className="flex h-full min-h-0 flex-col justify-center gap-6">
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs font-light uppercase tracking-[0.38em] text-stone-500">GPS Location</p>
+                  <div className="aspect-square overflow-hidden rounded-[2rem]">
+                    <div className="grid h-full grid-rows-[1fr_auto]">
+                      <div className="min-h-0 overflow-hidden rounded-[2rem] bg-black/5">
+                        {hasLocation ? (
+                          <GpsMap lat={latitude} lng={longitude} plantName={currentPlant.name} />
+                        ) : (
+                          <div className="flex h-full items-center justify-center px-6 text-center text-sm text-stone-500">
+                            {gpsState.error ? "定位获取失败" : gpsState.loading ? "定位加载中" : "暂无定位数据"}
                           </div>
-                        )
-                      })
-                    ) : (
-                      <div className="rounded-xl bg-muted/40 p-4 text-sm text-muted-foreground">
-                        暂无植物动态日志
+                        )}
                       </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* 中间区域：植物主体 */}
-            <div className="lg:col-span-6">
-              <Card className="flex flex-col h-[730px]">
-                <CardHeader className="pb-2 pt-4 px-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-semibold">{currentPlant.emoji} {currentPlant.name}</span>
-                      <span className="text-xs text-muted-foreground">当前绑定植物</span>
-                    </div>
-                    <GpsBadge />
-                  </div>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center justify-center flex-1 min-h-0 py-3">
-                  <div className="relative mb-3 w-full flex justify-center flex-1 min-h-0">
-                    <div className="relative border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-xs flex items-center justify-center">
-                      <div className="pointer-events-none absolute inset-0 bg-primary/5 rounded-full blur-3xl scale-150" />
-                      <div className="relative z-10 h-full min-h-[24rem] w-full">
-                        <PlantModelViewer modelPath="/models/zhizihua.glb" />
+                      <div className="space-y-2 px-1 pb-1 pt-4">
+                        <div className="flex items-center gap-2 text-sm text-stone-700">
+                          <MapPin className="h-4 w-4 text-stone-500" />
+                          <span>{hasLocation ? `${formatCoordinate(longitude)}, ${formatCoordinate(latitude)}` : "--"}</span>
+                        </div>
+                        <p className="text-sm leading-6 text-stone-600">
+                          {hasLocation ? `植物 ${currentPlant.name} 最近一次定位更新时间 ${formatLocationTime(latestLocation?.createdAt)}` : "暂未同步到本植物的 GPS 位置记录。"}
+                        </p>
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  {/* 控制面板 */}
-                  <div className="pointer-events-auto relative z-50 grid w-full max-w-[640px] shrink-0 grid-cols-1 gap-2.5 rounded-2xl border bg-muted/25 p-3 shadow-sm sm:grid-cols-3">
-                    <DeviceControl
-                      type="light"
-                      isOn={lightOn}
-                      disabled={controlPending !== null || lightOn === null}
-                      onToggle={(value) => void handleDeviceToggle("light", value)}
+                <div className="relative w-[calc(100%+1.35rem)] rounded-[2.2rem] border border-stone-400/45 p-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <StatusMetric
+                      icon={Thermometer}
+                      label="温度"
+                      value={formatNumericValue(realtimeData?.environment.temperature, "°C")}
+                      hint={realtimeData?.environment.temperatureStatus || "暂无状态"}
                     />
-                    <DeviceControl
-                      type="fan"
-                      isOn={fanOn}
-                      disabled={controlPending !== null || fanOn === null}
-                      onToggle={(value) => void handleDeviceToggle("fan", value)}
+                    <StatusMetric
+                      icon={Droplets}
+                      label="湿度"
+                      value={formatNumericValue(realtimeData?.environment.humidity, "%")}
+                      hint={realtimeData?.environment.humidityStatus || "暂无状态"}
                     />
-                    <div className={`flex h-[72px] min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 shadow-sm ${connectionMeta.cardClass}`}>
-                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${connectionMeta.iconClass}`}>
-                        <span className={`h-2.5 w-2.5 rounded-full ${connectionMeta.dotClass}`} />
+                    <StatusMetric
+                      icon={Wind}
+                      label="空气质量"
+                      value={formatLightValue(realtimeData?.environment.lightLux)}
+                      hint={abnormalText}
+                    />
+                    <StatusMetric
+                      icon={Trees}
+                      label="红外"
+                      value={realtimeData?.infrared.currentDetected ? "Detected" : "Clear"}
+                      hint={`${infraredText} · 今日靠近 ${realtimeData?.infrared.approachCount ?? 0} 次`}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section className="flex h-full min-h-0 flex-col items-center justify-center">
+                <div className="mb-4 text-center">
+                  <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Current Plant</p>
+                  <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
+                    {currentPlant.emoji} {currentPlant.name}
+                  </h1>
+                </div>
+                <div className="relative flex h-full min-h-0 w-full items-center justify-center">
+                  <div className="pointer-events-none absolute inset-x-[18%] top-[16%] h-28 rounded-full bg-white/45 blur-3xl" />
+                  <div className="pointer-events-none absolute inset-x-[22%] bottom-[12%] h-24 rounded-full bg-emerald-100/35 blur-3xl" />
+                  <div className="relative h-full min-h-0 w-full">
+                    <PlantModelViewer modelPath="/models/zhizihua.glb" className="rounded-none" minimal />
+                  </div>
+                </div>
+              </section>
+
+              <section className="flex h-full min-h-0 flex-col justify-center gap-6 overflow-hidden">
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <div className="mb-8 flex items-start justify-between gap-6">
+                    <div>
+                      <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Pending Issues</p>
+                      <p className="mt-3 text-5xl font-extralight tracking-tight text-stone-900">{unresolvedCount}</p>
+                      <p className="mt-2 text-sm leading-6 text-stone-600">还剩 {unresolvedCount} 条异常未解决，已处理 {resolvedCount} 条。</p>
+                    </div>
+                    <div className="flex flex-col items-center gap-3 pt-1">
+                      <div
+                        className="relative h-28 w-28 rounded-full"
+                        style={{
+                          background: `conic-gradient(#8f4b3b 0deg ${unresolvedRatio * 360}deg, rgba(120,104,74,0.14) ${unresolvedRatio * 360}deg 360deg)`,
+                        }}
+                      >
+                        <div className="absolute inset-[18px] rounded-full bg-[#ede4d4]" />
+                        <div className="absolute inset-0 flex items-center justify-center text-xs uppercase tracking-[0.22em] text-stone-500">
+                          {Math.round(unresolvedRatio * 100)}%
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1 leading-tight">
-                        <p className="whitespace-nowrap text-sm font-semibold text-foreground">小熊派</p>
-                        <p className="mt-1 whitespace-nowrap text-xs text-muted-foreground">{connectionMeta.detail}</p>
-                      </div>
-                      <Badge variant="outline" className={`flex h-7 w-11 shrink-0 items-center justify-center rounded-full px-0 text-[11px] font-semibold tracking-normal ${connectionMeta.badgeClass}`}>
-                        {connectionMeta.title}
-                      </Badge>
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-stone-500">Unresolved</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+
+                  <div className="home-log-scroll min-h-0 flex-1 overflow-y-auto pr-2">
+                    <div className="space-y-5">
+                      {activityLogs.length > 0 ? (
+                        activityLogs.map((log, index) => {
+                          const resolved = isResolvedLog(log.status)
+                          const toneClass = getSeverityTone(log.severity, resolved)
+                          return (
+                            <div key={`${log.id}-${index}`} className="flex gap-4">
+                              <div className="flex flex-col items-center">
+                                <span className={`mt-1 h-2.5 w-2.5 rounded-full ${resolved ? "bg-stone-300" : "bg-stone-700"}`} />
+                                {index < activityLogs.length - 1 ? <span className="mt-2 h-full w-px bg-stone-300/55" /> : null}
+                              </div>
+                              <div className="min-w-0 pb-4">
+                                <div className="flex items-center gap-3">
+                                  <p className={`text-sm uppercase tracking-[0.22em] ${toneClass}`}>
+                                    {resolved ? "已解决" : getSeverityLabel(log.severity)}
+                                  </p>
+                                  <p className="text-xs text-stone-400">{formatLogTime(log.createdAt)}</p>
+                                </div>
+                                <p className={`mt-2 text-base leading-7 ${resolved ? "text-stone-400" : "text-stone-800"}`}>
+                                  {getLogText(log.title)}
+                                </p>
+                              </div>
+                            </div>
+                          )
+                        })
+                      ) : (
+                        <p className="text-sm leading-7 text-stone-500">暂无植物动态日志。</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="shrink-0 space-y-5">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Controls</p>
+                      <p className="mt-2 text-sm text-stone-600">补光灯与风扇控制保持完全裸露展示，不使用卡片包裹。</p>
+                    </div>
+                    {realtimeError ? (
+                      <div className="flex items-center gap-2 text-xs text-red-600">
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>{realtimeError}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <ControlLine
+                    icon={Lightbulb}
+                    label="补光灯"
+                    isOn={lightOn}
+                    disabled={controlPending !== null}
+                    onToggle={() => void handleDeviceToggle("light", !(lightOn ?? false))}
+                  />
+                  <ControlLine
+                    icon={Fan}
+                    label="风扇"
+                    isOn={fanOn}
+                    disabled={controlPending !== null}
+                    onToggle={() => void handleDeviceToggle("fan", !(fanOn ?? false))}
+                  />
+                </div>
+              </section>
             </div>
-
-            {/* 右侧区域：监测与控制 */}
-            <div className="lg:col-span-3 flex flex-col gap-4">
-              {realtimeError ? (
-                <p className="px-1 text-xs text-destructive">{realtimeError}</p>
-              ) : null}
-
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-orange-100">
-                        <Thermometer className="h-5 w-5 text-orange-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">温度监测</p>
-                        <p className="text-xl font-bold">
-                          {formatNumericValue(realtimeData?.environment.temperature, "°C")}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className={getTempStatus().cls}>{getTempStatus().label}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-blue-100">
-                        <Droplets className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">湿度监测</p>
-                        <p className="text-xl font-bold">
-                          {formatNumericValue(realtimeData?.environment.humidity, "% RH")}
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className={getHumidStatus().cls}>{getHumidStatus().label}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-amber-100">
-                        <Sun className="h-5 w-5 text-amber-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">光照强度</p>
-                        <p className="text-xl font-bold">{formatLightValue(realtimeData?.environment.lightLux)}</p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className={getLuxStatus().cls}>{getLuxStatus().label}</Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-purple-100">
-                        <User className="h-5 w-5 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">人体红外状态</p>
-                        <p className="text-sm font-medium">{infraredText}</p>
-                        <p className="text-xs text-muted-foreground">
-                          今日靠近 {realtimeData?.infrared.approachCount ?? 0} 次
-                        </p>
-                      </div>
-                    </div>
-                    <Badge
-                      variant="secondary"
-                      className={realtimeData?.infrared.currentDetected ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"}
-                    >
-                      {realtimeData?.infrared.currentDetected ? "检测到" : "未检测"}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className={realtimeData?.abnormal.hasAlert ? "border-destructive/50 bg-destructive/5" : ""}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-xl ${realtimeData?.abnormal.hasAlert ? "bg-red-100" : "bg-gray-100"}`}>
-                        <AlertTriangle className={`h-5 w-5 ${realtimeData?.abnormal.hasAlert ? "text-red-600" : "text-gray-500"}`} />
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">异常提醒</p>
-                        <p className="text-sm font-medium">{abnormalText}</p>
-                        <p className="text-xs text-muted-foreground">
-                          未处理告警 {realtimeData?.abnormal.count ?? 0} 条
-                        </p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className={getAlertStatus().cls}>
-                      {getAlertStatus().label}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </main>
+          </main>
+        </div>
       </div>
     </AuthGuard>
   )

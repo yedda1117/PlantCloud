@@ -296,6 +296,15 @@
   background: linear-gradient(180deg, rgba(190, 242, 100, 0.9), rgba(45, 212, 191, 0.68));
 }
 
+.home-log-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.home-log-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes plant-float {
   0%, 100% {
     transform: translateY(0);

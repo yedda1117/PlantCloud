@@ -13,9 +13,10 @@ interface GpsMapProps {
   lat: number
   lng: number
   plantName: string
+  className?: string
 }
 
-export default function GpsMap({ lat, lng, plantName }: GpsMapProps) {
+export default function GpsMap({ lat, lng, plantName, className }: GpsMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   // 保存 map 实例，用于卸载时销毁
   const mapRef = useRef<import("leaflet").Map | null>(null)
@@ -94,7 +95,8 @@ export default function GpsMap({ lat, lng, plantName }: GpsMapProps) {
   return (
     <div
       ref={mapContainerRef}
-      style={{ width: "300px", height: "200px", borderRadius: "8px", overflow: "hidden" }}
+      className={className}
+      style={{ width: "100%", height: "100%", borderRadius: "inherit", overflow: "hidden" }}
     />
   )
 }
