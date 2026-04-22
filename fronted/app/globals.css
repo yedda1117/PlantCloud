@@ -251,3 +251,45 @@
     radial-gradient(circle at 78% 26%, rgba(226, 232, 240, 0.34), transparent 46%),
     radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.46), transparent 55%);
 }
+
+@keyframes knowledge-book-sheen {
+  0% { transform: translateX(-180%) skewX(-18deg); opacity: 0; }
+  35% { opacity: 0.34; }
+  70% { opacity: 0; }
+  100% { transform: translateX(220%) skewX(-18deg); opacity: 0; }
+}
+
+.knowledge-book {
+  overflow: hidden;
+}
+
+.knowledge-book::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: knowledge-book-sheen 4.8s ease-in-out infinite;
+  animation-delay: var(--knowledge-book-delay, 0s);
+}
+
+@keyframes plant-water-rise {
+  0% {
+    transform: translateY(102%);
+  }
+  68% {
+    transform: translateY(18%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes plant-water-wave {
+  0%, 100% {
+    transform: translateX(-50%) translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(-50%) translateY(2px) rotate(2deg);
+  }
+}

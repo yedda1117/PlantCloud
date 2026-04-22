@@ -3,6 +3,7 @@
 import type { ReactNode } from "react"
 import { PlantSelectionProvider } from "@/context/plant-selection"
 import { GlobalNavbar } from "@/components/global-navbar"
+import { RouteTransitionOverlay } from "@/components/route-transition-overlay"
 import { Toaster } from "@/components/ui/toaster"
 
 export function ClientProviders({ children }: { children: ReactNode }) {
@@ -13,6 +14,7 @@ export function ClientProviders({ children }: { children: ReactNode }) {
       <div className="pl-24">
         {children}
       </div>
+      <RouteTransitionOverlay />
       <Toaster />
     </PlantSelectionProvider>
   )
