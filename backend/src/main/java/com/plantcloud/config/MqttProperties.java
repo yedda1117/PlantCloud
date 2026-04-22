@@ -33,6 +33,11 @@ public class MqttProperties {
     private String subscribeTopic = "device/+/+/+";
 
     /**
+     * Device status topic subscribed on startup.
+     */
+    private String statusSubscribeTopic = "device/+/status";
+
+    /**
      * Quality of service for subscription.
      */
     private int qos = 1;

@@ -2,6 +2,7 @@ package com.plantcloud.mqtt.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.plantcloud.mqtt.listener.DeviceStatusMqttListener;
 import com.plantcloud.mqtt.listener.Ia1TelemetryMqttListener;
 import com.plantcloud.mqtt.listener.Is1EventMqttListener;
 import com.plantcloud.mqtt.listener.MqttUpMessageListener;
@@ -29,7 +30,9 @@ public class MqttMessageHandler {
     private static final Pattern DEVICE_ST1_ALERT_TOPIC_PATTERN =
             Pattern.compile("^device/(\\d+)/st1/alert$");
     private static final Pattern DEVICE_IA1_TELEMETRY_TOPIC_PATTERN =
-            Pattern.compile("^device/(\\d+)/ia1/telemetry$");
+            Pattern.compile("^device/([^/]+)/ia1/telemetry$");
+    private static final Pattern DEVICE_STATUS_TOPIC_PATTERN =
+            Pattern.compile("^device/([^/]+)/status$");
 
     private final ObjectMapper objectMapper;
     private final MqttUpMessageListener mqttUpMessageListener;
@@ -37,6 +40,7 @@ public class MqttMessageHandler {
     private final Sf1AlertMqttListener sf1AlertMqttListener;
     private final St1LocationMqttListener st1LocationMqttListener;
     private final Ia1TelemetryMqttListener ia1TelemetryMqttListener;
+    private final DeviceStatusMqttListener deviceStatusMqttListener;
 
     /**
      * Unified MQTT message entry. It keeps the original payload string and
@@ -44,6 +48,14 @@ public class MqttMessageHandler {
      */
     public void handleMessage(String topic, String payload) {
         String deviceIdentifier = parseDeviceIdentifier(topic);
+
+        if (DEVICE_STATUS_TOPIC_PATTERN.matcher(topic).matches()) {
+            log.info("MQTT status message accepted. deviceIdentifier={}, topic={}, payload={}",
+                    deviceIdentifier, topic, payload);
+            deviceStatusMqttListener.onMessage(topic, payload);
+            return;
+        }
+
         JsonNode payloadJson = parsePayload(payload);
 
         log.info("MQTT message accepted. deviceIdentifier={}, topic={}, payload={}",
@@ -93,6 +105,10 @@ public class MqttMessageHandler {
         Matcher ia1Matcher = DEVICE_IA1_TELEMETRY_TOPIC_PATTERN.matcher(topic);
         if (ia1Matcher.matches()) {
             return ia1Matcher.group(1);
+        }
+        Matcher statusMatcher = DEVICE_STATUS_TOPIC_PATTERN.matcher(topic);
+        if (statusMatcher.matches()) {
+            return statusMatcher.group(1);
         }
         log.warn("MQTT topic ignored because it does not match supported patterns. topic={}", topic);
         throw new IllegalArgumentException("Unsupported MQTT topic: " + topic);

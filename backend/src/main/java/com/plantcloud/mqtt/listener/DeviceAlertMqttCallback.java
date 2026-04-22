@@ -57,11 +57,23 @@ public class DeviceAlertMqttCallback implements MqttCallbackExtended {
         }
 
         try {
-            mqttClient.subscribe(mqttProperties.getSubscribeTopic(), mqttProperties.getQos());
-            log.info("Subscribed MQTT topic={}, qos={}",
-                    mqttProperties.getSubscribeTopic(), mqttProperties.getQos());
+            mqttClient.subscribe(
+                    new String[]{
+                            mqttProperties.getSubscribeTopic(),
+                            mqttProperties.getStatusSubscribeTopic()
+                    },
+                    new int[]{
+                            mqttProperties.getQos(),
+                            mqttProperties.getQos()
+                    }
+            );
+            log.info("Subscribed MQTT topics={}, {}, qos={}",
+                    mqttProperties.getSubscribeTopic(),
+                    mqttProperties.getStatusSubscribeTopic(),
+                    mqttProperties.getQos());
         } catch (MqttException ex) {
-            log.error("Failed to subscribe MQTT topic={}", mqttProperties.getSubscribeTopic(), ex);
+            log.error("Failed to subscribe MQTT topics={}, {}",
+                    mqttProperties.getSubscribeTopic(), mqttProperties.getStatusSubscribeTopic(), ex);
             throw new IllegalStateException("Failed to subscribe MQTT topic", ex);
         }
     }

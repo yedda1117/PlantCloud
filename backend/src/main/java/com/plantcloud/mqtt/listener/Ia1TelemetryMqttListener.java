@@ -1,5 +1,7 @@
 package com.plantcloud.mqtt.listener;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.plantcloud.device.entity.Device;
@@ -15,11 +17,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * MQTT listener for device/{id}/ia1/telemetry topic.
@@ -29,6 +34,12 @@ import java.time.ZoneId;
 @Component
 @RequiredArgsConstructor
 public class Ia1TelemetryMqttListener {
+
+    private static final Pattern IA1_TELEMETRY_TOPIC_PATTERN =
+            Pattern.compile("^device/([^/]+)/ia1/telemetry$");
+    private static final ZoneId MQTT_EVENT_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final long EPOCH_MILLI_THRESHOLD = 100000000000L;
+    private static final long MIN_REASONABLE_EPOCH_SECOND = 946656000L;
 
     private final ObjectMapper objectMapper;
     private final DeviceMapper deviceMapper;
@@ -45,29 +56,24 @@ public class Ia1TelemetryMqttListener {
     @Transactional(rollbackFor = Exception.class)
     public void onMessage(String topic, String payload) {
         try {
-            Long deviceId = extractDeviceId(topic);
+            String topicDeviceToken = extractDeviceToken(topic);
             TelemetryPayload telemetry = objectMapper.readValue(payload, TelemetryPayload.class);
 
-            log.info("Received telemetry data. deviceId={}, temperature={}, humidity={}, lightIntensity={}, fanStatus={}, lightStatus={}",
-                    deviceId,
+            log.info("Received telemetry data. topicDeviceToken={}, temperature={}, humidity={}, lightIntensity={}, fanStatus={}, lightStatus={}",
+                    topicDeviceToken,
                     telemetry.getTemperature(),
                     telemetry.getHumidity(),
                     telemetry.getLightIntensity(),
                     telemetry.getFanStatus(),
                     telemetry.getLightStatus());
 
-            Device device = deviceMapper.selectById(deviceId);
+            Device device = resolveDevice(topicDeviceToken, topic);
             if (device == null) {
-                log.warn("Device not found for telemetry data. deviceId={}", deviceId);
+                log.warn("Device not found for telemetry data. topicDeviceToken={}", topicDeviceToken);
                 return;
             }
 
-            LocalDateTime collectedAt = telemetry.getTimestamp() != null
-                    ? LocalDateTime.ofInstant(
-                            Instant.ofEpochSecond(telemetry.getTimestamp()),
-                            ZoneId.systemDefault()
-                    )
-                    : LocalDateTime.now();
+            LocalDateTime collectedAt = resolveCollectedAt(telemetry.getTimestamp());
 
             saveTemperatureData(device, telemetry, payload, collectedAt);
             saveHumidityData(device, telemetry, payload, collectedAt);
@@ -81,14 +87,36 @@ public class Ia1TelemetryMqttListener {
     }
 
     /**
-     * Extracts device ID from topic pattern: device/{id}/ia1/telemetry
+     * Extracts device token from topic pattern: device/{deviceIdOrCode}/ia1/telemetry
      */
-    private Long extractDeviceId(String topic) {
-        String[] parts = topic.split("/");
-        if (parts.length >= 4 && "device".equals(parts[0]) && "ia1".equals(parts[2]) && "telemetry".equals(parts[3])) {
-            return Long.parseLong(parts[1]);
+    private String extractDeviceToken(String topic) {
+        Matcher matcher = IA1_TELEMETRY_TOPIC_PATTERN.matcher(topic);
+        if (matcher.matches()) {
+            return matcher.group(1);
         }
         throw new IllegalArgumentException("Invalid topic format: " + topic);
+    }
+
+    private Device resolveDevice(String topicDeviceToken, String topic) {
+        Device device = null;
+        if (isNumeric(topicDeviceToken)) {
+            device = deviceMapper.selectById(Long.valueOf(topicDeviceToken));
+        }
+        if (device == null && StringUtils.hasText(topicDeviceToken)) {
+            device = deviceMapper.selectOne(
+                    new LambdaQueryWrapper<Device>()
+                            .eq(Device::getDeviceCode, topicDeviceToken)
+                            .last("limit 1")
+            );
+        }
+        if (device == null && StringUtils.hasText(topic)) {
+            device = deviceMapper.selectOne(
+                    new LambdaQueryWrapper<Device>()
+                            .eq(Device::getMqttTopicUp, topic)
+                            .last("limit 1")
+            );
+        }
+        return device;
     }
 
     private void saveTemperatureData(Device device, TelemetryPayload telemetry, String rawPayload, LocalDateTime collectedAt) {
@@ -156,6 +184,7 @@ public class Ia1TelemetryMqttListener {
      */
     private void updateDeviceStatus(Device device, TelemetryPayload telemetry) {
         ObjectNode statusNode = buildCurrentStatusNode(device.getCurrentStatus());
+        LocalDateTime now = LocalDateTime.now();
 
         if (telemetry.getFanStatus() != null) {
             statusNode.put("fanStatus", telemetry.getFanStatus());
@@ -173,9 +202,14 @@ public class Ia1TelemetryMqttListener {
             statusNode.put("lightIntensity", telemetry.getLightIntensity());
         }
 
+        statusNode.put("mqttStatus", "ONLINE");
+        statusNode.put("online", true);
+        statusNode.put("telemetryUpdatedAt", now.toString());
+
         device.setCurrentStatus(statusNode.toString());
         device.setOnlineStatus("ONLINE");
-        device.setLastSeenAt(LocalDateTime.now());
+        device.setLastSeenAt(now);
+        device.setUpdatedAt(now);
 
         deviceMapper.updateById(device);
 
@@ -189,12 +223,45 @@ public class Ia1TelemetryMqttListener {
      */
     private ObjectNode buildCurrentStatusNode(String currentStatus) {
         try {
-            if (currentStatus != null && !currentStatus.isBlank()) {
-                return (ObjectNode) objectMapper.readTree(currentStatus);
+            if (StringUtils.hasText(currentStatus)) {
+                JsonNode node = objectMapper.readTree(currentStatus);
+                if (node.isObject()) {
+                    return (ObjectNode) node;
+                }
             }
         } catch (Exception ex) {
             log.warn("Invalid current_status JSON, will rebuild. currentStatus={}", currentStatus);
         }
         return objectMapper.createObjectNode();
+    }
+
+    private LocalDateTime resolveCollectedAt(Long timestamp) {
+        if (timestamp == null || timestamp <= 0) {
+            return LocalDateTime.now(MQTT_EVENT_ZONE);
+        }
+
+        if (timestamp < MIN_REASONABLE_EPOCH_SECOND) {
+            LocalDateTime now = LocalDateTime.now(MQTT_EVENT_ZONE);
+            log.warn("IA1 MQTT timestamp is too small, using current time. timestamp={}, fallbackTime={}",
+                    timestamp, now);
+            return now;
+        }
+
+        Instant instant = timestamp >= EPOCH_MILLI_THRESHOLD
+                ? Instant.ofEpochMilli(timestamp)
+                : Instant.ofEpochSecond(timestamp);
+        return LocalDateTime.ofInstant(instant, MQTT_EVENT_ZONE);
+    }
+
+    private boolean isNumeric(String value) {
+        if (!StringUtils.hasText(value)) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 }
