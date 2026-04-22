@@ -537,7 +537,6 @@ export default function HomePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Controls</p>
-                      <p className="mt-2 text-sm text-stone-600">补光灯与风扇控制保持完全裸露展示，不使用卡片包裹。</p>
                     </div>
                     {realtimeError ? (
                       <div className="flex items-center gap-2 text-xs text-red-600">

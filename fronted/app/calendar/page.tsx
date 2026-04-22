@@ -89,6 +89,7 @@ function getMilestoneStyle(milestoneId?: string) {
         tape: "bg-orange-200/80",
         accent: "text-orange-700",
         shadow: "shadow-[0_18px_34px_rgba(251,146,60,0.16)]",
+        bgColor: "#ffe8c6",
       }
     case "flower":
       return {
@@ -96,6 +97,7 @@ function getMilestoneStyle(milestoneId?: string) {
         tape: "bg-pink-200/80",
         accent: "text-pink-700",
         shadow: "shadow-[0_18px_34px_rgba(236,72,153,0.14)]",
+        bgColor: "#ffe4ef",
       }
     case "sprout":
       return {
@@ -103,13 +105,15 @@ function getMilestoneStyle(milestoneId?: string) {
         tape: "bg-emerald-200/80",
         accent: "text-emerald-700",
         shadow: "shadow-[0_18px_34px_rgba(34,197,94,0.14)]",
+        bgColor: "#dcfce7",
       }
     case "repot":
       return {
-        paper: "bg-[linear-gradient(180deg,#eef6ff_0%,#e0efff_100%)]",
-        tape: "bg-sky-200/80",
-        accent: "text-sky-700",
-        shadow: "shadow-[0_18px_34px_rgba(59,130,246,0.14)]",
+        paper: "bg-[linear-gradient(180deg,#f5ede3_0%,#e8ddd1_100%)]",
+        tape: "bg-amber-200/80",
+        accent: "text-amber-800",
+        shadow: "shadow-[0_18px_34px_rgba(217,119,6,0.14)]",
+        bgColor: "#e8ddd1",
       }
     default:
       return {
@@ -117,6 +121,7 @@ function getMilestoneStyle(milestoneId?: string) {
         tape: "bg-amber-200/75",
         accent: "text-amber-700",
         shadow: "shadow-[0_18px_34px_rgba(217,119,6,0.12)]",
+        bgColor: "#fff4da",
       }
   }
 }
@@ -484,306 +489,156 @@ export default function CalendarPage() {
 
   return (
     <AuthGuard>
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-background overflow-hidden">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
 
-      <main className="flex-1 flex flex-col container mx-auto px-6 py-3 overflow-hidden min-h-0">
-        <div className="flex items-center justify-between mb-2 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={handlePrevMonth}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <h2 className="text-xl font-bold">
-              {year}年{String(month + 1).padStart(2, "0")}月
-            </h2>
-            <Button variant="outline" size="icon" onClick={handleNextMonth}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+      <main className="flex-1 flex gap-0 overflow-hidden min-h-0">
+        <div className="flex-[7] flex flex-col overflow-hidden border-r border-border/50">
+          {/* 左侧：记录视角 */}
+          <div className="flex flex-col p-6 pb-3 flex-shrink-0">
+            <p className="text-xs font-medium uppercase tracking-[0.28em] text-muted-foreground">Growth Notes</p>
+            <h3 className="mt-2 text-lg font-semibold">{year}年{String(month + 1).padStart(2, "0")}月</h3>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="inline-flex items-center rounded-full border border-border bg-card/80 p-1 shadow-sm">
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                  viewMode === "board" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setViewMode("board")}
-              >
-                <StickyNote className="h-4 w-4" />
-                记录视图
-              </button>
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                  viewMode === "calendar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setViewMode("calendar")}
-              >
-                <CalendarDays className="h-4 w-4" />
-                日历视图
-              </button>
-            </div>
-            <span className="text-sm text-muted-foreground">
-              {currentPlant.emoji} {currentPlant.name} 的成长记录
-            </span>
-            <Button variant="outline" size="sm" onClick={handleToday}>
-              今天
-            </Button>
+
+          <div className="flex-1 overflow-y-auto px-6 pb-6">
+            {isBoardLoading ? (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在整理本月便利贴记录...</div>
+            ) : noteBoardItems.length === 0 ? (
+              <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                本月还没有照片记录
+              </div>
+            ) : (
+              <div className="space-y-4 max-w-2xl">
+                {noteBoardItems.map((item, index) => {
+                  const style = getMilestoneStyle(item.milestone)
+                  const milestoneLabel = getMilestoneLabel(item.milestone)
+                  const isEven = index % 2 === 1
+                  const rotation = isEven ? "rotate-1" : "-rotate-1"
+                  const translateClass = isEven ? "translate-x-3" : "-translate-x-3"
+
+                  return (
+                    <button
+                      key={item.date}
+                      type="button"
+                      onClick={() => {
+                        const dayNum = Number(item.date.slice(-2))
+                        setSelectedDay(dayNum)
+                        setDialogOpen(true)
+                        void loadDayDetail(dayNum)
+                      }}
+                      style={{ marginTop: isEven ? "-1.5rem" : "-1.5rem" }}
+                      className={`block w-full transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(15,23,42,0.15)] ${rotation} ${translateClass}`}
+                    >
+                      <div className={`flex flex-col border border-black/5 p-5 text-left ${style.paper} ${style.shadow}`}>
+                        <div className="mx-auto mb-3 h-2 w-16 rounded-full bg-white/65 shadow-[0_1px_2px_rgba(148,163,184,0.2)]" />
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Growth Log</p>
+                            <p className="mt-1 text-base font-semibold text-zinc-900">{month + 1}月{item.day}日</p>
+                          </div>
+                          {milestoneLabel ? (
+                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${style.accent} bg-white/55`}>
+                              {milestoneLabel}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="mb-3 overflow-hidden border border-black/5 bg-white/50 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+                          <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="h-40 w-full object-cover" />
+                        </div>
+
+                        <p className="line-clamp-2 text-sm leading-5 text-zinc-700">
+                          {item.note?.trim() ? item.note : "这一天没有留下文字记录"}
+                        </p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        <Card className="flex-1 overflow-hidden min-h-0">
-          <CardContent className="p-3 h-full flex flex-col">
-            {viewMode === "calendar" ? (
-              <>
-                <div className="grid grid-cols-7 gap-2 mb-2 flex-shrink-0">
-                  {weekDays.map((day) => (
-                    <div key={day} className="text-center text-sm font-medium text-muted-foreground py-1">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-
-                <div ref={gridRef} className="grid grid-cols-7 gap-2.5 flex-1 min-h-0">
-                  {calendarCells.map((day, index) => {
-                    if (day === null) {
-                      return <div key={`empty-${index}`} style={rowHeight ? { height: rowHeight } : {}} />
-                    }
-
-                    const data = calendarData[day]
-                    const isToday = day === today
-                    const hasMilestone = data?.milestone
-                    const hasPhoto = data?.hasPhoto
-
-                    return (
-                      <button
-                        key={day}
-                        onClick={() => handleDayClick(day)}
-                        style={rowHeight ? { height: rowHeight } : {}}
-                        className={`
-                          rounded-2xl border-2 transition-all relative overflow-hidden group
-                          bg-primary/10 hover:bg-primary/15
-                          ${isToday ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-muted-foreground/20"}
-                        `}
-                      >
-                        <span className={`absolute top-2.5 left-3 text-sm font-semibold z-10 leading-none ${isToday ? "text-primary" : "text-foreground/75"}`}>
-                          {day}
-                        </span>
-
-                        {hasMilestone && (
-                          <span className="absolute top-2.5 right-3 z-10">
-                            {getMilestoneIcon(hasMilestone)}
-                          </span>
-                        )}
-
-                        {hasPhoto && data?.photoUrl ? (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="overflow-hidden flex-shrink-0 rounded-md shadow-sm" style={{ width: photoSize, height: photoSize }}>
-                              <img src={data.photoUrl} alt={`Day ${day}`} className="w-full h-full object-cover" />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <Plus
-                              className="text-muted-foreground/35 group-hover:text-muted-foreground/60 transition-colors"
-                              style={{ width: 28, height: 28 }}
-                              strokeWidth={1.5}
-                            />
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="mb-3 flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.28em] text-muted-foreground">Growth Notes</p>
-                    <h3 className="mt-1 text-base font-semibold">本月成长记录</h3>
-                  </div>
-                  <p className="text-xs text-muted-foreground">按日期正序展示本月有照片的记录碎片</p>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                  {isBoardLoading ? (
-                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在整理本月便利贴记录...</div>
-                  ) : noteBoardItems.length === 0 ? (
-                    <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
-                      本月还没有照片记录，上传照片后会在这里生成便利贴。
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
-                      {noteBoardItems.map((item) => {
-                        const style = getMilestoneStyle(item.milestone)
-                        const milestoneLabel = getMilestoneLabel(item.milestone)
-
-                        return (
-                          <button
-                            key={item.date}
-                            type="button"
-                            onClick={() => handleDayClick(item.day)}
-                            className={`flex h-full w-full flex-col border border-black/5 p-3 text-left align-top transition duration-300 hover:-translate-y-1 hover:shadow-[0_20px_30px_rgba(15,23,42,0.12)] ${style.paper} ${style.shadow}`}
-                          >
-                            <div className="mx-auto mb-2 h-2 w-14 rounded-full bg-white/65 shadow-[0_1px_2px_rgba(148,163,184,0.2)]" />
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Growth Log</p>
-                                <p className="mt-1 text-base font-semibold text-zinc-900">{month + 1}月{item.day}日</p>
-                              </div>
-                              {milestoneLabel ? (
-                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${style.accent} bg-white/55`}>
-                                  {milestoneLabel}
-                                </span>
-                              ) : null}
-                            </div>
-
-                            <div className="mt-3 overflow-hidden border border-black/5 bg-white/50 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
-                              <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="h-32 w-full object-cover xl:h-36" />
-                            </div>
-
-                            <div className="mt-3 flex flex-1 flex-col justify-between space-y-2">
-                              <p className="line-clamp-2 text-sm leading-5 text-zinc-700">
-                                {item.note?.trim() ? item.note : "这一天没有留下文字记录"}
-                              </p>
-                              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                                {item.milestone ? getMilestoneIcon(item.milestone) : <StickyNote className="h-3.5 w-3.5" />}
-                                <span>{item.milestone ? `里程碑：${milestoneLabel}` : "仅记录了照片"}</span>
-                              </div>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </main>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-4xl w-full">
-          <DialogHeader>
-            <DialogTitle className="text-lg">
-              {currentPlant.emoji} {currentPlant.name} · {year}年{month + 1}月{selectedDay}日 - 详细记录
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="grid grid-cols-2 gap-8 mt-4">
-            <div className="flex flex-col gap-3">
-              <div className="aspect-square rounded-2xl bg-muted flex items-center justify-center overflow-hidden">
-                {selectedDayRecord.hasPhoto && selectedDayRecord.photoUrl ? (
-                  <img
-                    src={selectedDayRecord.photoUrl}
-                    alt="Plant"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="text-center">
-                    <ImageIcon className="h-12 w-12 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground">暂无图片</p>
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handlePhotoFileChange}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-10"
-                  onClick={handlePhotoButtonClick}
-                  disabled={isProcessingPhoto || isDetailLoading}
-                >
-                  <Upload className="h-4 w-4 mr-1.5" />
-                  {isProcessingPhoto ? "处理中..." : "上传图片"}
+        {/* 右侧：工具栏 */}
+        <div className="flex-[3] flex flex-col bg-slate-50/50 overflow-hidden">
+          {/* 上部：极简日历 */}
+          <div className="flex flex-col p-4 flex-shrink-0 border-b border-border/30 overflow-y-auto" style={{ height: "30%" }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex gap-2">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevMonth}>
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-10"
-                  onClick={handlePhotoButtonClick}
-                  disabled={isProcessingPhoto || isDetailLoading}
-                >
-                  <RefreshCw className="h-4 w-4 mr-1.5" />更换图片
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-10"
-                  onClick={handleViewPhoto}
-                  disabled={!selectedDayRecord.photoUrl}
-                >
-                  <ImageIcon className="h-4 w-4 mr-1.5" />查看图片
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-10 text-destructive hover:text-destructive"
-                  onClick={() => void handleDeletePhoto()}
-                  disabled={!selectedDayRecord.photoUrl || isProcessingPhoto || isDetailLoading}
-                >
-                  <Trash2 className="h-4 w-4 mr-1.5" />删除图片
+                <h3 className="text-sm font-semibold min-w-24 text-center">
+                  {String(month + 1).padStart(2, "0")}月
+                </h3>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextMonth}>
+                  <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              {photoProcessMessage && (
-                <p className="text-xs text-muted-foreground">{photoProcessMessage}</p>
-              )}
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={handleToday}>
+                今天
+              </Button>
             </div>
 
-            <div className="flex flex-col gap-4">
-              <div>
-                <h4 className="text-sm font-medium mb-3">环境信息</h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 rounded-xl bg-orange-50 text-center">
-                    <Thermometer className="h-5 w-5 text-orange-500 mx-auto mb-1" />
-                    <p className="text-lg font-bold text-orange-700">
-                      {selectedDayRecord.temp ?? "--"}°C
-                    </p>
-                    <p className="text-xs text-orange-600">温度</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-blue-50 text-center">
-                    <Droplets className="h-5 w-5 text-blue-500 mx-auto mb-1" />
-                    <p className="text-lg font-bold text-blue-700">
-                      {selectedDayRecord.humidity ?? "--"}%
-                    </p>
-                    <p className="text-xs text-blue-600">湿度</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-amber-50 text-center">
-                    <Sun className="h-5 w-5 text-amber-500 mx-auto mb-1" />
-                    <p className="text-lg font-bold text-amber-700">
-                      {selectedDayRecord.light ?? "--"}
-                    </p>
-                    <p className="text-xs text-amber-600">光照lux</p>
-                  </div>
+            {/* 日期网格 - 极简版 */}
+            <div className="grid grid-cols-7 gap-1.5">
+              {weekDays.map((day) => (
+                <div key={day} className="text-center text-xs font-medium text-muted-foreground py-1">
+                  {day}
                 </div>
-              </div>
+              ))}
+              {calendarCells.map((day, index) => {
+                if (day === null) {
+                  return <div key={`empty-${index}`} />
+                }
 
-              <div className="flex flex-col flex-1">
-                <h4 className="text-sm font-medium mb-3">里程碑</h4>
-                <div className="grid grid-cols-2 gap-2 flex-1">
-                  {milestones.map((milestone) => {
-                    const Icon = milestone.icon
-                    const isChecked = selectedMilestones.includes(milestone.id)
-                    return (
-                      <label
-                        key={milestone.id}
-                        className={`
-                          flex flex-col items-center justify-center gap-2 px-3 py-2 rounded-xl border cursor-pointer transition-colors
-                          ${isChecked
-                            ? "bg-primary/10 border-primary"
-                            : "bg-muted/50 border-transparent hover:bg-muted"
-                          }
-                        `}
-                      >
-                        <div className="flex items-center gap-2">
+                const data = calendarData[day]
+                const isToday = day === today
+                const hasMilestone = data?.milestone
+                const milestoneColor = hasMilestone ? 
+                  (hasMilestone === "sprout" ? "text-green-500" : 
+                   hasMilestone === "flower" ? "text-pink-500" :
+                   hasMilestone === "fruit" ? "text-yellow-600" :
+                   hasMilestone === "repot" ? "text-orange-500" : "") : ""
+
+                return (
+                  <button
+                    key={day}
+                    onClick={() => handleDayClick(day)}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
+                      isToday ? "bg-primary text-white" : hasMilestone ? `${milestoneColor}` : "text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {day}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* 下部：新建记录区 */}
+          <div className="flex-1 flex flex-col p-4 overflow-y-auto" style={{ height: "70%" }}>
+            <h4 className="text-sm font-semibold mb-3">新建记录</h4>
+
+            {selectedDay ? (
+              <div className="flex flex-col gap-3 flex-1">
+                {/* 里程碑选择 */}
+                <div>
+                  <p className="text-xs font-medium mb-2">里程碑</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {milestones.map((milestone) => {
+                      const Icon = milestone.icon
+                      const isChecked = selectedMilestones.includes(milestone.id)
+                      return (
+                        <label
+                          key={milestone.id}
+                          className={`
+                            flex items-center gap-1.5 px-2 py-1.5 rounded-lg border cursor-pointer transition-colors text-xs
+                            ${isChecked
+                              ? "bg-primary/10 border-primary"
+                              : "bg-white border-border hover:bg-muted"
+                            }
+                          `}
+                        >
                           <Checkbox
                             checked={isChecked}
                             onCheckedChange={(checked) => {
@@ -793,36 +648,45 @@ export default function CalendarPage() {
                                 setSelectedMilestones([])
                               }
                             }}
+                            className="h-3 w-3"
                           />
-                          <Icon className={`h-5 w-5 ${milestone.color}`} />
-                        </div>
-                        <span className="text-xs font-medium whitespace-nowrap">{milestone.label}</span>
-                      </label>
-                    )
-                  })}
+                          <Icon className={`h-3.5 w-3.5 ${milestone.color}`} />
+                          <span className="leading-none">{milestone.label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
+
+                {/* 备注 */}
+                <div className="flex-1 flex flex-col">
+                  <p className="text-xs font-medium mb-2">备注</p>
+                  <Textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="记录今天的变化..."
+                    className="resize-none text-xs flex-1"
+                  />
+                </div>
+
+                {/* 保存按钮 */}
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => void handleSave()}
+                  disabled={isDetailLoading}
+                >
+                  保存
+                </Button>
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-center text-xs text-muted-foreground">
+                左侧或日历<br />选择日期
+              </div>
+            )}
           </div>
-
-          <div className="mt-5">
-            <Textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="记录今天的成长变化..."
-              className="resize-none w-full"
-              rows={3}
-            />
-          </div>
-
-          <div className="flex gap-3 mt-4">
-            <Button className="flex-1" onClick={() => void handleSave()} disabled={isDetailLoading}>
-              保存
-            </Button>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>取消</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </main>
     </div>
     </AuthGuard>
   )
