@@ -9,6 +9,13 @@ import DashDetail from "./DashDetail"
 
 // [修改] 移除硬编码的静态 plants 数组，数据将从 Context 获取
 
+export type PlantMeta = {
+  id: string
+  plantId: number
+  name: string
+  emoji: string
+}
+
 function DashboardContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -25,17 +32,12 @@ function DashboardContent() {
     return <DashDetail plant={plant} onBack={() => router.push("/dashboard")} />
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <main className="container mx-auto px-6 py-6">
-        <div className="mb-5">
-          <h1 className="text-xl font-semibold text-foreground">植物监测总览</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            点击任意植物卡片查看环境分析详情
-          </p>
+    return (
+    <div className="h-[calc(100vh-4rem)] overflow-hidden bg-background">
+      <main className="container mx-auto flex h-full min-h-0 flex-col overflow-hidden px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <DashMain plants={plants} />
         </div>
-        {/* [修改] 将从 Context 获取的动态 plants 列表传入 DashMain */}
-        <DashMain plants={plants} />
       </main>
     </div>
   )
