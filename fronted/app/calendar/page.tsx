@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react"
 import { AuthGuard } from "@/components/auth-guard"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,8 @@ import {
   Trash2,
   ImageIcon,
   Plus,
+  CalendarDays,
+  StickyNote,
 } from "lucide-react"
 
 const milestones = [
@@ -57,12 +59,66 @@ type DayRecord = {
   aiStatus?: "idle" | "processing" | "done" | "fallback" | "error"
 }
 
+type ViewMode = "calendar" | "board"
+
+type NoteBoardItem = {
+  day: number
+  date: string
+  photoUrl: string
+  note: string
+  milestone: string | undefined
+}
+
 function milestoneFromApi(value?: string | null) {
   return milestones.find((item) => item.apiValue === value)?.id
 }
 
 function milestoneToApi(value?: string | null) {
   return milestones.find((item) => item.id === value)?.apiValue
+}
+
+function getMilestoneLabel(milestoneId?: string) {
+  return milestones.find((item) => item.id === milestoneId)?.label
+}
+
+function getMilestoneStyle(milestoneId?: string) {
+  switch (milestoneId) {
+    case "fruit":
+      return {
+        paper: "bg-[linear-gradient(180deg,#fff1df_0%,#ffe8c6_100%)]",
+        tape: "bg-orange-200/80",
+        accent: "text-orange-700",
+        shadow: "shadow-[0_18px_34px_rgba(251,146,60,0.16)]",
+      }
+    case "flower":
+      return {
+        paper: "bg-[linear-gradient(180deg,#fff1f7_0%,#ffe4ef_100%)]",
+        tape: "bg-pink-200/80",
+        accent: "text-pink-700",
+        shadow: "shadow-[0_18px_34px_rgba(236,72,153,0.14)]",
+      }
+    case "sprout":
+      return {
+        paper: "bg-[linear-gradient(180deg,#effbec_0%,#dcfce7_100%)]",
+        tape: "bg-emerald-200/80",
+        accent: "text-emerald-700",
+        shadow: "shadow-[0_18px_34px_rgba(34,197,94,0.14)]",
+      }
+    case "repot":
+      return {
+        paper: "bg-[linear-gradient(180deg,#eef6ff_0%,#e0efff_100%)]",
+        tape: "bg-sky-200/80",
+        accent: "text-sky-700",
+        shadow: "shadow-[0_18px_34px_rgba(59,130,246,0.14)]",
+      }
+    default:
+      return {
+        paper: "bg-[linear-gradient(180deg,#fffaf0_0%,#fff4da_100%)]",
+        tape: "bg-amber-200/75",
+        accent: "text-amber-700",
+        shadow: "shadow-[0_18px_34px_rgba(217,119,6,0.12)]",
+      }
+  }
 }
 
 function formatDate(year: number, month: number, day: number) {
@@ -106,15 +162,18 @@ export default function CalendarPage() {
   const currentPlantApiId = currentPlant.plantId
 
   const [currentDate, setCurrentDate] = useState(() => new Date())
+  const [viewMode, setViewMode] = useState<ViewMode>("board")
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [selectedMilestones, setSelectedMilestones] = useState<string[]>([])
   const [noteText, setNoteText] = useState("")
   const [calendarData, setCalendarData] = useState<Record<number, DayRecord>>({})
+  const [boardDetails, setBoardDetails] = useState<Record<number, CalendarDayDetail>>({})
   const [selectedDayDetail, setSelectedDayDetail] = useState<CalendarDayDetail | null>(null)
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false)
   const [isMonthLoading, setIsMonthLoading] = useState(false)
   const [isDetailLoading, setIsDetailLoading] = useState(false)
+  const [isBoardLoading, setIsBoardLoading] = useState(false)
   const [photoProcessMessage, setPhotoProcessMessage] = useState("")
 
   const gridRef = useRef<HTMLDivElement>(null)
@@ -183,6 +242,10 @@ export default function CalendarPage() {
     void loadMonthSummary()
   }, [loadMonthSummary])
 
+  useEffect(() => {
+    setBoardDetails({})
+  }, [currentPlantApiId, year, month])
+
   const loadDayDetail = useCallback(async (day: number) => {
     const date = formatDate(year, month, day)
     setIsDetailLoading(true)
@@ -239,6 +302,69 @@ export default function CalendarPage() {
       await loadDayDetail(selectedDay)
     }
   }, [loadDayDetail, loadMonthSummary, selectedDay])
+
+  const photoDays = useMemo(
+    () =>
+      Object.entries(calendarData)
+        .map(([day, value]) => ({ day: Number(day), value }))
+        .filter(({ value }) => value.hasPhoto && Boolean(value.photoUrl))
+        .sort((a, b) => a.day - b.day),
+    [calendarData],
+  )
+
+  useEffect(() => {
+    if (viewMode !== "board") {
+      return
+    }
+
+    let cancelled = false
+    const loadBoardDetails = async () => {
+      setIsBoardLoading(true)
+      try {
+        const dates = photoDays.map(({ day }) => ({
+          day,
+          date: formatDate(year, month, day),
+        }))
+        const details = await Promise.all(
+          dates.map(async ({ day, date }) => {
+            try {
+              const detail = await getCalendarDayDetail(currentPlantApiId, date)
+              return [day, detail] as const
+            } catch (error) {
+              if (error instanceof ApiError && error.status === 404) {
+                return [day, createEmptyDetail(currentPlantApiId, date)] as const
+              }
+              throw error
+            }
+          }),
+        )
+
+        if (cancelled) {
+          return
+        }
+
+        setBoardDetails(Object.fromEntries(details))
+      } catch (error) {
+        if (!cancelled) {
+          toast({
+            title: "记录视图加载失败",
+            description: error instanceof Error ? error.message : "便利贴记录加载失败",
+            variant: "destructive",
+          })
+        }
+      } finally {
+        if (!cancelled) {
+          setIsBoardLoading(false)
+        }
+      }
+    }
+
+    void loadBoardDetails()
+
+    return () => {
+      cancelled = true
+    }
+  }, [viewMode, photoDays, currentPlantApiId, year, month])
 
   const handlePhotoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -333,13 +459,35 @@ export default function CalendarPage() {
   }
 
   const photoSize = rowHeight > 0 ? Math.floor(rowHeight * 0.7) : 60
+  const noteBoardItems = useMemo<NoteBoardItem[]>(
+    () =>
+      photoDays
+        .map(({ day, value }) => {
+          const detail = boardDetails[day]
+          const date = formatDate(year, month, day)
+          const photoUrl = detail?.photoUrl || value.photoUrl
+          if (!photoUrl) {
+            return null
+          }
+
+          return {
+            day,
+            date,
+            photoUrl,
+            note: detail?.note ?? "",
+            milestone: milestoneFromApi(detail?.milestone ?? value.milestone) ?? value.milestone,
+          }
+        })
+        .filter((item): item is NoteBoardItem => item !== null),
+    [photoDays, boardDetails, year, month],
+  )
 
   return (
     <AuthGuard>
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-background overflow-hidden">
 
-      <main className="flex-1 flex flex-col container mx-auto px-6 py-4 overflow-hidden min-h-0">
-        <div className="flex items-center justify-between mb-3 flex-shrink-0">
+      <main className="flex-1 flex flex-col container mx-auto px-6 py-3 overflow-hidden min-h-0">
+        <div className="flex items-center justify-between mb-2 flex-shrink-0">
           <div className="flex items-center gap-3">
             <Button variant="outline" size="icon" onClick={handlePrevMonth}>
               <ChevronLeft className="h-4 w-4" />
@@ -352,6 +500,28 @@ export default function CalendarPage() {
             </Button>
           </div>
           <div className="flex items-center gap-3">
+            <div className="inline-flex items-center rounded-full border border-border bg-card/80 p-1 shadow-sm">
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                  viewMode === "board" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setViewMode("board")}
+              >
+                <StickyNote className="h-4 w-4" />
+                记录视图
+              </button>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                  viewMode === "calendar" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setViewMode("calendar")}
+              >
+                <CalendarDays className="h-4 w-4" />
+                日历视图
+              </button>
+            </div>
             <span className="text-sm text-muted-foreground">
               {currentPlant.emoji} {currentPlant.name} 的成长记录
             </span>
@@ -362,66 +532,133 @@ export default function CalendarPage() {
         </div>
 
         <Card className="flex-1 overflow-hidden min-h-0">
-          <CardContent className="p-4 h-full flex flex-col">
-            <div className="grid grid-cols-7 gap-2 mb-2 flex-shrink-0">
-              {weekDays.map((day) => (
-                <div key={day} className="text-center text-sm font-medium text-muted-foreground py-1">
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            <div ref={gridRef} className="grid grid-cols-7 gap-3 flex-1 min-h-0">
-              {calendarCells.map((day, index) => {
-                if (day === null) {
-                  return <div key={`empty-${index}`} style={rowHeight ? { height: rowHeight } : {}} />
-                }
-
-                const data = calendarData[day]
-                const isToday = day === today
-                const hasMilestone = data?.milestone
-                const hasPhoto = data?.hasPhoto
-
-                return (
-                  <button
-                    key={day}
-                    onClick={() => handleDayClick(day)}
-                    style={rowHeight ? { height: rowHeight } : {}}
-                    className={`
-                      rounded-2xl border-2 transition-all relative overflow-hidden group
-                      bg-primary/10 hover:bg-primary/15
-                      ${isToday ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-muted-foreground/20"}
-                    `}
-                  >
-                    <span className={`absolute top-2.5 left-3 text-sm font-semibold z-10 leading-none ${isToday ? "text-primary" : "text-foreground/75"}`}>
+          <CardContent className="p-3 h-full flex flex-col">
+            {viewMode === "calendar" ? (
+              <>
+                <div className="grid grid-cols-7 gap-2 mb-2 flex-shrink-0">
+                  {weekDays.map((day) => (
+                    <div key={day} className="text-center text-sm font-medium text-muted-foreground py-1">
                       {day}
-                    </span>
+                    </div>
+                  ))}
+                </div>
 
-                    {hasMilestone && (
-                      <span className="absolute top-2.5 right-3 z-10">
-                        {getMilestoneIcon(hasMilestone)}
-                      </span>
-                    )}
+                <div ref={gridRef} className="grid grid-cols-7 gap-2.5 flex-1 min-h-0">
+                  {calendarCells.map((day, index) => {
+                    if (day === null) {
+                      return <div key={`empty-${index}`} style={rowHeight ? { height: rowHeight } : {}} />
+                    }
 
-                    {hasPhoto && data?.photoUrl ? (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="overflow-hidden flex-shrink-0 rounded-md shadow-sm" style={{ width: photoSize, height: photoSize }}>
-                          <img src={data.photoUrl} alt={`Day ${day}`} className="w-full h-full object-cover" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Plus
-                          className="text-muted-foreground/35 group-hover:text-muted-foreground/60 transition-colors"
-                          style={{ width: 28, height: 28 }}
-                          strokeWidth={1.5}
-                        />
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
+                    const data = calendarData[day]
+                    const isToday = day === today
+                    const hasMilestone = data?.milestone
+                    const hasPhoto = data?.hasPhoto
+
+                    return (
+                      <button
+                        key={day}
+                        onClick={() => handleDayClick(day)}
+                        style={rowHeight ? { height: rowHeight } : {}}
+                        className={`
+                          rounded-2xl border-2 transition-all relative overflow-hidden group
+                          bg-primary/10 hover:bg-primary/15
+                          ${isToday ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-muted-foreground/20"}
+                        `}
+                      >
+                        <span className={`absolute top-2.5 left-3 text-sm font-semibold z-10 leading-none ${isToday ? "text-primary" : "text-foreground/75"}`}>
+                          {day}
+                        </span>
+
+                        {hasMilestone && (
+                          <span className="absolute top-2.5 right-3 z-10">
+                            {getMilestoneIcon(hasMilestone)}
+                          </span>
+                        )}
+
+                        {hasPhoto && data?.photoUrl ? (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="overflow-hidden flex-shrink-0 rounded-md shadow-sm" style={{ width: photoSize, height: photoSize }}>
+                              <img src={data.photoUrl} alt={`Day ${day}`} className="w-full h-full object-cover" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <Plus
+                              className="text-muted-foreground/35 group-hover:text-muted-foreground/60 transition-colors"
+                              style={{ width: 28, height: 28 }}
+                              strokeWidth={1.5}
+                            />
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="mb-3 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.28em] text-muted-foreground">Growth Notes</p>
+                    <h3 className="mt-1 text-base font-semibold">本月成长记录</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">按日期正序展示本月有照片的记录碎片</p>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                  {isBoardLoading ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在整理本月便利贴记录...</div>
+                  ) : noteBoardItems.length === 0 ? (
+                    <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
+                      本月还没有照片记录，上传照片后会在这里生成便利贴。
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 auto-rows-fr">
+                      {noteBoardItems.map((item) => {
+                        const style = getMilestoneStyle(item.milestone)
+                        const milestoneLabel = getMilestoneLabel(item.milestone)
+
+                        return (
+                          <button
+                            key={item.date}
+                            type="button"
+                            onClick={() => handleDayClick(item.day)}
+                            className={`flex h-full w-full flex-col border border-black/5 p-3 text-left align-top transition duration-300 hover:-translate-y-1 hover:shadow-[0_20px_30px_rgba(15,23,42,0.12)] ${style.paper} ${style.shadow}`}
+                          >
+                            <div className="mx-auto mb-2 h-2 w-14 rounded-full bg-white/65 shadow-[0_1px_2px_rgba(148,163,184,0.2)]" />
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Growth Log</p>
+                                <p className="mt-1 text-base font-semibold text-zinc-900">{month + 1}月{item.day}日</p>
+                              </div>
+                              {milestoneLabel ? (
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${style.accent} bg-white/55`}>
+                                  {milestoneLabel}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <div className="mt-3 overflow-hidden border border-black/5 bg-white/50 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+                              <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="h-32 w-full object-cover xl:h-36" />
+                            </div>
+
+                            <div className="mt-3 flex flex-1 flex-col justify-between space-y-2">
+                              <p className="line-clamp-2 text-sm leading-5 text-zinc-700">
+                                {item.note?.trim() ? item.note : "这一天没有留下文字记录"}
+                              </p>
+                              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                                {item.milestone ? getMilestoneIcon(item.milestone) : <StickyNote className="h-3.5 w-3.5" />}
+                                <span>{item.milestone ? `里程碑：${milestoneLabel}` : "仅记录了照片"}</span>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>

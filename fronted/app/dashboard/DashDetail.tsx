@@ -414,21 +414,19 @@ export default function DashDetail({ plant, onBack }: Props) {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* 左上角浮动返回按钮 */}
-      <div className="fixed left-5 top-20 z-40">
+      <main className="container mx-auto flex flex-col gap-4 px-6 pb-6 pt-4">
+        {/* 返回按钮 */}
         <motion.button
           initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.3, ease: "easeOut" }}
           onClick={onBack}
-          className="flex items-center gap-2 rounded-full border border-border/70 bg-background/85 px-3 py-2 shadow-md backdrop-blur-md transition-colors hover:bg-muted"
+          className="mb-2 w-fit rounded-full border border-border/70 bg-background/85 px-3 py-2 shadow-md backdrop-blur-md transition-colors hover:bg-muted flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4 text-foreground" />
           <span className="text-sm font-medium text-foreground">返回总览</span>
         </motion.button>
-      </div>
 
-      <main className="container mx-auto flex flex-col gap-4 px-6 pb-6 pt-4">
         {error ? <p className="rounded-xl bg-destructive/5 px-4 py-2 text-xs text-destructive">{error}</p> : null}
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">

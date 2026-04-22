@@ -1,101 +1,166 @@
 "use client"
 
-/**
- * GlobalNavbar
- * 全局导航栏，包含植物选择下拉框。
- * 仅在需要显示的页面（/home、/calendar、/chat）渲染植物选择器，
- * 其他页面（/login、/register、/dashboard 等）不显示选择器。
- */
-
-import { useEffect } from "react"
-import { usePathname } from "next/navigation"
-import { Leaf } from "lucide-react"
-import { NavHeader } from "@/components/nav-header"
+import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  Bot,
+  CalendarDays,
+  Home,
+  Leaf,
+  LogOut,
+  Settings,
+  Sprout,
+  User,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
 import { usePlantSelection } from "@/context/plant-selection"
 
-// 需要显示植物选择器的路由前缀
-const PLANT_SELECTOR_PATHS = ["/home", "/calendar", "/chat","/settings"]
-
-// 不显示导航栏的路由（登录/注册页）
 const HIDDEN_NAV_PATHS = ["/login", "/register", "/"]
+const PLANT_SELECTOR_PATHS = ["/home", "/calendar", "/chat", "/settings"]
+
+const navItems = [
+  { href: "/home",      label: "主页",     icon: Home },
+  { href: "/dashboard", label: "植物总览", icon: Sprout },
+  { href: "/chat",      label: "AI 问答",  icon: Bot },
+  { href: "/calendar",  label: "生长日历", icon: CalendarDays },
+  { href: "/settings",  label: "系统设置", icon: Settings },
+  { type: "logout",     label: "退出登录", icon: LogOut },
+]
+
+type TooltipState = { label: string; x: number; y: number } | null
 
 export function GlobalNavbar() {
   const pathname = usePathname()
-  // 假设你的 Context 中已经包含了 setPlants 方法用于更新全局列表
+  const router = useRouter()
   const { selectedPlantId, setSelectedPlantId, plants, setPlants } = usePlantSelection()
 
-  // 动态获取植物列表逻辑
+  const [plantDrawerOpen, setPlantDrawerOpen] = useState(false)
+  const [tooltip, setTooltip] = useState<TooltipState>(null)
+  const plantDrawerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
+    if (HIDDEN_NAV_PATHS.includes(pathname)) return
     const fetchPlants = async () => {
       try {
-        // 从本地存储获取 Token，保持与 page.tsx 逻辑一致
         const token = window.localStorage.getItem("plantcloud_token")
         const res = await fetch("/api/plants", {
-          method: "GET",
-          headers: {
-            "Authorization": token ? `Bearer ${token}` : ""
-          }
+          headers: { Authorization: token ? `Bearer ${token}` : "" },
         })
-        
         const result = await res.json()
-        
-        // 如果后端返回 code 200 且含有数据，则更新 Context 中的植物列表
-        if (result && Array.isArray(result)) {
-        setPlants(result) 
-      } else if (result && Array.isArray(result.data)) {
-        setPlants(result.data)
-      }
-    } catch (err) {
-      console.error("Navbar 抓取失败:", err)
+        if (Array.isArray(result)) setPlants(result)
+        else if (Array.isArray(result?.data)) setPlants(result.data)
+      } catch {}
     }
-    }
-
-    // 仅在非登录/注册页面时尝试调取数据
-    if (!HIDDEN_NAV_PATHS.includes(pathname)) {
-      fetchPlants()
-    }
+    fetchPlants()
   }, [pathname, setPlants])
 
-  // 登录/注册页不渲染导航栏
-  if (HIDDEN_NAV_PATHS.includes(pathname)) {
-    return null
-  }
+  if (HIDDEN_NAV_PATHS.includes(pathname)) return null
 
   const showPlantSelector = PLANT_SELECTOR_PATHS.some((p) => pathname.startsWith(p))
+  const currentPlantObj = plants.find((p) => p.id === selectedPlantId)
+
+  const handleLogout = () => {
+    window.localStorage.removeItem("plantcloud_token")
+    window.localStorage.removeItem("plantcloud_user")
+    router.push("/login")
+  }
 
   return (
-    <NavHeader
-      rightSlot={
-        showPlantSelector ? (
-          <div className="flex items-center gap-2">
-            <Leaf className="h-4 w-4 text-primary" />
-            <span className="text-sm text-muted-foreground">当前植物：</span>
-            <Select value={selectedPlantId} onValueChange={setSelectedPlantId}>
-              <SelectTrigger className="w-40 h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {plants && plants.length > 0 ? (
-                  plants.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.emoji} {p.name}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="none" disabled>暂无植物</SelectItem>
+    <>
+      {/* 跟随鼠标的 tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-[9999] pointer-events-none rounded-lg bg-[#064e3b] px-2.5 py-1 text-xs font-medium text-white backdrop-blur-sm"
+          style={{ left: tooltip.x + 14, top: tooltip.y - 10 }}
+        >
+          {tooltip.label}
+        </div>
+      )}
+
+      <aside className="fixed left-3 top-0 z-50 flex w-20 flex-col items-start bg-transparent py-5 gap-0 pl-1"
+        style={{ height: "100vh" }}
+      >
+        {/* 顶部：植物抽屉按钮 */}
+        <div
+          ref={plantDrawerRef}
+          className="relative w-full flex flex-col items-center px-1 mb-3"
+        >
+          <button
+            onClick={() => setPlantDrawerOpen(!plantDrawerOpen)}
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-white hover:text-green-300 active:scale-125 active:shadow-lg transition-all duration-200"
+            onMouseMove={(e) => setTooltip({ label: currentPlantObj ? `${currentPlantObj.emoji} ${currentPlantObj.name}` : "选择植物", x: e.clientX, y: e.clientY })}
+            onMouseLeave={() => setTooltip(null)}
+          >
+            <Leaf className="h-6 w-6" />
+          </button>
+
+          {/* 选定植物名称显示 */}
+          {currentPlantObj && (
+            <p className="text-[10px] text-white mt-1 text-center leading-tight">
+              {currentPlantObj.name}
+            </p>
+          )}
+
+          {/* 向右弹出的植物列表浮窗 */}
+          {plantDrawerOpen && showPlantSelector && (
+            <div className="absolute left-full top-0 ml-3 z-50 min-w-[140px] rounded-xl border border-green-200 bg-white/90 backdrop-blur-md shadow-xl shadow-green-100 py-2 flex flex-col">
+              <p className="px-3 pb-1.5 text-[10px] font-semibold text-green-700 uppercase tracking-wide">选择植物</p>
+              {plants.length > 0 ? plants.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => { setSelectedPlantId(p.id); setPlantDrawerOpen(false) }}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors text-left",
+                    p.id === selectedPlantId
+                      ? "bg-green-100 text-green-800 font-medium"
+                      : "text-gray-600 hover:bg-green-100 hover:text-green-700"
+                  )}
+                >
+                  <span>{p.emoji}</span>
+                  <span>{p.name}</span>
+                </button>
+              )) : (
+                <p className="px-3 py-1.5 text-xs text-gray-400">暂无植物</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 导航项，flex-1 居中 */}
+        <nav className="flex flex-1 flex-col items-center justify-center gap-8 w-full px-1">
+          {navItems.map(({ href, label, icon: Icon, type }) => {
+            const isActive = href ? pathname.startsWith(href) : false
+            const isLogout = type === "logout"
+            return isLogout ? (
+              <button
+                key={label}
+                onClick={handleLogout}
+                className="flex h-11 w-11 items-center justify-center rounded-xl text-white hover:text-green-300 active:scale-125 active:shadow-lg transition-all duration-200"
+                onMouseMove={(e) => { setTooltip({ label, x: e.clientX, y: e.clientY }) }}
+                onMouseLeave={() => setTooltip(null)}
+              >
+                <Icon className="h-6 w-6" />
+              </button>
+            ) : (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "relative flex h-11 w-11 items-center justify-center rounded-xl text-white hover:text-green-300 active:scale-125 active:shadow-lg transition-all duration-200",
+                  isActive ? "text-green-400" : ""
                 )}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : undefined
-      }
-    />
+                onMouseMove={(e) => { setTooltip({ label, x: e.clientX, y: e.clientY }) }}
+                onMouseLeave={() => setTooltip(null)}
+              >
+                <Icon className="h-6 w-6" />
+              </Link>
+            )
+          })}
+        </nav>
+
+        {/* 底部：退出登录，已移到导航项中 */}
+      </aside>
+    </>
   )
 }

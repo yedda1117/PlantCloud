@@ -251,3 +251,84 @@
     radial-gradient(circle at 78% 26%, rgba(226, 232, 240, 0.34), transparent 46%),
     radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.46), transparent 55%);
 }
+
+@keyframes knowledge-book-sheen {
+  0% { transform: translateX(-180%) skewX(-18deg); opacity: 0; }
+  35% { opacity: 0.34; }
+  70% { opacity: 0; }
+  100% { transform: translateX(220%) skewX(-18deg); opacity: 0; }
+}
+
+.knowledge-book {
+  overflow: hidden;
+}
+
+.knowledge-book::after {
+  content: "";
+  position: absolute;
+  inset: -20% auto -20% 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: knowledge-book-sheen 4.8s ease-in-out infinite;
+  animation-delay: var(--knowledge-book-delay, 0s);
+}
+
+.knowledge-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(190, 242, 100, 0.46) rgba(255, 255, 255, 0.08);
+}
+
+.knowledge-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.knowledge-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+}
+
+.knowledge-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(190, 242, 100, 0.72), rgba(45, 212, 191, 0.46));
+  border-radius: 999px;
+}
+
+.knowledge-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(190, 242, 100, 0.9), rgba(45, 212, 191, 0.68));
+}
+
+@keyframes plant-float {
+  0%, 100% {
+    transform: translateY(0);
+    filter: drop-shadow(0 18px 22px rgba(6, 95, 70, 0.08));
+  }
+  50% {
+    transform: translateY(-7px);
+    filter: drop-shadow(0 24px 28px rgba(6, 95, 70, 0.12));
+  }
+}
+
+.plant-float {
+  animation: plant-float 3.8s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+@keyframes plant-water-rise {
+  0% {
+    transform: translateY(102%);
+  }
+  68% {
+    transform: translateY(18%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes plant-water-wave {
+  0%, 100% {
+    transform: translateX(-50%) translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateX(-50%) translateY(2px) rotate(2deg);
+  }
+}
