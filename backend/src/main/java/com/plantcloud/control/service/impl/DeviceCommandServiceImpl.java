@@ -8,7 +8,6 @@ import com.plantcloud.control.enums.ControlTarget;
 import com.plantcloud.control.exception.DeviceNotFoundException;
 import com.plantcloud.control.exception.InvalidCommandException;
 import com.plantcloud.control.exception.MqttPublishException;
-import com.plantcloud.control.mapper.DeviceCommandLogMapper;
 import com.plantcloud.control.model.PublishResult;
 import com.plantcloud.control.service.DeviceCommandService;
 import com.plantcloud.control.service.MqttPublishService;
@@ -18,7 +17,6 @@ import com.plantcloud.device.mapper.DeviceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -30,28 +28,22 @@ import java.util.Map;
 public class DeviceCommandServiceImpl implements DeviceCommandService {
 
     private final DeviceMapper deviceMapper;
-    private final DeviceCommandLogMapper logMapper;
     private final MqttPublishService mqttService;
     private final ObjectMapper objectMapper;
+    private final DeviceCommandPersistenceService commandPersistenceService;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ControlCommandVO controlLight(DeviceControlRequest request) {
         return execute(request, ControlTarget.LIGHT);
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public ControlCommandVO controlFan(DeviceControlRequest request) {
         return execute(request, ControlTarget.FAN);
     }
 
-    /**
-     * 核心控制流程
-     * 不加 @Transactional，避免内部调用导致事务失效
-     */
     private ControlCommandVO execute(DeviceControlRequest request, ControlTarget target) {
-        log.info("开始执行控制命令. plantId={}, deviceId={}, target={}, command={}",
+        log.info("Processing device command. plantId={}, deviceId={}, target={}, command={}",
                 request.getPlantId(), request.getDeviceId(), target, request.getCommandValue());
 
         Device device = deviceMapper.selectById(request.getDeviceId());
@@ -60,7 +52,6 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         }
 
         validateTargetDeviceType(target, device);
-
         String action = normalizeAction(request.getCommandValue());
 
         if (!isDeviceOnline(device)) {
@@ -68,38 +59,26 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         }
 
         String payload = buildPayload(target, action);
-        DeviceCommandLog commandLog = buildPendingLog(request, action, payload);
-        logMapper.insert(commandLog);
+        DeviceCommandLog commandLog = commandPersistenceService.createPendingLog(
+                buildPendingLog(request, action, payload)
+        );
 
         try {
             String topic = buildTopic(device);
             PublishResult result = mqttService.publish(topic, payload);
-
             if (!result.isSuccess()) {
                 throw new MqttPublishException(
-                        result.getErrorMessage() != null
-                                ? result.getErrorMessage()
-                                : "MQTT publish failed"
+                        result.getErrorMessage() != null ? result.getErrorMessage() : "MQTT publish failed"
                 );
             }
 
-            commandLog.setExecuteStatus(CommandStatus.SUCCESS.name());
-            commandLog.setExecutedAt(LocalDateTime.now());
-            logMapper.updateById(commandLog);
-
-            log.info("控制命令执行成功. logId={}, topic={}", commandLog.getId(), topic);
-
-            return buildVO(commandLog, "控制指令下发成功");
-
-        } catch (Exception e) {
-            commandLog.setExecuteStatus(CommandStatus.FAILED.name());
-            commandLog.setErrorMessage(e.getMessage());
-            commandLog.setExecutedAt(LocalDateTime.now());
-            logMapper.updateById(commandLog);
-
-            log.error("控制命令执行失败. logId={}, deviceId={}", commandLog.getId(), request.getDeviceId(), e);
-
-            throw new MqttPublishException("MQTT publish failed: " + e.getMessage(), e);
+            commandPersistenceService.markSuccess(commandLog);
+            log.info("Device command succeeded. logId={}, topic={}", commandLog.getId(), topic);
+            return buildVO(commandLog, "Command published successfully");
+        } catch (Exception ex) {
+            commandPersistenceService.markFailed(commandLog, ex.getMessage());
+            log.error("Device command failed. logId={}, deviceId={}", commandLog.getId(), request.getDeviceId(), ex);
+            throw new MqttPublishException("MQTT publish failed: " + ex.getMessage(), ex);
         }
     }
 
@@ -126,7 +105,6 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         if (!"ON".equals(normalized) && !"OFF".equals(normalized)) {
             throw new InvalidCommandException("Only ON/OFF allowed, got: " + action);
         }
-
         return normalized;
     }
 
@@ -136,8 +114,8 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
             map.put("target", target.getValue());
             map.put("action", action);
             return objectMapper.writeValueAsString(map);
-        } catch (Exception e) {
-            throw new RuntimeException("Payload build failed", e);
+        } catch (Exception ex) {
+            throw new RuntimeException("Payload build failed", ex);
         }
     }
 
@@ -145,11 +123,9 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         if (device.getId() == null) {
             throw new RuntimeException("Device ID is null");
         }
-
         if (device.getMqttTopicDown() != null && !device.getMqttTopicDown().isBlank()) {
             return device.getMqttTopicDown();
         }
-
         return "device/" + device.getId() + "/ia1/control";
     }
 
@@ -183,11 +159,11 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         commandLog.setErrorMessage("Device offline");
         commandLog.setExecutedAt(LocalDateTime.now());
 
-        logMapper.insert(commandLog);
+        commandPersistenceService.createOfflineLog(commandLog);
+        log.warn("Device command skipped because device is offline. deviceId={}, logId={}",
+                req.getDeviceId(), commandLog.getId());
 
-        log.warn("设备离线，控制失败. deviceId={}, logId={}", req.getDeviceId(), commandLog.getId());
-
-        return buildVO(commandLog, "设备离线，指令执行失败");
+        return buildVO(commandLog, "Device is offline");
     }
 
     private ControlCommandVO buildVO(DeviceCommandLog commandLog, String message) {

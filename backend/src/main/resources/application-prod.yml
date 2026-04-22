@@ -3,6 +3,17 @@ spring:
     url: ${MYSQL_URL:jdbc:mysql://150.158.76.53:3306/plant_care_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
     username: ${MYSQL_USERNAME:plant}
     password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      pool-name: PlantCloudHikariPool
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:10}
+      minimum-idle: ${DB_POOL_MIN_IDLE:2}
+      connection-timeout: ${DB_POOL_CONNECTION_TIMEOUT:30000}
+      validation-timeout: ${DB_POOL_VALIDATION_TIMEOUT:5000}
+      idle-timeout: ${DB_POOL_IDLE_TIMEOUT:600000}
+      max-lifetime: ${DB_POOL_MAX_LIFETIME:1800000}
+      keepalive-time: ${DB_POOL_KEEPALIVE_TIME:300000}
+      leak-detection-threshold: ${DB_POOL_LEAK_DETECTION_THRESHOLD:20000}
+      register-mbeans: true
   data:
     redis:
       host: ${REDIS_HOST:redis}
