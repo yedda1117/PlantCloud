@@ -1,9 +1,17 @@
 package com.plantcloud.mqtt.listener;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.plantcloud.device.entity.Device;
 import com.plantcloud.device.mapper.DeviceMapper;
+import com.plantcloud.monitoring.entity.HumidityData;
+import com.plantcloud.monitoring.entity.LightData;
+import com.plantcloud.monitoring.entity.TemperatureData;
+import com.plantcloud.monitoring.mapper.HumidityDataMapper;
+import com.plantcloud.monitoring.mapper.LightDataMapper;
+import com.plantcloud.monitoring.mapper.TemperatureDataMapper;
 import com.plantcloud.mqtt.dto.TelemetryPayload;
 import com.plantcloud.mqtt.service.impl.TelemetryPersistenceService;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +20,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -36,6 +45,11 @@ public class Ia1TelemetryMqttListener {
     private final ObjectMapper objectMapper;
     private final DeviceMapper deviceMapper;
     private final TelemetryPersistenceService telemetryPersistenceService;
+
+    // 保留这些 mapper，避免本类中的辅助方法编译失败
+    private final TemperatureDataMapper temperatureDataMapper;
+    private final HumidityDataMapper humidityDataMapper;
+    private final LightDataMapper lightDataMapper;
 
     /**
      * Async entrance:

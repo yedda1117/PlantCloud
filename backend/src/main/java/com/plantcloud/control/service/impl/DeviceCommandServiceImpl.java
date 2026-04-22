@@ -19,10 +19,8 @@ import com.plantcloud.device.mapper.DeviceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -89,9 +87,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
                 );
             }
 
-            commandLog.setExecuteStatus(CommandStatus.SUCCESS.name());
-            commandLog.setExecutedAt(LocalDateTime.now());
-            logMapper.updateById(commandLog);
+            commandPersistenceService.markSuccess(commandLog);
             updateDeviceCommandStatus(device, target, action);
             log.info("[CTRL] command success logId={} topic={} payload={}", commandLog.getId(), topic, payload);
             log.info("控制命令执行成功. logId={}, topic={}", commandLog.getId(), topic);
@@ -101,10 +97,8 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         } catch (Exception e) {
             log.error("[CTRL] command failed logId={} deviceId={} target={} commandValue={}",
                     commandLog.getId(), request.getDeviceId(), target, request.getCommandValue(), e);
-            commandLog.setExecuteStatus(CommandStatus.FAILED.name());
-            commandLog.setErrorMessage(e.getMessage());
-            commandLog.setExecutedAt(LocalDateTime.now());
-            logMapper.updateById(commandLog);
+
+            commandPersistenceService.markFailed(commandLog, e.getMessage());
 
             log.error("控制命令执行失败. logId={}, deviceId={}", commandLog.getId(), request.getDeviceId(), e);
 
@@ -174,7 +168,6 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
     private void updateDeviceCommandStatus(Device device, ControlTarget target, String action) {
         ObjectNode statusNode = buildCurrentStatusNode(device.getCurrentStatus());
-        LocalDateTime now = LocalDateTime.now();
 
         if (target == ControlTarget.FAN) {
             statusNode.put("fanStatus", action);
@@ -184,12 +177,9 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
         statusNode.put("mqttStatus", device.getOnlineStatus());
         statusNode.put("online", isDeviceOnline(device));
-        statusNode.put("commandUpdatedAt", now.toString());
-        statusNode.put("statusUpdatedAt", now.toString());
         statusNode.put("stateSource", "COMMAND");
 
         device.setCurrentStatus(statusNode.toString());
-        device.setUpdatedAt(now);
         deviceMapper.updateById(device);
 
         log.info("[CTRL] current_status updated by command. deviceId={}, target={}, action={}, currentStatus={}",
@@ -238,7 +228,6 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         commandLog.setResponsePayload(null);
         commandLog.setExecuteStatus(CommandStatus.FAILED.name());
         commandLog.setErrorMessage("Device offline");
-        commandLog.setExecutedAt(LocalDateTime.now());
 
         commandPersistenceService.createOfflineLog(commandLog);
         log.warn("Device command skipped because device is offline. deviceId={}, logId={}",
@@ -257,4 +246,3 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
                 .build();
     }
 }
-
