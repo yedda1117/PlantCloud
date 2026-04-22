@@ -168,6 +168,7 @@ export default function HomePage() {
   const [realtimeData, setRealtimeData] = useState<HomeRealtimeData | null>(null)
   const [realtimeError, setRealtimeError] = useState<string | null>(null)
   const [controlPending, setControlPending] = useState<HomeControlTarget | null>(null)
+  const [, setPlantState] = useState<"healthy" | "happy" | "dark" | "thirsty" | "hot" | "cold" | "fallen">("healthy")
 
   // currentPlant.plantId 对应后端 plantId
   const plantApiId = currentPlant.plantId
