@@ -1,12 +1,8 @@
 package com.plantcloud.photo.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.plantcloud.common.enums.ResultCode;
 import com.plantcloud.photo.ai.SmartAiClient;
-import com.plantcloud.photo.entity.MilestoneEnum;
 import com.plantcloud.photo.entity.PlantLog;
-import com.plantcloud.photo.mapper.PlantLogMapper;
 import com.plantcloud.photo.service.PhotoService;
 import com.plantcloud.photo.vo.PhotoLogVO;
 import com.plantcloud.plant.entity.Plant;
@@ -15,7 +11,6 @@ import com.plantcloud.system.exception.BizException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -24,8 +19,6 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -39,14 +32,13 @@ import java.util.UUID;
 public class PhotoServiceImpl implements PhotoService {
 
     private final SmartAiClient smartAiClient;
-    private final PlantLogMapper plantLogMapper;
     private final PlantMapper plantMapper;
+    private final PhotoPersistenceService photoPersistenceService;
 
     @Value("${app.upload.dir:uploads}")
     private String uploadDir;
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public PhotoLogVO upload(Long plantId,
                              LocalDate date,
                              MultipartFile photo,
@@ -83,16 +75,14 @@ public class PhotoServiceImpl implements PhotoService {
                 aiStatus = "DONE";
             }
 
-            PlantLog plantLog = getOrCreatePlantLog(plantId, date);
-            plantLog.setOriginPhotoUrl(originalUrl);
-            plantLog.setPhotoUrl(processedUrl);
-            if (note != null) {
-                plantLog.setNote(note);
-            }
-            if (milestone != null) {
-                plantLog.setMilestone(MilestoneEnum.normalize(milestone));
-            }
-            savePlantLog(plantLog);
+            var plantLog = photoPersistenceService.saveUploadResult(
+                    plantId,
+                    date,
+                    originalUrl,
+                    processedUrl,
+                    note,
+                    milestone
+            );
 
             return toPhotoLogVO(plantLog, aiStatus);
         } catch (IOException ex) {
@@ -101,17 +91,9 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void deletePhoto(Long plantId, LocalDate date) {
         requirePlant(plantId);
-        PlantLog plantLog = findPlantLog(plantId, date);
-        if (plantLog == null) {
-            return;
-        }
-        plantLogMapper.update(null, new LambdaUpdateWrapper<PlantLog>()
-                .eq(PlantLog::getId, plantLog.getId())
-                .set(PlantLog::getPhotoUrl, null)
-                .set(PlantLog::getOriginPhotoUrl, null));
+        photoPersistenceService.deletePhoto(plantId, date);
     }
 
     private void validateImage(MultipartFile file) {
@@ -152,32 +134,6 @@ public class PhotoServiceImpl implements PhotoService {
                 .path("/uploads/")
                 .path(relativePath)
                 .toUriString();
-    }
-
-    private PlantLog getOrCreatePlantLog(Long plantId, LocalDate date) {
-        PlantLog plantLog = findPlantLog(plantId, date);
-        if (plantLog != null) {
-            return plantLog;
-        }
-        PlantLog created = new PlantLog();
-        created.setPlantId(plantId);
-        created.setLogDate(date);
-        return created;
-    }
-
-    private PlantLog findPlantLog(Long plantId, LocalDate date) {
-        return plantLogMapper.selectOne(new LambdaQueryWrapper<PlantLog>()
-                .eq(PlantLog::getPlantId, plantId)
-                .eq(PlantLog::getLogDate, date)
-                .last("limit 1"));
-    }
-
-    private void savePlantLog(PlantLog plantLog) {
-        if (plantLog.getId() == null) {
-            plantLogMapper.insert(plantLog);
-            return;
-        }
-        plantLogMapper.updateById(plantLog);
     }
 
     private Plant requirePlant(Long plantId) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { AuthGuard } from "@/components/auth-guard"
-import { PixelPlant, PlantState } from "@/components/pixel-plant"
+import { PlantModelViewer } from "@/components/PlantModelViewer"
 import { GpsBadge } from "@/components/gps-badge"
 import { DeviceControl } from "@/components/device-control"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -91,7 +91,6 @@ export default function HomePage() {
 
   const [lightOn, setLightOn] = useState(true)
   const [fanOn, setFanOn] = useState(true)
-  const [plantState, setPlantState] = useState<PlantState>("healthy")
   const [realtimeData, setRealtimeData] = useState<HomeRealtimeData | null>(null)
   const [realtimeError, setRealtimeError] = useState<string | null>(null)
 
@@ -133,17 +132,6 @@ export default function HomePage() {
     const timer = window.setInterval(() => void loadRealtime(), POLL_INTERVAL_MS)
     return () => { cancelled = true; window.clearInterval(timer) }
   }, [plantApiId])
-
-  // 根据传感器数据推断植物状态
-  useEffect(() => {
-    if      (previewSensorData.isFallen)              setPlantState("fallen")
-    else if (previewSensorData.temperature > 30)      setPlantState("hot")
-    else if (previewSensorData.temperature < 15)      setPlantState("cold")
-    else if (previewSensorData.humidity < 40)         setPlantState("thirsty")
-    else if (previewSensorData.light < 200)           setPlantState("dark")
-    else if (previewSensorData.hasHuman)              setPlantState("happy")
-    else                                              setPlantState("healthy")
-  }, [previewSensorData])
 
   const getTempStatus = () => {
     switch (realtimeData?.environment.temperatureStatus) {
@@ -267,10 +255,10 @@ export default function HomePage() {
                 </CardHeader>
                 <CardContent className="flex flex-col items-center justify-center flex-1 min-h-0 py-3">
                   <div className="relative mb-3 w-full flex justify-center flex-1 min-h-0">
-                    <div className="relative border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-xs flex items-center justify-center">
+                    <div className="relative border-2 border-primary/20 rounded-3xl p-4 bg-gradient-to-br from-primary/5 to-transparent w-full max-w-md flex items-center justify-center">
                       <div className="pointer-events-none absolute inset-0 bg-primary/5 rounded-full blur-3xl scale-150" />
-                      <div className="relative z-10 scale-110">
-                        <PixelPlant state={plantState} size="xl" />
+                      <div className="relative z-10 h-full min-h-[24rem] w-full">
+                        <PlantModelViewer modelPath="/models/zhizihua.glb" />
                       </div>
                     </div>
                   </div>

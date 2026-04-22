@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Home,
   Leaf,
+  type LucideIcon,
   LogOut,
   Settings,
   Sprout,
@@ -19,7 +20,11 @@ import { usePlantSelection } from "@/context/plant-selection"
 const HIDDEN_NAV_PATHS = ["/login", "/register", "/"]
 const PLANT_SELECTOR_PATHS = ["/home", "/calendar", "/chat", "/settings"]
 
-const navItems = [
+type NavItem =
+  | { href: string; label: string; icon: LucideIcon; type?: undefined }
+  | { type: "logout"; label: string; icon: LucideIcon; href?: undefined }
+
+const navItems: NavItem[] = [
   { href: "/home",      label: "主页",     icon: Home },
   { href: "/dashboard", label: "植物总览", icon: Sprout },
   { href: "/chat",      label: "AI 问答",  icon: Bot },
