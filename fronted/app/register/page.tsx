@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { FormEvent, useEffect, useRef, useState } from "react"
 import { ArrowLeft, Camera, CheckCircle2, Leaf, Loader2, Lock, User, XCircle } from "lucide-react"
+import { FaceScannerFrame } from "@/components/face-scanner-frame"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -167,9 +168,12 @@ export default function RegisterPage() {
         </section>
 
         <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-xl shadow-zinc-200/70 sm:p-6">
-          <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-950">
-            <video ref={videoRef} className="aspect-[4/3] w-full scale-x-[-1] object-cover" muted playsInline />
-          </div>
+          <FaceScannerFrame
+            videoRef={videoRef}
+            tone={loading ? "loading" : messageType === "success" ? "success" : messageType === "error" ? "error" : "idle"}
+            label={loading ? "正在写入特征" : messageType === "success" ? "采集完成" : messageType === "error" ? "采集异常" : "注册采集框"}
+            sublabel="正脸居中，眼睛保持在横向参考线附近"
+          />
 
           <div className={`mt-4 flex items-start gap-2 rounded-lg border p-3 text-sm leading-6 ${messageType === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : messageType === "error" ? "border-red-200 bg-red-50 text-red-800" : "border-zinc-200 bg-zinc-50 text-zinc-600"}`}>
             {messageType === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4" /> : messageType === "error" ? <XCircle className="mt-0.5 h-4 w-4" /> : <Camera className="mt-0.5 h-4 w-4" />}

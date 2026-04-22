@@ -178,3 +178,32 @@
 .animate-grow {
   animation: pixel-grow 0.5s ease-out forwards;
 }
+
+@keyframes face-scan-sweep {
+  0% { transform: translateY(-120%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(520%); opacity: 0; }
+}
+
+@keyframes face-grid-drift {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 34px 34px, -34px -34px; }
+}
+
+.face-scan-grid {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.14) 1px, transparent 1px);
+  background-size: 34px 34px;
+  animation: face-grid-drift 8s linear infinite;
+}
+
+.face-scan-line {
+  top: 0;
+  background:
+    linear-gradient(to bottom, transparent, rgba(34, 211, 238, 0.16), transparent),
+    linear-gradient(90deg, transparent, currentColor, transparent);
+  box-shadow: 0 0 26px currentColor;
+  animation: face-scan-sweep 3.2s ease-in-out infinite;
+}

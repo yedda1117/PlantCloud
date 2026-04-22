@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import { Camera, CheckCircle2, KeyRound, Leaf, Loader2, Lock, ShieldCheck, User, XCircle } from "lucide-react"
+import { FaceScannerFrame } from "@/components/face-scanner-frame"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -222,9 +223,12 @@ export default function LoginPage() {
                 </span>
               </div>
 
-              <div className="overflow-hidden rounded-lg border border-white/25 bg-zinc-950 shadow-2xl shadow-black/30">
-                <video ref={videoRef} className="aspect-[4/3] w-full scale-x-[-1] object-cover" muted playsInline />
-              </div>
+              <FaceScannerFrame
+                videoRef={videoRef}
+                tone={statusType}
+                label={statusType === "loading" ? "正在比对特征" : statusType === "success" ? "身份已确认" : statusType === "error" ? "需要重新校准" : "面部定位中"}
+                sublabel="请将面部放入中央线框"
+              />
 
               <div className="mt-5 flex flex-col gap-4 rounded-lg border border-white/20 bg-white/10 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
                 <div>
