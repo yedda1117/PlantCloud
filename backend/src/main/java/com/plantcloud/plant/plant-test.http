@@ -233,22 +233,37 @@ Accept: {{contentType}}
 
 ### 1. 获取所有植物模板公开字段列表 - 正常测试
 # 预期结果：返回 code 为 0，data 为包含多个植物模板（如蝴蝶兰等）的数组
-GET {{baseUrl}}/plant-config/templates
+GET {{baseUrl}}/plant-config/templates/{{plantId}}
 Accept: {{contentType}}
 
 ###
 
-### 1. 获取所有植物模板公开字段列表 - 正常测试
-# 预期结果：返回 code 为 0，data 为包含多个植物模板（如蝴蝶兰等）的数组
-GET {{baseUrl}}/plants
+@plantId = 1
+
+### 1. 根据plantId获取植物模板公开字段列表 - 正常测试
+GET {{baseUrl}}/plants/{{plantId}}
 Accept: {{contentType}}
 
-###
 
 
-### 5. 异常测试 - 错误的请求方法
-# 该接口只支持 GET，使用 POST 应该返回 405 Method Not Allowed
-POST {{baseUrl}}/plant-config/templates
+
+### 1. 更新植物模板 - 正常流程测试
+# 场景：修改 ID 为 1 的植物所绑定的模板参数
+# 预期结果：返回 code: 0，data 中显示修改后的新数值
+PUT {{baseUrl}}/plant-config/templates/{{plantId}}
 Content-Type: {{contentType}}
 
-{}
+{
+  "plantName": "网纹草-修改版",
+  "species": "Calathea",
+  "tempMin": 19.00,
+  "tempMax": 27.00,
+  "humidityMin": 60.00,
+  "humidityMax": 88.00,
+  "lightMin": 1800.00,
+  "lightMax": 6500.00,
+  "tempRiseSensitive": 0.80,
+  "humidityDropSensitive": 0.90,
+  "lightRiseSensitive": 0.70
+}
+

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { Suspense, useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
@@ -16,6 +16,7 @@ import { toast } from "@/hooks/use-toast"
 import { ApiError } from "@/lib/api-client"
 import { getDevicesStatus, type DevicesStatus } from "@/lib/device-api"
 import { DEFAULT_PLANT_ID, getPlantApiId, getPlantOption, plantOptions, SELECTED_PLANT_STORAGE_KEY } from "@/lib/plants"
+import { usePlantSelection } from "@/context/plant-selection"
 import {
   createStrategy,
   deleteStrategy,
@@ -386,6 +387,218 @@ function StrategyDialog({
   )
 }
 
+// ─── Edit Plant Modal ─────────────────────────────────────────────────────────
+
+type EditPlantFormState = {
+  tempRange: [number, number]
+  humidityRange: [number, number]
+  lightRange: [number, number]
+  tempRiseSensitive: number
+  humidityDropSensitive: number
+  lightRiseSensitive: number
+}
+
+const initialEditPlantForm: EditPlantFormState = {
+  tempRange: [18, 28],
+  humidityRange: [40, 70],
+  lightRange: [2000, 20000],
+  tempRiseSensitive: 0.6,
+  humidityDropSensitive: 0.4,
+  lightRiseSensitive: 0.4,
+}
+
+function EditPlantModal({
+  open,
+  plantId,
+  plantName,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  plantId: string
+  plantName: string
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [form, setForm] = useState<EditPlantFormState>(initialEditPlantForm)
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const patch = (p: Partial<EditPlantFormState>) => setForm((f) => ({ ...f, ...p }))
+
+  useEffect(() => {
+    if (!open || !plantId) return
+    if (!plantId || plantId === "" || plantId === "undefined") {
+      setError("无法获取植物 ID，请刷新页面后重试")
+      return
+    }
+    setLoading(true)
+    setError(null)
+    const token = typeof window !== "undefined" ? window.localStorage.getItem("plantcloud_token") : null
+    const headers: HeadersInit = { accept: "application/json" }
+    if (token) headers.Authorization = `Bearer ${token}`
+    fetch(`/api/plant-config/templates/${plantId}`, { headers })
+      .then((res) => res.json())
+      .then((json) => {
+        const d = json?.data ?? json
+        if (!d) return
+        setForm({
+          tempRange: [d.tempMin ?? 18, d.tempMax ?? 28],
+          humidityRange: [d.humidityMin ?? 40, d.humidityMax ?? 70],
+          lightRange: [d.lightMin ?? 2000, d.lightMax ?? 20000],
+          tempRiseSensitive: d.tempRiseSensitive ?? 0.6,
+          humidityDropSensitive: d.humidityDropSensitive ?? 0.4,
+          lightRiseSensitive: d.lightRiseSensitive ?? 0.4,
+        })
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : "加载配置失败"))
+      .finally(() => setLoading(false))
+  }, [open, plantId])
+
+  const handleClose = () => {
+    setError(null)
+    onClose()
+  }
+
+  const handleSubmit = async () => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const token = typeof window !== "undefined" ? window.localStorage.getItem("plantcloud_token") : null
+      const headers: HeadersInit = { "Content-Type": "application/json" }
+      if (token) headers.Authorization = `Bearer ${token}`
+      const res = await fetch(`/api/plant-config/templates/${plantId}`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          plantName,
+          tempMin: form.tempRange[0],
+          tempMax: form.tempRange[1],
+          humidityMin: form.humidityRange[0],
+          humidityMax: form.humidityRange[1],
+          lightMin: form.lightRange[0],
+          lightMax: form.lightRange[1],
+          tempRiseSensitive: form.tempRiseSensitive,
+          humidityDropSensitive: form.humidityDropSensitive,
+          lightRiseSensitive: form.lightRiseSensitive,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const msg = json?.message ?? json?.msg ?? `更新失败（${res.status}）`
+        throw new Error(msg)
+      }
+      toast({ title: "更新成功 🌿", description: `${plantName} 的配置已保存。` })
+      handleClose()
+      onSuccess()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "更新失败，请重试"
+      setError(msg)
+      toast({ title: "更新失败", description: msg, variant: "destructive" })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="h-5 w-5 text-primary" />
+            编辑植物配置
+          </DialogTitle>
+          <p className="text-sm font-semibold text-primary pt-1">{plantName}</p>
+        </DialogHeader>
+
+        {error ? (
+          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">正在加载配置...</div>
+        ) : (
+          <div className="space-y-5 py-2">
+            <div>
+              <p className="mb-3 text-sm font-medium">环境阈值设置</p>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Thermometer className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm font-medium">温度范围</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {form.tempRange[0]}°C – {form.tempRange[1]}°C
+                    </span>
+                  </div>
+                  <Slider value={form.tempRange} min={0} max={50} step={1} onValueChange={(v) => patch({ tempRange: v as [number, number] })} />
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Droplets className="h-4 w-4 text-blue-500" />
+                      <span className="text-sm font-medium">湿度范围</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {form.humidityRange[0]}% – {form.humidityRange[1]}%
+                    </span>
+                  </div>
+                  <Slider value={form.humidityRange} min={0} max={100} step={1} onValueChange={(v) => patch({ humidityRange: v as [number, number] })} />
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sun className="h-4 w-4 text-amber-500" />
+                      <span className="text-sm font-medium">光照范围</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {form.lightRange[0].toLocaleString()} – {form.lightRange[1].toLocaleString()} lux
+                    </span>
+                  </div>
+                  <Slider value={form.lightRange} min={0} max={50000} step={100} onValueChange={(v) => patch({ lightRange: v as [number, number] })} />
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div>
+              <p className="mb-3 text-sm font-medium">敏感度</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">温度敏感度</label>
+                  <Input type="number" min={0} max={1} step={0.1} value={form.tempRiseSensitive} onChange={(e) => patch({ tempRiseSensitive: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">湿度敏感度</label>
+                  <Input type="number" min={0} max={1} step={0.1} value={form.humidityDropSensitive} onChange={(e) => patch({ humidityDropSensitive: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">光照敏感度</label>
+                  <Input type="number" min={0} max={1} step={0.1} value={form.lightRiseSensitive} onChange={(e) => patch({ lightRiseSensitive: Number(e.target.value) })} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose} disabled={submitting || loading}>取消</Button>
+          <Button onClick={handleSubmit} disabled={submitting || loading}>
+            {submitting ? "提交中..." : "提交"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ─── Add Plant Step Modal ─────────────────────────────────────────────────────
 
 type AddPlantStep = 1 | 2 | 3
@@ -410,9 +623,9 @@ const initialAddPlantForm: AddPlantFormState = {
   tempRange: [18, 28],
   humidityRange: [40, 70],
   lightRange: [2000, 20000],
-  tempRiseSensitive: 3,
-  humidityDropSensitive: 2,
-  lightRiseSensitive: 2,
+  tempRiseSensitive: 0.6,
+  humidityDropSensitive: 0.4,
+  lightRiseSensitive: 0.4,
   careLevel: "中等",
   summary: "",
   aiPlantName: "",
@@ -698,8 +911,9 @@ function AddPlantModal({
                   <label className="mb-1 block text-xs text-muted-foreground">温度敏感度</label>
                   <Input
                     type="number"
-                    min={1}
-                    max={5}
+                    min={0}
+                    max={1}
+                    step={0.1}
                     value={form.tempRiseSensitive}
                     onChange={(e) => patch({ tempRiseSensitive: Number(e.target.value) })}
                   />
@@ -708,8 +922,9 @@ function AddPlantModal({
                   <label className="mb-1 block text-xs text-muted-foreground">湿度敏感度</label>
                   <Input
                     type="number"
-                    min={1}
-                    max={5}
+                    min={0}
+                    max={1}
+                    step={0.1}
                     value={form.humidityDropSensitive}
                     onChange={(e) => patch({ humidityDropSensitive: Number(e.target.value) })}
                   />
@@ -718,8 +933,9 @@ function AddPlantModal({
                   <label className="mb-1 block text-xs text-muted-foreground">光照敏感度</label>
                   <Input
                     type="number"
-                    min={1}
-                    max={5}
+                    min={0}
+                    max={1}
+                    step={0.1}
                     value={form.lightRiseSensitive}
                     onChange={(e) => patch({ lightRiseSensitive: Number(e.target.value) })}
                   />
@@ -811,8 +1027,10 @@ function AddPlantModal({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function SettingsPageContent() {
-  const searchParams = useSearchParams()
-  const [selectedPlantId, setSelectedPlantId] = useState(DEFAULT_PLANT_ID)
+  const { currentPlant, selectedPlantId } = usePlantSelection()
+  // 后端用的数字 plantId
+  const currentPlantApiId = currentPlant.plantId
+
   const [strategies, setStrategies] = useState<StrategyItem[]>([])
   const [devicesStatus, setDevicesStatus] = useState<DevicesStatus | null>(null)
   const [strategiesLoading, setStrategiesLoading] = useState(true)
@@ -824,7 +1042,8 @@ function SettingsPageContent() {
   const [submitting, setSubmitting] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [environmentSaving, setEnvironmentSaving] = useState(false)
+
+  // 策略日志
   const [logs, setLogs] = useState<PolicyLog[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [logsError, setLogsError] = useState<string | null>(null)
@@ -833,11 +1052,9 @@ function SettingsPageContent() {
   const [plants, setPlants] = useState<PlantItem[]>([])
   const [plantsLoading, setPlantsLoading] = useState(true)
   const [addPlantOpen, setAddPlantOpen] = useState(false)
-  // UI-only removed plant ids (not persisted)
   const [removedPlantIds, setRemovedPlantIds] = useState<Set<string>>(new Set())
+  const [editingPlant, setEditingPlant] = useState<PlantItem | null>(null)
 
-  const currentPlant = getPlantOption(selectedPlantId)
-  const currentPlantApiId = getPlantApiId(selectedPlantId)
   const potentialNotifyConflict = findPotentialNotifyConflict(strategies, strategyForm)
   const notifyConflictHint =
     potentialNotifyConflict && strategyForm.actionType === "NOTIFY_USER"
@@ -845,22 +1062,6 @@ function SettingsPageContent() {
       : null
 
   const visiblePlants = plants.filter((p) => !removedPlantIds.has(p.id))
-
-  useEffect(() => {
-    const plantFromQuery = searchParams.get("plant")
-    if (plantFromQuery && plantOptions.some((p) => p.id === plantFromQuery)) {
-      setSelectedPlantId(plantFromQuery)
-      return
-    }
-    const storedPlant = window.localStorage.getItem(SELECTED_PLANT_STORAGE_KEY)
-    if (storedPlant && plantOptions.some((p) => p.id === storedPlant)) {
-      setSelectedPlantId(storedPlant)
-    }
-  }, [searchParams])
-
-  useEffect(() => {
-    window.localStorage.setItem(SELECTED_PLANT_STORAGE_KEY, selectedPlantId)
-  }, [selectedPlantId])
 
   const loadPlants = async () => {
     setPlantsLoading(true)
@@ -871,12 +1072,20 @@ function SettingsPageContent() {
       const res = await fetch("/api/plants", { headers, cache: "no-store" })
       const json = await res.json()
       const raw: unknown[] = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : []
-      const mapped: PlantItem[] = raw.map((item: any) => ({
-        id: String(item.id ?? item.plantId ?? Math.random()),
-        plantName: item.plantName ?? item.name ?? "未知植物",
-        deviceId: String(item.deviceId ?? item.bindDeviceId ?? "—"),
-        status: item.status ?? "ACTIVE",
-      }))
+      if (raw.length > 0) console.log("[plants] first item keys:", Object.keys(raw[0] as object), raw[0])
+      const mapped: PlantItem[] = raw.map((item: any) => {
+        // 穷举后端可能返回的所有 id 字段名
+        const resolvedId =
+          item.plantId != null ? String(item.plantId) :
+          item.plant_id != null ? String(item.plant_id) :
+          item.id != null ? String(item.id) : ""
+        return {
+          id: resolvedId,
+          plantName: item.plantName ?? item.plant_name ?? item.name ?? "未知植物",
+          deviceId: String(item.deviceId ?? item.device_id ?? item.bindDeviceId ?? "—"),
+          status: item.status ?? "ACTIVE",
+        }
+      })
       setPlants(mapped)
       setRemovedPlantIds(new Set()) // reset on reload
     } catch {
@@ -914,9 +1123,60 @@ function SettingsPageContent() {
     }
   }
 
+  // 加载所有策略的执行日志（汇总展示）
+  const loadLogs = async (strategyList: StrategyItem[]) => {
+    if (strategyList.length === 0) {
+      setLogs([])
+      return
+    }
+    setLogsLoading(true)
+    setLogsError(null)
+    try {
+      // 并发拉取每条策略的最近日志
+      const results = await Promise.allSettled(
+        strategyList.map((s) =>
+          listStrategyExecutionLogs({ strategyId: s.id, pageNum: 1, pageSize: 5 }),
+        ),
+      )
+      const merged: PolicyLog[] = []
+      results.forEach((r, idx) => {
+        if (r.status !== "fulfilled") return
+        const records = r.value?.records ?? []
+        records.forEach((log: StrategyExecutionLogItem) => {
+          const isSuccess = log.executionResult === "SUCCESS"
+          const isFail = log.executionResult === "FAILED" || log.executionResult === "ERROR"
+          merged.push({
+            id: log.id,
+            time: log.executedAt
+              ? new Date(log.executedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+              : "--:--",
+            message: `[${strategyList[idx]?.strategyName ?? "策略"}] ${log.resultMessage ?? log.executionResult}`,
+            type: isSuccess ? "success" : isFail ? "warning" : "info",
+          })
+        })
+      })
+      // 按时间倒序
+      merged.sort((a, b) => b.time.localeCompare(a.time))
+      setLogs(merged)
+    } catch (error) {
+      setLogsError(error instanceof Error ? error.message : "日志加载失败")
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
   useEffect(() => { void loadPlants() }, [])
-  useEffect(() => { void loadStrategies() }, [currentPlantApiId])
-  useEffect(() => { void loadDevicesStatus() }, [])
+  useEffect(() => {
+    void loadStrategies()
+    void loadDevicesStatus()
+  }, [currentPlantApiId])
+
+  // 策略加载完后再拉日志
+  useEffect(() => {
+    if (!strategiesLoading) {
+      void loadLogs(strategies)
+    }
+  }, [strategies, strategiesLoading])
 
   const handleToggleStrategy = async (strategy: StrategyItem, nextEnabled: boolean) => {
     setTogglingId(strategy.id)
@@ -1030,7 +1290,7 @@ function SettingsPageContent() {
                                 ? "已删除"
                                 : "未知"}
                         </Badge>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => plant.id && setEditingPlant(plant)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
@@ -1062,7 +1322,7 @@ function SettingsPageContent() {
                       自动化策略管理
                     </CardTitle>
                     <CardDescription>
-                      当前正在查看 {currentPlant.emoji} {currentPlant.name} 的策略列表，数据已改为来自后端接口。
+                      当前正在查看 {currentPlant.emoji} {currentPlant.name}（ID: {currentPlantApiId}）的策略列表。
                     </CardDescription>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => void loadStrategies()} disabled={strategiesLoading}>
@@ -1151,7 +1411,7 @@ function SettingsPageContent() {
                     </CardTitle>
                     <CardDescription>显示当前植物策略被实时环境数据触发后的执行记录。</CardDescription>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => void loadStrategies()} disabled={logsLoading}>
+                  <Button variant="outline" size="sm" onClick={() => void loadLogs(strategies)} disabled={logsLoading}>
                     <RefreshCw className={`mr-2 h-4 w-4 ${logsLoading ? "animate-spin" : ""}`} />
                     刷新
                   </Button>
@@ -1194,35 +1454,6 @@ function SettingsPageContent() {
                     </div>
                   )) : null}
                 </div>
-              </CardContent>
-            </Card>
-
-            <Separator />
-
-            {/* ── 通知设置 ── */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-5 w-5 text-primary" />
-                  通知设置
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {[
-                  { label: "温度异常通知", desc: "当温度超出安全范围时提醒我。", defaultOn: true },
-                  { label: "湿度异常通知", desc: "当湿度超出安全范围时提醒我。", defaultOn: true },
-                  { label: "光照异常通知", desc: "当光照不足或过强时提醒我。", defaultOn: true },
-                  { label: "策略执行通知", desc: "策略成功执行后发送一条提示。", defaultOn: true },
-                  { label: "设备离线通知", desc: "设备失联时推送告警。", defaultOn: false },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between rounded-xl bg-muted/50 p-4">
-                    <div>
-                      <p className="font-medium">{item.label}</p>
-                      <p className="text-sm text-muted-foreground">{item.desc}</p>
-                    </div>
-                    <Switch defaultChecked={item.defaultOn} />
-                  </div>
-                ))}
               </CardContent>
             </Card>
 
@@ -1284,6 +1515,14 @@ function SettingsPageContent() {
         <AddPlantModal
           open={addPlantOpen}
           onClose={() => setAddPlantOpen(false)}
+          onSuccess={() => void loadPlants()}
+        />
+
+        <EditPlantModal
+          open={editingPlant !== null}
+          plantId={editingPlant?.id ?? ""}
+          plantName={editingPlant?.plantName ?? ""}
+          onClose={() => setEditingPlant(null)}
           onSuccess={() => void loadPlants()}
         />
       </div>
