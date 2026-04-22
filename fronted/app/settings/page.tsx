@@ -1062,6 +1062,16 @@ function SettingsPageContent() {
       : null
 
   const visiblePlants = plants.filter((p) => !removedPlantIds.has(p.id))
+  const enabledStrategiesCount = strategies.filter((strategy) => strategy.enabled).length
+  const latestLogTime = logs[0]?.time ?? "--:--"
+
+  function getCompactLogMessage(message: string) {
+    const matched = message.match(/^\[([^\]]+)\]/)
+    const strategyName = matched?.[1]?.trim() || "未命名策略"
+    const relatedStrategy = strategies.find((strategy) => strategy.strategyName === strategyName)
+    const statusLabel = relatedStrategy?.enabled === false ? "已停用" : "已开启"
+    return `策略 ${strategyName} ${statusLabel}`
+  }
 
   const loadPlants = async () => {
     setPlantsLoading(true)
@@ -1240,257 +1250,310 @@ function SettingsPageContent() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-background">
-        <main className="container mx-auto max-w-4xl px-6 py-8">
-          <h1 className="mb-6 text-2xl font-bold">系统设置</h1>
+      {/* 单屏展示：扣除全局导航栏 h-16，避免 100% 缩放时底部内容被挤出视口 */}
+      <div className="h-[calc(100dvh-4rem)] overflow-hidden bg-[linear-gradient(180deg,#eefbf1_0%,#e4f8ea_45%,#f7fcf8_100%)]">
+        <style jsx>{`
+          /* 模块内部滚动：保留滚动能力，但隐藏内部滚动条，避免整页滚动视觉 */
+          .settings-scroll {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+          }
 
-          <div className="space-y-6">
-            {/* ── 植物绑定管理 ── */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+          .settings-scroll::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
+        <main className="mx-auto flex h-full max-w-[1480px] flex-col px-4 py-1 sm:px-5 lg:px-6">
+          {/* 单屏展示：页面本身固定为一屏，主内容和底部通栏共同占满可视高度 */}
+          <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
+          {/* 三列栅格分布式布局：多个内容块共同分布在 3 个纵向栅格中，而不是三大面板并排 */}
+          <div className="mx-auto grid min-h-0 w-full max-w-[1180px] flex-1 grid-cols-1 gap-4 overflow-hidden py-0 xl:grid-cols-3">
+            {/* 避免“三大面板并排”：这里是分散卡片，不是一列只放一个大模块 */}
+            <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
+              <div className="px-1">
+                <div className="flex items-center gap-2">
                   <Leaf className="h-5 w-5 text-primary" />
-                  植物绑定管理
-                </CardTitle>
-                <CardDescription>管理已绑定的植物及其关联设备。</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {plantsLoading ? (
-                  <div className="rounded-xl border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                    正在加载植物列表...
-                  </div>
-                ) : visiblePlants.length === 0 ? (
-                  <div className="rounded-xl border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                    暂无绑定植物，点击下方按钮添加第一株植物。
-                  </div>
-                ) : (
-                  visiblePlants.map((plant) => (
-                    <div key={plant.id} className="flex items-center justify-between rounded-xl border bg-muted/50 p-4">
-                      <div>
-                        <p className="text-sm font-medium">{plant.plantName}</p>
-                        <p className="text-xs text-muted-foreground">绑定设备 ID：{plant.deviceId}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          className={
-                            plant.status === "ACTIVE"
-                              ? "bg-green-100 text-green-700"
-                              : plant.status === "INACTIVE"
-                                ? "bg-gray-100 text-gray-500"
-                                : plant.status === "DELETED"
-                                  ? "bg-red-100 text-red-700"
-                                  : "bg-gray-100 text-gray-500"
-                          }
-                        >
-                          {plant.status === "ACTIVE"
-                            ? "在线"
-                            : plant.status === "INACTIVE"
-                              ? "离线"
-                              : plant.status === "DELETED"
-                                ? "已删除"
-                                : "未知"}
-                        </Badge>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => plant.id && setEditingPlant(plant)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => setRemovedPlantIds((prev) => new Set([...prev, plant.id]))}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))
-                )}
-                <Button variant="outline" className="w-full" onClick={() => setAddPlantOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  新增植物
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* ── 自动化策略管理 ── */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Zap className="h-5 w-5 text-primary" />
-                      自动化策略管理
-                    </CardTitle>
-                    <CardDescription>
-                      当前正在查看 {currentPlant.emoji} {currentPlant.name}（ID: {currentPlantApiId}）的策略列表。
-                    </CardDescription>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => void loadStrategies()} disabled={strategiesLoading}>
-                    <RefreshCw className={`mr-2 h-4 w-4 ${strategiesLoading ? "animate-spin" : ""}`} />
-                    刷新
-                  </Button>
+                  <h2 className="text-base font-semibold">植物绑定管理</h2>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {strategiesLoading ? (
-                  <div className="rounded-xl border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-                    正在加载策略列表...
+
+              </div>
+              <Card className="rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+                <CardContent className="space-y-3 p-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3">
+                      <p className="text-xs text-muted-foreground">绑定植物数</p>
+                      <p className="mt-1.5 text-xl font-semibold">{visiblePlants.length}</p>
+                    </div>
+                    <div className="rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3">
+                      <p className="text-xs text-muted-foreground">当前植物</p>
+                      <p className="mt-1.5 truncate text-[0.95rem] font-semibold">
+                        {currentPlant.emoji} {currentPlant.name}
+                      </p>
+                    </div>
                   </div>
-                ) : null}
-                {!strategiesLoading && strategiesError ? (
-                  <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-6 text-sm text-destructive">
-                    {strategiesError}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button variant="outline" className="h-11 rounded-[1.15rem]" onClick={() => void loadPlants()}>
+                      <RefreshCw className={`mr-2 h-4 w-4 ${plantsLoading ? "animate-spin" : ""}`} />
+                      刷新
+                    </Button>
+                    <Button variant="outline" className="h-11 rounded-[1.15rem]" onClick={() => setAddPlantOpen(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      新增植物
+                    </Button>
                   </div>
-                ) : null}
-                {!strategiesLoading && !strategiesError && strategies.length === 0 ? (
-                  <div className="rounded-xl border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-                    当前植物还没有策略，点击下方按钮创建第一条自动化策略。
-                  </div>
-                ) : null}
-                {!strategiesLoading && !strategiesError
-                  ? strategies.map((strategy) => (
-                      <div
-                        key={strategy.id}
-                        className={`rounded-xl border p-4 transition-colors ${strategy.enabled ? "bg-muted/50" : "bg-muted/20 opacity-70"}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="mb-1 flex items-center gap-2">
-                              <p className="text-sm font-medium">{strategy.strategyName}</p>
-                              <Badge variant="outline" className="text-xs">
-                                {strategy.enabled ? "已启用" : "已停用"}
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-medium text-blue-600">如果</span>{" "}
-                              {formatStrategyCondition(strategy)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              <span className="font-medium text-green-600">则</span>{" "}
-                              {formatStrategyAction(strategy, { light: devicesStatus?.light, fan: devicesStatus?.fan })}
-                            </p>
+                </CardContent>
+              </Card>
+              {/* 模块内部滚动：植物列表卡片固定高度，超出内容仅在卡片内部滚动 */}
+              <Card className="min-h-0 flex-1 rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+                <CardContent className="flex h-full min-h-0 flex-col p-3.5">
+                  {plantsLoading ? (
+                    <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                      正在加载植物列表...
+                    </div>
+                  ) : visiblePlants.length === 0 ? (
+                    <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                      暂无绑定植物，点击下方按钮添加第一株植物。
+                    </div>
+                  ) : (
+                    <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                      {visiblePlants.map((plant) => (
+                        <div key={plant.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3.5">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{plant.plantName}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">绑定设备 ID：{plant.deviceId}</p>
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
-                            <Switch
-                              checked={strategy.enabled}
-                              disabled={togglingId === strategy.id}
-                              onCheckedChange={(checked) => void handleToggleStrategy(strategy, checked)}
-                            />
+                            <Badge
+                              className={
+                                plant.status === "ACTIVE"
+                                  ? "bg-green-100 text-green-700"
+                                  : plant.status === "INACTIVE"
+                                    ? "bg-gray-100 text-gray-500"
+                                    : plant.status === "DELETED"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-gray-100 text-gray-500"
+                              }
+                            >
+                              {plant.status === "ACTIVE"
+                                ? "在线"
+                                : plant.status === "INACTIVE"
+                                  ? "离线"
+                                  : plant.status === "DELETED"
+                                    ? "已删除"
+                                    : "未知"}
+                            </Badge>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => plant.id && setEditingPlant(plant)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-destructive hover:text-destructive"
-                              disabled={deletingId === strategy.id}
-                              onClick={() => void handleDeleteStrategy(strategy)}
+                              onClick={() => setRemovedPlantIds((prev) => new Set([...prev, plant.id]))}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  : null}
-                <Button variant="outline" className="w-full" onClick={() => setStrategyDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  新建策略
-                </Button>
-                {devicesLoading ? (
-                  <p className="text-xs text-muted-foreground">正在同步设备状态，用于补全策略动作中的设备信息...</p>
-                ) : null}
-              </CardContent>
-            </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </section>
 
-            {/* ── 策略日志 ── */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <ScrollText className="h-5 w-5 text-primary" />
-                      策略日志
-                    </CardTitle>
-                    <CardDescription>显示当前植物策略被实时环境数据触发后的执行记录。</CardDescription>
+            <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
+              <div className="px-1">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-primary" />
+                  <h2 className="text-base font-semibold">自动化策略管理</h2>
+                </div>
+                
+              </div>
+              <Card className="rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+                <CardContent className="space-y-3 p-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-[1.25rem] border border-border/60 bg-sky-50/75 p-3">
+                      <p className="text-xs text-muted-foreground">已启用</p>
+                      <p className="mt-1.5 text-xl font-semibold">{enabledStrategiesCount}</p>
+                    </div>
+                    <div className="rounded-[1.25rem] border border-border/60 bg-sky-50/75 p-3">
+                      <p className="text-xs text-muted-foreground">总策略数</p>
+                      <p className="mt-1.5 text-xl font-semibold">{strategies.length}</p>
+                    </div>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => void loadLogs(strategies)} disabled={logsLoading}>
-                    <RefreshCw className={`mr-2 h-4 w-4 ${logsLoading ? "animate-spin" : ""}`} />
-                    刷新
-                  </Button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button variant="outline" size="sm" className="h-11 rounded-[1.15rem]" onClick={() => void loadStrategies()} disabled={strategiesLoading}>
+                      <RefreshCw className={`mr-2 h-4 w-4 ${strategiesLoading ? "animate-spin" : ""}`} />
+                      刷新
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-11 rounded-[1.15rem]" onClick={() => setStrategyDialogOpen(true)}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      新建
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+              {/* 模块内部滚动：策略列表卡片固定高度，内部滚动而不是整页滚动 */}
+              <Card className="min-h-0 flex-1 rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+                <CardContent className="flex h-full min-h-0 flex-col p-3.5">
+                  {strategiesLoading ? (
+                    <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+                      正在加载策略列表...
+                    </div>
+                  ) : null}
+                  {!strategiesLoading && strategiesError ? (
+                    <div className="rounded-[1.4rem] border border-destructive/20 bg-destructive/5 px-4 py-6 text-sm text-destructive">
+                      {strategiesError}
+                    </div>
+                  ) : null}
+                  {!strategiesLoading && !strategiesError && strategies.length === 0 ? (
+                    <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+                      当前植物还没有策略，点击上方按钮创建第一条自动化策略。
+                    </div>
+                  ) : null}
+                  {!strategiesLoading && !strategiesError ? (
+                    <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                      {strategies.map((strategy) => (
+                        <div
+                          key={strategy.id}
+                          className={`rounded-[1.25rem] border p-3.5 transition-colors ${strategy.enabled ? "border-border/60 bg-sky-50/75" : "border-border/60 bg-slate-50/72 opacity-80"}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-2 flex items-center gap-2">
+                                <p className="truncate text-sm font-medium">{strategy.strategyName}</p>
+                                <Badge variant="outline" className="text-xs">
+                                  {strategy.enabled ? "已启用" : "已停用"}
+                                </Badge>
+                              </div>
+                              <p className="text-xs leading-6 text-muted-foreground">
+                                <span className="font-medium text-blue-600">如果</span>{" "}
+                                {formatStrategyCondition(strategy)}
+                              </p>
+                              <p className="text-xs leading-6 text-muted-foreground">
+                                <span className="font-medium text-green-600">则</span>{" "}
+                                {formatStrategyAction(strategy, { light: devicesStatus?.light, fan: devicesStatus?.fan })}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <Switch
+                                checked={strategy.enabled}
+                                disabled={togglingId === strategy.id}
+                                onCheckedChange={(checked) => void handleToggleStrategy(strategy, checked)}
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                disabled={deletingId === strategy.id}
+                                onClick={() => void handleDeleteStrategy(strategy)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {devicesLoading ? (
+                    <p className="mt-3 text-xs text-muted-foreground">正在同步设备状态，用于补全策略动作中的设备信息...</p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
+              <div className="px-1">
+                <div className="flex items-center gap-2">
+                  <ScrollText className="h-5 w-5 text-primary" />
+                  <h2 className="text-base font-semibold">策略日志</h2>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {logsLoading ? (
-                    <div className="rounded-xl border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                      正在加载策略执行日志...
+                
+              </div>
+              <Card className="rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+                <CardContent className="space-y-3 p-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-[1.2rem] border border-border/60 bg-amber-50/82 p-3">
+                      <p className="text-xs text-muted-foreground">日志条数</p>
+                      <p className="mt-1.5 text-xl font-semibold">{logs.length}</p>
                     </div>
-                  ) : null}
-
-                  {!logsLoading && logsError ? (
-                    <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-6 text-sm text-destructive">
-                      {logsError}
+                    <div className="rounded-[1.2rem] border border-border/60 bg-amber-50/82 p-3">
+                      <p className="text-xs text-muted-foreground">设备状态</p>
+                      <p className="mt-1.5 text-[0.95rem] font-semibold">{devicesLoading ? "同步中" : "已同步"}</p>
                     </div>
-                  ) : null}
-
-                  {!logsLoading && !logsError && logs.length === 0 ? (
-                    <div className="rounded-xl border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                      暂无策略执行日志。保存策略后，当实时温度、湿度或光照满足触发条件时会自动写入。
-                    </div>
-                  ) : null}
-
-                  {!logsLoading && !logsError ? logs.map((log) => (
-                    <div key={log.id} className="flex items-start gap-3 rounded-xl bg-muted/50 p-3">
-                      <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-mono text-xs text-muted-foreground">{log.time}</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    <Button variant="outline" size="sm" className="h-11 w-full rounded-[1.15rem]" onClick={() => void loadLogs(strategies)} disabled={logsLoading}>
+                      <RefreshCw className={`mr-2 h-4 w-4 ${logsLoading ? "animate-spin" : ""}`} />
+                      刷新
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+              {/* 模块内部滚动：日志列表卡片固定高度，内部滚动显示更多内容 */}
+              <Card className="min-h-0 flex-1 rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+                <CardContent className="flex h-full min-h-0 flex-col p-3.5">
+                  <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                    {logsLoading ? (
+                      <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                        正在加载策略执行日志...
                       </div>
-                      <div className="flex flex-1 items-start gap-2">
-                        {log.type === "warning" ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" /> : null}
-                        {log.type === "success" ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-500" /> : null}
-                        {log.type === "info" ? <Zap className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" /> : null}
-                        <p className={`text-sm ${log.type === "warning" ? "text-yellow-700" : log.type === "success" ? "text-green-700" : "text-foreground"}`}>
-                          {log.message}
-                        </p>
+                    ) : null}
+                    {!logsLoading && logsError ? (
+                      <div className="rounded-[1.4rem] border border-destructive/20 bg-destructive/5 px-4 py-6 text-sm text-destructive">
+                        {logsError}
                       </div>
-                    </div>
-                  )) : null}
-                </div>
-              </CardContent>
-            </Card>
+                    ) : null}
+                    {!logsLoading && !logsError && logs.length === 0 ? (
+                      <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                        暂无策略执行日志。保存策略后，当实时温度、湿度或光照满足触发条件时会自动写入。
+                      </div>
+                    ) : null}
+                    {!logsLoading && !logsError ? logs.map((log) => (
+                      <div key={log.id} className="flex items-start gap-3 rounded-[1.25rem] border border-border/60 bg-amber-50/78 p-3">
+                        <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="font-mono text-xs text-muted-foreground">{log.time}</span>
+                        </div>
+                        <div className="flex flex-1 items-start gap-2">
+                          {log.type === "warning" ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" /> : null}
+                          {log.type === "success" ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-500" /> : null}
+                          {log.type === "info" ? <Zap className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" /> : null}
+                          <p className={`text-sm leading-6 ${log.type === "warning" ? "text-yellow-700" : log.type === "success" ? "text-green-700" : "text-foreground"}`}>
+                            {getCompactLogMessage(log.message)}
+                          </p>
+                        </div>
+                      </div>
+                    )) : null}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+          </div>
 
-            {/* ── 应用信息 ── */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Smartphone className="h-5 w-5 text-primary" />
-                  应用信息
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+          {/* 应用信息四项同排：底部通栏区域独立放置，4 项固定在同一行横向排布 */}
+          <section className="mt-auto shrink-0 space-y-0.5">
+
+            <Card className="mx-auto w-full max-w-[1180px] rounded-[1.2rem] border-white/40 bg-white/38 shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+              <CardContent className="p-1">
+                <div className="grid min-w-0 grid-cols-4 gap-2 text-sm">
                   {[
                     { label: "应用版本", value: "v1.0.0" },
                     { label: "硬件型号", value: "BearPi-HM Nano" },
                     { label: "系统版本", value: "HarmonyOS 3.0" },
                     { label: "最近同步", value: "2026-04-13 10:00" },
                   ].map((item) => (
-                    <div key={item.label} className="rounded-xl bg-muted/50 p-3">
-                      <p className="text-muted-foreground">{item.label}</p>
-                      <p className="font-medium">{item.value}</p>
+                    <div key={item.label} className="min-w-0 rounded-[0.8rem] border border-white/45 bg-white/34 px-3 py-1 backdrop-blur-sm">
+                      <p className="truncate text-[11px] text-muted-foreground">{item.label}</p>
+                      <p className="mt-0.5 truncate text-[0.8rem] font-semibold leading-none">{item.value}</p>
                     </div>
                   ))}
                 </div>
               </CardContent>
             </Card>
-
-            {/* <Button
-              className="w-full"
-              size="lg"
-              disabled={environmentSaving}
-              onClick={() => void handleSaveEnvironmentRanges()}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {environmentSaving ? "保存中..." : "保存设置"}
-            </Button> */}
+          </section>
           </div>
         </main>
 
