@@ -446,8 +446,8 @@ export default function DashMain({ plants }: { plants: PlantMeta[] }) {
   }
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col justify-center overflow-hidden rounded-[2rem] border border-white/60 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(236,253,245,0.9)_34%,_rgba(255,247,237,0.82)_100%)] px-0 py-4 backdrop-blur-xl sm:px-2 sm:py-5">
-      <div className="pointer-events-none absolute left-7 top-[5.7rem] z-20 hidden rounded-[1.75rem] border border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.34)_0%,rgba(255,255,255,0.2)_100%)] shadow-[0_8px_30px_rgba(31,38,135,0.08)] backdrop-blur-[22px] md:block" style={{ width: `${trackMetrics.dockWidth}px`, bottom: "4.75rem" }}>
+    <section className="relative flex h-full min-h-0 flex-col justify-center overflow-hidden rounded-[2.25rem] border border-white/60 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.95),_rgba(236,253,245,0.9)_34%,_rgba(255,247,237,0.82)_100%)] px-0 pb-9 pt-14 backdrop-blur-xl sm:px-4 sm:pb-10 sm:pt-16">
+      <div className="pointer-events-none absolute left-7 top-[8rem] z-20 hidden rounded-[1.75rem] border border-white/35 bg-[linear-gradient(180deg,rgba(255,255,255,0.34)_0%,rgba(255,255,255,0.2)_100%)] shadow-[0_8px_30px_rgba(31,38,135,0.08)] backdrop-blur-[22px] md:block" style={{ width: `${trackMetrics.dockWidth}px`, bottom: "5.75rem" }}>
         <div className="pointer-events-auto flex h-full flex-col overflow-hidden rounded-[1.75rem]">
           <div className="shrink-0 border-b border-white/25 px-5 pb-4 pt-5">
             <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Plant Preview</p>
@@ -501,9 +501,9 @@ export default function DashMain({ plants }: { plants: PlantMeta[] }) {
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[linear-gradient(180deg,rgba(255,255,255,0.5),rgba(255,255,255,0))]" />
-      <div className="pointer-events-none absolute left-6 top-[5.4rem] z-10 hidden h-[72%] w-[18rem] rounded-[2rem] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.2),rgba(255,255,255,0))] md:block" />
+      <div className="pointer-events-none absolute left-6 top-[7.65rem] z-10 hidden h-[72%] w-[18rem] rounded-[2rem] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.2),rgba(255,255,255,0))] md:block" />
 
-      <div className="relative mb-4 flex items-center justify-between px-5 sm:px-7">
+      <div className="relative mb-8 flex items-center justify-between px-5 sm:px-8">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Plant Cards</p>
           <h2 className="mt-1 text-2xl font-semibold text-zinc-900">滑动查看每株植物状态</h2>
@@ -515,7 +515,7 @@ export default function DashMain({ plants }: { plants: PlantMeta[] }) {
 
       <div
         ref={trackRef}
-        className="no-scrollbar relative z-0 flex min-h-0 flex-1 items-center snap-x snap-mandatory gap-5 overflow-x-auto pb-6 pt-5 [scrollbar-width:none] [-ms-overflow-style:none]"
+        className="no-scrollbar relative z-0 flex min-h-0 flex-1 items-center snap-x snap-mandatory gap-6 overflow-x-auto pb-9 pt-9 [scrollbar-width:none] [-ms-overflow-style:none]"
         style={{
           scrollPaddingLeft: `${trackMetrics.leftInset}px`,
           scrollPaddingRight: `${trackMetrics.rightInset}px`,
@@ -557,7 +557,7 @@ export default function DashMain({ plants }: { plants: PlantMeta[] }) {
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity, y: 0, scale }}
               transition={{ duration: 0.28, ease: "easeOut" }}
-              className="relative flex h-[min(24.5rem,calc(100%-0.75rem))] min-h-[22rem] w-[84%] min-w-[84%] self-center snap-center select-none md:w-[min(82vw,32rem)] md:min-w-[min(82vw,32rem)]"
+              className="relative flex h-[min(25rem,calc(100%-0.75rem))] min-h-[22rem] w-[84%] min-w-[84%] self-center snap-center select-none md:w-[min(82vw,34rem)] md:min-w-[min(82vw,34rem)]"
             >
               {hasAlert ? (
                 <span className="absolute -right-1 -top-1 z-20 flex h-4 w-4">
@@ -650,7 +650,7 @@ export default function DashMain({ plants }: { plants: PlantMeta[] }) {
         <div aria-hidden="true" className="shrink-0" style={{ width: `${trackMetrics.rightInset}px` }} />
       </div>
 
-      <div className="mt-2 flex items-center justify-center gap-2 pb-2">
+      <div className="mt-5 flex items-center justify-center gap-2 pb-5">
         {plants.map((plant, index) => (
           <button
             key={plant.id}
