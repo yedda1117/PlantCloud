@@ -1263,9 +1263,9 @@ function SettingsPageContent() {
             display: none;
           }
         `}</style>
-        <main className="mx-auto flex h-full max-w-[1480px] flex-col px-4 py-1 sm:px-5 lg:px-6">
+        <main className="mx-auto flex h-full max-w-[1480px] flex-col justify-center px-4 py-1 sm:px-5 lg:px-6">
           {/* 单屏展示：页面本身固定为一屏，主内容和底部通栏共同占满可视高度 */}
-          <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 overflow-hidden pt-8">
           {/* 三列栅格分布式布局：多个内容块共同分布在 3 个纵向栅格中，而不是三大面板并排 */}
           <div className="mx-auto grid min-h-0 w-full max-w-[1180px] flex-1 grid-cols-1 gap-4 overflow-hidden py-0 xl:grid-cols-3">
             {/* 避免“三大面板并排”：这里是分散卡片，不是一列只放一个大模块 */}
@@ -1534,7 +1534,7 @@ function SettingsPageContent() {
           </div>
 
           {/* 应用信息四项同排：底部通栏区域独立放置，4 项固定在同一行横向排布 */}
-          <section className="mt-auto shrink-0 space-y-0.5">
+          <section className="shrink-0 space-y-0.5">
 
             <Card className="mx-auto w-full max-w-[1180px] rounded-[1.2rem] border-white/40 bg-white/38 shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl">
               <CardContent className="p-1">
