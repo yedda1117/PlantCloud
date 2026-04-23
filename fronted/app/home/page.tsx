@@ -187,15 +187,15 @@ function StatusMetric({
   hint: string
 }) {
   return (
-    <div className="aspect-[1.08] rounded-[1.8rem]   bg-white/20 p-4 shadow-[0_18px_40px_rgba(120,104,74,0.06)] backdrop-blur-[1px] ">
-      <div className="flex h-full flex-col justify-between ">
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-stone-500 ">
-          <Icon className="h-4 w-4" />
+    <div className="aspect-[1.08] rounded-[1.8rem] border border-white/35 bg-[linear-gradient(180deg,color(display-p3_0.62_0.92_0.76/0.82),oklch(0.696_0.17_162.48/0.68))] p-4 shadow-[0_18px_40px_rgba(70,120,100,0.12),0_0_26px_color(display-p3_0.42_0.86_0.62/0.24)] backdrop-blur-md">
+      <div className="flex h-full flex-col justify-between">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-emerald-900/70">
+          <Icon className="h-4 w-4 text-emerald-700 drop-shadow-[0_0_8px_rgba(16,185,129,0.28)]" />
           <span>{label}</span>
         </div>
         <div>
-          <p className="text-2xl font-light tracking-tight text-stone-800">{value}</p>
-          <p className="mt-2 text-xs leading-5 text-stone-500">{hint}</p>
+          <p className="text-2xl font-light tracking-tight text-emerald-950">{value}</p>
+          <p className="mt-2 text-xs leading-5 text-emerald-900/68">{hint}</p>
         </div>
       </div>
     </div>
@@ -384,6 +384,7 @@ export default function HomePage() {
   const resolvedCount = activityLogs.filter((log) => isResolvedLog(log.status)).length
   const totalAlertCount = Math.max(unresolvedCount + resolvedCount, 1)
   const unresolvedRatio = Math.min(Math.max(unresolvedCount / totalAlertCount, 0), 1)
+  const resolvedRatio = Math.min(Math.max(resolvedCount / totalAlertCount, 0), 1)
   const latestLocation = gpsState.latest
   const latitude = toNumber(latestLocation?.latitude)
   const longitude = toNumber(latestLocation?.longitude)
@@ -506,15 +507,15 @@ export default function HomePage() {
                       <div
                         className="relative h-28 w-28 rounded-full"
                         style={{
-                          background: `conic-gradient(#8f4b3b 0deg ${unresolvedRatio * 360}deg, rgba(120,104,74,0.14) ${unresolvedRatio * 360}deg 360deg)`,
+                          background: `conic-gradient(rgba(120,120,120,0.28) 0deg ${unresolvedRatio * 360}deg, oklch(0.696 0.17 162.48) ${unresolvedRatio * 360}deg 360deg)`,
                         }}
                       >
                         <div className="absolute inset-[18px] rounded-full bg-[#d0e8de]" />
-                        <div className="absolute inset-0 flex items-center justify-center text-xs uppercase tracking-[0.22em] text-stone-500">
-                          {Math.round(unresolvedRatio * 100)}%
+                        <div className="absolute inset-0 flex items-center justify-center text-xs uppercase tracking-[0.22em] text-emerald-800 drop-shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                          {Math.round(resolvedRatio * 100)}%
                         </div>
                       </div>
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-stone-500">Unresolved</p>
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-800/85 drop-shadow-[0_0_8px_rgba(16,185,129,0.14)]">Resolved</p>
                     </div>
                   </div>
 
