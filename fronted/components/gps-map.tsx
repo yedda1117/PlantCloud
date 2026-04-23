@@ -96,7 +96,7 @@ export default function GpsMap({ lat, lng, plantName, className }: GpsMapProps) 
     <div
       ref={mapContainerRef}
       className={className}
-      style={{ width: "100%", height: "100%", borderRadius: "inherit", overflow: "hidden" }}
+      style={{ width: "100%", height: "100%", borderRadius: "inherit", overflow: "hidden", position: "relative", zIndex: 0, isolation: "isolate" }}
     />
   )
 }

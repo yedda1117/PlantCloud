@@ -88,6 +88,10 @@ function isResolvedLog(status: string | null | undefined) {
   return (status || "UNRESOLVED").toUpperCase() === "RESOLVED"
 }
 
+function isUnresolvedTiltLog(log: HomeRealtimeData["activityLogs"][number]) {
+  return (log.alertType || "").toUpperCase() === "TILT_ABNORMAL" && (log.status || "UNRESOLVED").toUpperCase() === "UNRESOLVED"
+}
+
 function getLogCreatedTime(value: string | null | undefined) {
   if (!value) return 0
   const time = new Date(value).getTime()
@@ -427,6 +431,17 @@ export default function HomePage() {
   }
 
   const activityLogs = useMemo(() => sortActivityLogs(realtimeData?.activityLogs ?? []), [realtimeData?.activityLogs])
+  const plantModelPath = useMemo(() => {
+    const hasUnresolvedTiltLog = activityLogs.some(isUnresolvedTiltLog)
+    if (hasUnresolvedTiltLog) return "/models/qingxie.glb"
+
+    const humidityStatus = (realtimeData?.environment.humidityStatus || "").toUpperCase()
+    const lightStatus = (realtimeData?.environment.lightStatus || "").toUpperCase()
+    const temperatureStatus = (realtimeData?.environment.temperatureStatus || "").toUpperCase()
+    const hasEnvironmentStress = humidityStatus === "LOW" || lightStatus === "HIGH" || temperatureStatus === "HIGH"
+
+    return hasEnvironmentStress ? "/models/kuwei.glb" : "/models/zhizihua.glb"
+  }, [activityLogs, realtimeData?.environment.humidityStatus, realtimeData?.environment.lightStatus, realtimeData?.environment.temperatureStatus])
   const unresolvedCount = (realtimeData?.abnormal.count ?? 0) + (realtimeData?.tilt.count ?? 0)
   const resolvedCount = activityLogs.filter((log) => isResolvedLog(log.status)).length
   const totalAlertCount = Math.max(unresolvedCount + resolvedCount, 1)
@@ -496,7 +511,7 @@ export default function HomePage() {
                         value={realtimeData?.environment.temperature}
                         max={40}
                         unit="°C"
-                        gradientStyle="bg-gradient-to-t from-[#f19ab4]/70 via-[#f8b4c6]/80 to-[#fde4eb]/88"
+                        gradientStyle="bg-[rgb(158,222,192)]"
                         delayMs={0}
                       />
                       <VerticalMetricBar
@@ -504,7 +519,7 @@ export default function HomePage() {
                         value={realtimeData?.environment.humidity}
                         max={100}
                         unit="%"
-                        gradientStyle="bg-gradient-to-t from-[#7ec4e1]/72 via-[#a0d8ef]/82 to-[#e2f4fb]/90"
+                        gradientStyle="bg-[rgb(204,235,225)]"
                         delayMs={180}
                       />
                       <VerticalMetricBar
@@ -512,7 +527,7 @@ export default function HomePage() {
                         value={realtimeData?.environment.lightLux}
                         max={2000}
                         unit="lux"
-                        gradientStyle="bg-gradient-to-t from-[#efbe5a]/72 via-[#f6d186]/82 to-[#fff4d1]/90"
+                        gradientStyle="bg-[rgb(237,197,115)]"
                         delayMs={320}
                       />
                     </div>
@@ -544,16 +559,13 @@ export default function HomePage() {
                     <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
                       {currentPlant.emoji} {currentPlant.name}
                     </h1>
-                    <div aria-hidden className="mt-2 text-4xl font-light tracking-[0.08em] text-stone-800 transform scale-y-[-1] opacity-30">
-                      {currentPlant.emoji} {currentPlant.name}
-                    </div>
                   </div>
                 </div>
                 <div className="relative flex h-full min-h-0 w-full items-center justify-center">
                   <div className="pointer-events-none absolute inset-x-[18%] top-[16%] h-28 rounded-full bg-white/45 blur-3xl" />
                   <div className="pointer-events-none absolute inset-x-[22%] bottom-[12%] h-24 rounded-full bg-emerald-100/35 blur-3xl" />
                   <div className="relative h-full min-h-0 w-full">
-                    <PlantModelViewer modelPath="/models/zhizihua.glb" className="rounded-none" minimal />
+                    <PlantModelViewer modelPath={plantModelPath} className="rounded-none" minimal />
                   </div>
                 </div>
               </section>
