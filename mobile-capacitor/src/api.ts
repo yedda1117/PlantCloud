@@ -11,11 +11,17 @@ import type {
   PhotoUploadResult,
   StrategyAgentProposal,
   UploadedFileItem,
+  DevicesStatus,
+  LoginResult,
 } from "./types"
 
 const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:8080"
 const WEB_API_BASE_URL = import.meta.env.VITE_WEB_API_BASE_URL || "http://localhost:3000"
 const IA1_DEVICE_CODE = "E53IA1"
+const LONG_ID_FIELDS = ["id", "userId", "plantId", "createdBy", "targetDeviceId", "deviceId", "strategyId", "commandLogId"] as const
+
+console.log("BACKEND_BASE_URL =", BACKEND_BASE_URL)
+console.log("WEB_API_BASE_URL =", WEB_API_BASE_URL)
 
 type ApiResult<T> = {
   code?: number
@@ -25,6 +31,13 @@ type ApiResult<T> = {
 
 type PageResult<T> = {
   records: T[]
+}
+
+function logApiRequest(label: string, url: string, baseURL: string) {
+  console.log(`[PlantCloud API] ${label}`, {
+    url,
+    baseURL,
+  })
 }
 
 type DeviceStatusItem = {
@@ -41,6 +54,27 @@ type DeviceStatusOverview = {
   devices: DeviceStatusItem[]
 }
 
+function stringifyLongIdFields(responseText: string) {
+  return LONG_ID_FIELDS.reduce((text, field) => {
+    const pattern = new RegExp(`("${field}"\\s*:\\s*)(-?\\d{16,})`, "g")
+    return text.replace(pattern, '$1"$2"')
+  }, responseText)
+}
+
+function getUserIdFromToken(token: string | null | undefined) {
+  if (!token) return null
+  const payload = token.split(".")[1]
+  if (!payload) return null
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+    const decoded = window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="))
+    const matched = decoded.match(/"userId"\s*:\s*("?)(-?\d+)\1/)
+    return matched?.[2] ?? null
+  } catch {
+    return null
+  }
+}
+
 function authHeaders(extra?: HeadersInit) {
   const headers = new Headers(extra)
   const token = window.localStorage.getItem("plantcloud_token")
@@ -50,15 +84,44 @@ function authHeaders(extra?: HeadersInit) {
   return headers
 }
 
+export function saveAuthSession(data: LoginResult) {
+  const exactUserId = getUserIdFromToken(data.accessToken) ?? String(data.userId)
+  window.localStorage.setItem("plantcloud_token", data.accessToken)
+  window.localStorage.setItem(
+    "plantcloud_user",
+    JSON.stringify({
+      userId: exactUserId,
+      username: data.username,
+      role: data.role,
+    }),
+  )
+}
+
+export function hasAuthSession() {
+  return Boolean(window.localStorage.getItem("plantcloud_token"))
+}
+
+export function clearAuthSession() {
+  window.localStorage.removeItem("plantcloud_token")
+  window.localStorage.removeItem("plantcloud_user")
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   let payload: ApiResult<T> | null = null
   try {
-    payload = (await response.json()) as ApiResult<T>
+    const responseText = await response.text()
+    payload = (responseText ? JSON.parse(stringifyLongIdFields(responseText)) : null) as ApiResult<T>
   } catch {
     payload = null
   }
 
   if (!response.ok || (typeof payload?.code === "number" && payload.code !== 0)) {
+    console.warn("[PlantCloud API] response error", {
+      url: response.url,
+      status: response.status,
+      statusText: response.statusText,
+      payload,
+    })
     throw new Error(payload?.message || response.statusText || "请求失败")
   }
 
@@ -88,12 +151,14 @@ function parseSwitchState(value: string | null | undefined) {
   if (!value) return null
   switch (value.trim().toUpperCase()) {
     case "ON":
+    case "TURN_ON":
     case "OPEN":
     case "RUNNING":
     case "TRUE":
     case "1":
       return true
     case "OFF":
+    case "TURN_OFF":
     case "CLOSE":
     case "CLOSED":
     case "STOPPED":
@@ -110,6 +175,10 @@ function parseOnlineState(value: string | null | undefined) {
   return value.trim().toUpperCase() === "ONLINE" ? true : value.trim().toUpperCase() === "OFFLINE" ? false : null
 }
 
+function firstKnownState<T>(...values: Array<T | null | undefined>) {
+  return values.find((value) => value !== null && value !== undefined) ?? null
+}
+
 function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus {
   const devices = overview.devices || []
   const device =
@@ -120,23 +189,44 @@ function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus
       return "fanStatus" in status || "lightStatus" in status || "mqttStatus" in status
     }) ||
     null
+  const fanDevice = devices.find((item) => (item.deviceType || "").toUpperCase() === "FAN") || null
+  const lightDevice = devices.find((item) => (item.deviceType || "").toUpperCase() === "FILL_LIGHT") || null
+  const infraredDevice = devices.find((item) => (item.deviceType || "").toUpperCase() === "PIR_SENSOR") || null
   const status = parseStatusJson(device?.currentStatus)
+  const fanDeviceStatus = parseStatusJson(fanDevice?.currentStatus)
+  const lightDeviceStatus = parseStatusJson(lightDevice?.currentStatus)
+  const infraredDeviceStatus = parseStatusJson(infraredDevice?.currentStatus)
   const mqttStatus = getStringField(status, "mqttStatus", "onlineStatus", "status")
-  const fanStatus = getStringField(status, "fanStatus", "fan_status", "fan")
-  const lightStatus = getStringField(status, "lightStatus", "light_status", "light")
+  const fanStatus =
+    getStringField(fanDeviceStatus, "power", "status", "switch", "value", "fanStatus", "fan_status", "fan") ||
+    getStringField(status, "fanStatus", "fan_status", "fan")
+  const lightStatus =
+    getStringField(lightDeviceStatus, "power", "status", "switch", "value", "lightStatus", "light_status", "light") ||
+    getStringField(status, "lightStatus", "light_status", "light")
+  const infraredStatus = getStringField(infraredDeviceStatus, "detected", "pirStatus", "status", "value")
   const statusUpdatedAt = getStringField(status, "statusUpdatedAt", "commandUpdatedAt", "telemetryUpdatedAt")
   const onlineStatus = device?.onlineStatus || mqttStatus
+  const connected = firstKnownState(
+    parseOnlineState(onlineStatus),
+    parseOnlineState(fanDevice?.onlineStatus),
+    parseOnlineState(lightDevice?.onlineStatus),
+  )
 
   return {
     deviceId: device?.deviceId ?? null,
     deviceCode: device?.deviceCode ?? null,
     deviceName: device?.deviceName ?? null,
     onlineStatus: onlineStatus ?? null,
-    connected: parseOnlineState(onlineStatus),
+    connected,
+    fanConnected: firstKnownState(parseOnlineState(fanDevice?.onlineStatus), connected),
     fanStatus,
     fanOn: parseSwitchState(fanStatus),
+    lightConnected: firstKnownState(parseOnlineState(lightDevice?.onlineStatus), connected),
     lightStatus,
     lightOn: parseSwitchState(lightStatus),
+    infraredDeviceId: infraredDevice?.deviceId ?? null,
+    infraredConnected: parseOnlineState(infraredDevice?.onlineStatus),
+    infraredDetected: parseSwitchState(infraredStatus),
     statusUpdatedAt,
     rawStatus: device?.currentStatus ?? null,
   }
@@ -147,6 +237,39 @@ export async function getPlants() {
     await fetch(`${BACKEND_BASE_URL}/plants`, {
       headers: authHeaders({ accept: "application/json" }),
       cache: "no-store",
+    }),
+  )
+}
+
+export async function loginWithPassword(username: string, password: string) {
+  return parseResponse<LoginResult>(
+    await fetch(`${BACKEND_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ username, password }),
+    }),
+  )
+}
+
+export async function loginWithFace(faceImage: string) {
+  return parseResponse<LoginResult>(
+    await fetch(`${BACKEND_BASE_URL}/auth/face-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ faceImage }),
+    }),
+  )
+}
+
+export async function registerWithFace(username: string, password: string, faceImage: string) {
+  return parseResponse<string | null>(
+    await fetch(`${BACKEND_BASE_URL}/auth/face-register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", accept: "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ username, password, faceImage }),
     }),
   )
 }
@@ -230,30 +353,41 @@ function normalizeTextList(value: string[] | string | null | undefined) {
 }
 
 export async function getPlantAiAnalysis(plantId: number): Promise<PlantAiAnalysis> {
-  const endpoint = plantId === 1 || plantId === 2 ? `/plant/${plantId}/analysis` : `/plants/${plantId}/analyze-risk`
-  const result = await parseResponse<any>(
-    await fetch(`${BACKEND_BASE_URL}${endpoint}`, {
-      method: "POST",
-      headers: authHeaders({ accept: "application/json" }),
-      cache: "no-store",
-    }),
-  )
-
-  if (plantId === 1 || plantId === 2) {
+  const riskResult = await fetchPlantAiAnalysis(`/plants/${plantId}/analyze-risk`)
+  if (riskResult) {
     return {
-      summary: result.summary?.trim() || "",
-      advice: normalizeTextList(result.advice),
-      riskWarnings: normalizeTextList(result.riskWarnings),
+      summary: riskResult.aiSummary?.trim() || "",
+      advice: normalizeTextList(riskResult.aiAdvice),
+      riskWarnings: normalizeTextList(riskResult.aiWarning),
+      riskLevel: riskResult.riskLevel,
+      riskScore: riskResult.riskScore,
+      riskType: Array.isArray(riskResult.riskType) ? riskResult.riskType : [],
     }
   }
 
-  return {
-    summary: result.aiSummary?.trim() || "",
-    advice: normalizeTextList(result.aiAdvice),
-    riskWarnings: normalizeTextList(result.aiWarning),
-    riskLevel: result.riskLevel,
-    riskScore: result.riskScore,
-    riskType: Array.isArray(result.riskType) ? result.riskType : [],
+  const predictionResult = await fetchPlantAiAnalysis(`/plant/${plantId}/analysis`)
+  if (predictionResult) {
+    return {
+      summary: predictionResult.summary?.trim() || "",
+      advice: normalizeTextList(predictionResult.advice),
+      riskWarnings: normalizeTextList(predictionResult.riskWarnings),
+    }
+  }
+
+  throw new Error("养护洞察接口暂时不可用")
+}
+
+async function fetchPlantAiAnalysis(endpoint: string) {
+  try {
+    return await parseResponse<any>(
+      await fetch(`${BACKEND_BASE_URL}${endpoint}`, {
+        method: "POST",
+        headers: authHeaders({ accept: "application/json" }),
+        cache: "no-store",
+      }),
+    )
+  } catch {
+    return null
   }
 }
 
@@ -327,10 +461,25 @@ export async function createStrategyFromProposal(payload: Record<string, unknown
     body: JSON.stringify(payload),
   })
   const data = await response.json().catch(() => ({}))
-  if (!response.ok || data?.code === 400 || data?.success === false) {
+  const businessCode = typeof data?.code === "number" ? data.code : undefined
+  if (!response.ok || data?.success === false || (businessCode !== undefined && businessCode !== 0)) {
     throw new Error(data?.message || data?.error || "新增策略失败")
   }
   return data
+}
+
+export async function getDevicesStatus(plantId: number | string) {
+  const response = await fetch(`${WEB_API_BASE_URL}/api/devices/status?plantId=${encodeURIComponent(String(plantId))}`, {
+    method: "GET",
+    headers: authHeaders({ accept: "application/json" }),
+    cache: "no-store",
+  })
+  const data = await response.json().catch(() => ({}))
+  const businessCode = typeof data?.code === "number" ? data.code : undefined
+  if (!response.ok || data?.success === false || (businessCode !== undefined && businessCode !== 0)) {
+    throw new Error(data?.message || data?.error || "获取设备状态失败")
+  }
+  return (data?.data ?? data) as DevicesStatus
 }
 
 export async function getCalendarSummary(plantId: number, year: number, month: number) {
@@ -352,8 +501,10 @@ export async function getCalendarDayDetail(plantId: number, date: string) {
 }
 
 export async function updateCalendarDayLog(plantId: number, date: string, payload: { note?: string; milestone?: string | null }) {
+  const url = `${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`
+  logApiRequest("updateCalendarDayLog", url, BACKEND_BASE_URL)
   return parseResponse<CalendarDayDetail>(
-    await fetch(`${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`, {
+    await fetch(url, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
       cache: "no-store",
@@ -363,8 +514,10 @@ export async function updateCalendarDayLog(plantId: number, date: string, payloa
 }
 
 export async function uploadPlantPhoto(formData: FormData) {
+  const url = `${BACKEND_BASE_URL}/photos/upload`
+  logApiRequest("uploadPlantPhoto", url, BACKEND_BASE_URL)
   return parseResponse<PhotoUploadResult>(
-    await fetch(`${BACKEND_BASE_URL}/photos/upload`, {
+    await fetch(url, {
       method: "POST",
       headers: authHeaders(),
       cache: "no-store",

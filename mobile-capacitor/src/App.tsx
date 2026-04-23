@@ -2,23 +2,31 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { ImpactStyle } from "@capacitor/haptics"
 import { AnimatePresence, motion } from "framer-motion"
 import { CalendarDays, Home, Leaf, MessageCircle } from "lucide-react"
-import { controlHomeDevice, getHomeRealtime, getPlantAiAnalysis, getPlants } from "./api"
+import { getHomeRealtime, getPlantAiAnalysis, getPlants, hasAuthSession } from "./api"
 import { AiPage } from "./pages/AiPage"
 import { CalendarPage } from "./pages/CalendarPage"
 import { DetailPage } from "./pages/DetailPage"
 import { HomePage } from "./pages/HomePage"
 import { IntroPage } from "./pages/IntroPage"
-import type { HomeRealtimeData, Plant, PlantAiAnalysis } from "./types"
+import { LoginPage } from "./pages/LoginPage"
+import { RegisterPage } from "./pages/RegisterPage"
+import type { HomeRealtimeData, LoginResult, Plant, PlantAiAnalysis } from "./types"
 import { fallbackPlants, impact } from "./mobile-utils"
 
-type Screen = "intro" | "home" | "detail" | "calendar" | "ai"
+type MainScreen = "home" | "detail" | "calendar" | "ai"
+type Screen = "login" | "register" | "intro" | MainScreen
 
-function TabBar({ screen, onChange }: { screen: Screen; onChange: (screen: Screen) => void }) {
+function initialScreen(): Screen {
+  if (!hasAuthSession()) return "login"
+  return localStorage.getItem("plantcloud_mobile_seen_intro") ? "home" : "intro"
+}
+
+function TabBar({ screen, onChange }: { screen: MainScreen; onChange: (screen: MainScreen) => void }) {
   const tabs = [
-    { id: "home" as Screen, label: "首页", icon: Home },
-    { id: "detail" as Screen, label: "详情", icon: Leaf },
-    { id: "calendar" as Screen, label: "日历", icon: CalendarDays },
-    { id: "ai" as Screen, label: "AI", icon: MessageCircle },
+    { id: "home" as MainScreen, label: "首页", icon: Home },
+    { id: "detail" as MainScreen, label: "详情", icon: Leaf },
+    { id: "calendar" as MainScreen, label: "日历", icon: CalendarDays },
+    { id: "ai" as MainScreen, label: "AI", icon: MessageCircle },
   ]
 
   return (
@@ -45,11 +53,13 @@ function TabBar({ screen, onChange }: { screen: Screen; onChange: (screen: Scree
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>(() => (localStorage.getItem("plantcloud_mobile_seen_intro") ? "home" : "intro"))
+  const [screen, setScreen] = useState<Screen>(initialScreen)
+  const [authenticated, setAuthenticated] = useState(hasAuthSession)
   const [plants, setPlants] = useState<Plant[]>(fallbackPlants)
   const [selectedPlantId, setSelectedPlantId] = useState(() => Number(localStorage.getItem("plantcloud_selected_mobile_plant") || import.meta.env.VITE_DEFAULT_PLANT_ID || 1))
   const [realtime, setRealtime] = useState<HomeRealtimeData | null>(null)
   const [analysis, setAnalysis] = useState<PlantAiAnalysis | null>(null)
+  const [analysisLoadedPlantId, setAnalysisLoadedPlantId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingAnalysis, setLoadingAnalysis] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -57,44 +67,63 @@ export default function App() {
   const plant = useMemo(() => plants.find((item) => item.plantId === selectedPlantId) || plants[0] || fallbackPlants[0], [plants, selectedPlantId])
 
   const refresh = useCallback(async () => {
+    if (!authenticated) return
     setLoading(true)
     try {
       const data = await getHomeRealtime(plant.plantId)
       setRealtime(data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "实时数据获取失败")
+      setError(err instanceof Error ? err.message : "实时数据加载失败")
     } finally {
       setLoading(false)
     }
-  }, [plant.plantId])
+  }, [authenticated, plant.plantId])
 
   const refreshAnalysis = useCallback(async () => {
+    if (!authenticated) return
     setLoadingAnalysis(true)
     try {
       setAnalysis(await getPlantAiAnalysis(plant.plantId))
+      setAnalysisLoadedPlantId(plant.plantId)
+    } catch (err) {
+      setAnalysis({
+        summary: err instanceof Error ? err.message : "养护洞察接口暂时不可用",
+        advice: [],
+        riskWarnings: [],
+      })
+      setAnalysisLoadedPlantId(plant.plantId)
     } finally {
       setLoadingAnalysis(false)
     }
-  }, [plant.plantId])
+  }, [authenticated, plant.plantId])
 
   useEffect(() => {
+    if (!authenticated) return
     getPlants()
       .then((items) => {
         if (Array.isArray(items) && items.length) setPlants(items)
       })
       .catch(() => undefined)
-  }, [])
+  }, [authenticated])
 
   useEffect(() => {
+    if (!authenticated) return undefined
     void refresh()
     const timer = window.setInterval(() => void refresh(), 8000)
     return () => window.clearInterval(timer)
-  }, [refresh])
+  }, [authenticated, refresh])
 
   useEffect(() => {
     setAnalysis(null)
+    setAnalysisLoadedPlantId(null)
   }, [plant.plantId])
+
+  useEffect(() => {
+    if (screen === "detail" && !analysis && !loadingAnalysis && analysisLoadedPlantId !== plant.plantId) {
+      void refreshAnalysis()
+    }
+  }, [analysis, analysisLoadedPlantId, loadingAnalysis, plant.plantId, refreshAnalysis, screen])
 
   const selectPlant = (id: number) => {
     impact()
@@ -112,7 +141,15 @@ export default function App() {
   return (
     <div className="app-shell">
       <AnimatePresence mode="wait">
-        {screen === "intro" ? (
+        {screen === "login" ? (
+          <motion.div key="login" className="content-shell" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            <LoginPage onLoggedIn={handleLoggedIn} onRegister={() => setScreen("register")} />
+          </motion.div>
+        ) : screen === "register" ? (
+          <motion.div key="register" className="content-shell" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+            <RegisterPage onBackToLogin={() => setScreen("login")} onRegistered={() => setScreen("login")} />
+          </motion.div>
+        ) : screen === "intro" ? (
           <IntroPage
             key="intro"
             onEnter={() => {
@@ -137,9 +174,7 @@ export default function App() {
                 onGoAi={() => setScreen("ai")}
               />
             ) : null}
-            {screen === "detail" ? (
-              <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} onToggle={toggleDevice} />
-            ) : null}
+            {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} /> : null}
             {screen === "calendar" ? <CalendarPage plant={plant} /> : null}
             {screen === "ai" ? <AiPage plant={plant} realtime={realtime} /> : null}
             <TabBar screen={screen} onChange={setScreen} />
@@ -149,4 +184,3 @@ export default function App() {
     </div>
   )
 }
-

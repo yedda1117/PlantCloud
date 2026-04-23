@@ -1,6 +1,6 @@
-import { AlertTriangle, Fan, Lightbulb, Sparkles } from "lucide-react"
+import { AlertTriangle, Sparkles } from "lucide-react"
 import type { HomeRealtimeData, Plant, PlantAiAnalysis } from "../types"
-import { formatTime, healthScore } from "../mobile-utils"
+import { formatTime } from "../mobile-utils"
 
 export function DetailPage({
   plant,
@@ -8,17 +8,14 @@ export function DetailPage({
   analysis,
   loadingAnalysis,
   onAnalyze,
-  onToggle,
 }: {
   plant: Plant
   realtime: HomeRealtimeData | null
   analysis: PlantAiAnalysis | null
   loadingAnalysis: boolean
   onAnalyze: () => void
-  onToggle: (target: "light" | "fan", next: boolean) => void
 }) {
   const env = realtime?.environment
-  const deviceId = realtime?.device.deviceId
 
   return (
     <main className="screen detail-screen">
@@ -26,28 +23,6 @@ export function DetailPage({
         <p>植物详情</p>
         <h1>{plant.plantName}</h1>
         <span>最近采集：{formatTime(env?.collectedAt)}</span>
-      </section>
-
-      <section className="detail-orbit">
-        <div className="orbit-copy">
-          <strong>{healthScore(realtime)}%</strong>
-          <span>综合状态</span>
-        </div>
-        <div className="orbit-lines" />
-      </section>
-
-      <section className="control-card">
-        <h3>即时控制</h3>
-        <button disabled={!deviceId} onClick={() => onToggle("light", !realtime?.device.lightOn)}>
-          <Lightbulb size={19} />
-          <span>补光灯</span>
-          <strong>{realtime?.device.lightOn ? "关闭" : "开启"}</strong>
-        </button>
-        <button disabled={!deviceId} onClick={() => onToggle("fan", !realtime?.device.fanOn)}>
-          <Fan size={19} />
-          <span>风扇</span>
-          <strong>{realtime?.device.fanOn ? "关闭" : "开启"}</strong>
-        </button>
       </section>
 
       <section className="analysis-card">
