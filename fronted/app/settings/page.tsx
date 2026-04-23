@@ -470,7 +470,7 @@ function StrategyDialog({
   const fieldClass =
     "h-11 rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] placeholder:text-emerald-900/50 focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
   const selectTriggerClass =
-    "h-11 w-full rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[0_10px_22px_rgba(16,185,129,0.08),inset_0_1px_0_rgba(255,255,255,0.82)] transition-all hover:border-emerald-400/80 hover:bg-white/88 hover:shadow-[0_12px_26px_rgba(16,185,129,0.12),inset_0_1px_0_rgba(255,255,255,0.9)] focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30 data-[placeholder]:text-emerald-900/54 data-[state=open]:border-emerald-500/70 data-[state=open]:bg-white/92 [&_svg]:text-emerald-700/72"
+    "h-11 w-full rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
   const selectContentClass =
     "overflow-hidden rounded-[1.25rem] border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(248,255,246,0.98),rgba(226,247,234,0.96))] text-emerald-950 shadow-[0_22px_54px_rgba(73,128,98,0.2),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl"
   const selectItemClass =
@@ -526,10 +526,10 @@ function StrategyDialog({
                 <label className={labelClass}>指标</label>
                 <Select value={form.metricType} onValueChange={(v) => onChange({ metricType: v as StrategyFormState["metricType"] })}>
                   <SelectTrigger className={selectTriggerClass}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LIGHT">光照强度</SelectItem>
-                    <SelectItem value="TEMPERATURE">温度</SelectItem>
-                    <SelectItem value="HUMIDITY">湿度</SelectItem>
+                  <SelectContent className={selectContentClass}>
+                    <SelectItem className={selectItemClass} value="LIGHT">光照强度</SelectItem>
+                    <SelectItem className={selectItemClass} value="TEMPERATURE">温度</SelectItem>
+                    <SelectItem className={selectItemClass} value="HUMIDITY">湿度</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -537,10 +537,10 @@ function StrategyDialog({
                 <label className={labelClass}>判断条件</label>
                 <Select value={form.operatorType} onValueChange={(v) => onChange({ operatorType: v as StrategyFormState["operatorType"] })}>
                   <SelectTrigger className={selectTriggerClass}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="LT">小于</SelectItem>
-                    <SelectItem value="GT">大于</SelectItem>
-                    <SelectItem value="EQ">等于</SelectItem>
+                  <SelectContent className={selectContentClass}>
+                    <SelectItem className={selectItemClass} value="LT">小于</SelectItem>
+                    <SelectItem className={selectItemClass} value="GT">大于</SelectItem>
+                    <SelectItem className={selectItemClass} value="EQ">等于</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -576,9 +576,9 @@ function StrategyDialog({
             <p className="mb-3 text-sm font-semibold text-emerald-950">执行动作</p>
             <Select value={getStrategyFormActionSelectValue(form)} onValueChange={(v) => onChange(resolveStrategyActionValue(v))}>
               <SelectTrigger className={selectTriggerClass}><SelectValue /></SelectTrigger>
-              <SelectContent>
+              <SelectContent className={selectContentClass}>
                 {strategyActionOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  <SelectItem className={selectItemClass} key={option.value} value={option.value}>{option.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
