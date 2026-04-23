@@ -151,12 +151,13 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
             throw new RuntimeException("Device ID is null");
         }
 
-        if (isIa1Device(device) && StringUtils.hasText(device.getDeviceCode())) {
-            return "device/" + device.getDeviceCode() + "/ia1/control";
-        }
-
         if (device.getMqttTopicDown() != null && !device.getMqttTopicDown().isBlank()) {
             return device.getMqttTopicDown();
+        }
+        if (isIa1Device(device) && StringUtils.hasText(device.getDeviceCode())) {
+            log.warn("[CTRL] mqtt_topic_down is empty, fallback to IA1 topic. deviceId={}, deviceCode={}",
+                    device.getId(), device.getDeviceCode());
+            return "device/" + device.getDeviceCode() + "/ia1/control";
         }
         return "device/" + device.getId() + "/ia1/control";
     }
@@ -205,7 +206,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         commandLog.setPlantId(req.getPlantId());
         commandLog.setDeviceId(req.getDeviceId());
         commandLog.setOperatorUserId(null);
-        commandLog.setSourceType("MANUAL");
+        commandLog.setSourceType(resolveSourceType(req));
         commandLog.setCommandName("power");
         commandLog.setCommandValue(action);
         commandLog.setRequestPayload(payload);
@@ -221,7 +222,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         commandLog.setPlantId(req.getPlantId());
         commandLog.setDeviceId(req.getDeviceId());
         commandLog.setOperatorUserId(null);
-        commandLog.setSourceType("MANUAL");
+        commandLog.setSourceType(resolveSourceType(req));
         commandLog.setCommandName("power");
         commandLog.setCommandValue(action);
         commandLog.setRequestPayload(null);
@@ -244,5 +245,12 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
                 .executeStatus(commandLog.getExecuteStatus())
                 .message(message)
                 .build();
+    }
+
+    private String resolveSourceType(DeviceControlRequest request) {
+        if (StringUtils.hasText(request.getSourceType())) {
+            return request.getSourceType().trim().toUpperCase();
+        }
+        return "MANUAL";
     }
 }

@@ -7,7 +7,9 @@ import com.plantcloud.strategy.vo.PageResult;
 import com.plantcloud.strategy.vo.StrategyExecutionLogVO;
 import com.plantcloud.strategy.vo.StrategyVO;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 public interface StrategyService {
 
@@ -22,4 +24,8 @@ public interface StrategyService {
     void deleteStrategy(Long strategyId);
 
     PageResult<StrategyExecutionLogVO> getStrategyLogs(Long strategyId, StrategyLogQueryDTO query);
+
+    void evaluateStrategiesForPlant(Long plantId, String triggerSource);
+
+    void evaluateStrategiesForPlant(Long plantId, String triggerSource, Map<String, BigDecimal> currentMetricValues);
 }

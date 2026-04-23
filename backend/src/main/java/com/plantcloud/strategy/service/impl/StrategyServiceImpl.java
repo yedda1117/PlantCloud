@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.plantcloud.common.enums.ResultCode;
+import com.plantcloud.control.dto.DeviceControlRequest;
+import com.plantcloud.control.service.DeviceCommandService;
+import com.plantcloud.control.vo.ControlCommandVO;
 import com.plantcloud.device.entity.Device;
 import com.plantcloud.device.mapper.DeviceMapper;
 import com.plantcloud.monitoring.entity.HumidityData;
@@ -21,6 +24,7 @@ import com.plantcloud.strategy.entity.Strategy;
 import com.plantcloud.strategy.entity.StrategyExecutionLog;
 import com.plantcloud.strategy.mapper.StrategyExecutionLogMapper;
 import com.plantcloud.strategy.mapper.StrategyMapper;
+import com.plantcloud.strategy.service.StrategyNotificationService;
 import com.plantcloud.strategy.service.StrategyService;
 import com.plantcloud.strategy.vo.PageResult;
 import com.plantcloud.strategy.vo.StrategyExecutionLogVO;
@@ -29,6 +33,7 @@ import com.plantcloud.system.exception.BizException;
 import com.plantcloud.user.entity.User;
 import com.plantcloud.user.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +49,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class StrategyServiceImpl implements StrategyService {
@@ -66,11 +72,15 @@ public class StrategyServiceImpl implements StrategyService {
     private static final Set<String> CONDITION_OPERATORS = Set.of(OPERATOR_GT, OPERATOR_GTE, OPERATOR_LT, OPERATOR_LTE, OPERATOR_EQ, OPERATOR_BETWEEN);
     private static final Set<String> CONDITION_METRICS = Set.of("TEMPERATURE", "HUMIDITY", "LIGHT", "SMOKE", "AIR", "TILT", "CO2");
     private static final Set<String> AUTO_LIGHT_VALUES = Set.of("ON", "OFF");
-    private static final Set<String> AUTO_FAN_VALUES = Set.of("LOW", "HIGH");
+    private static final Set<String> AUTO_FAN_VALUES = Set.of("ON", "OFF", "LOW", "HIGH");
     private static final Set<String> NOTIFY_VALUES = Set.of("INFO", "WARNING", "DANGER");
+    private static final String EXECUTION_SUCCESS = "SUCCESS";
+    private static final String EXECUTION_FAILED = "FAILED";
 
     private final StrategyMapper strategyMapper;
     private final StrategyExecutionLogMapper strategyExecutionLogMapper;
+    private final StrategyNotificationService strategyNotificationService;
+    private final DeviceCommandService deviceCommandService;
     private final PlantMapper plantMapper;
     private final UserMapper userMapper;
     private final DeviceMapper deviceMapper;
@@ -100,7 +110,7 @@ public class StrategyServiceImpl implements StrategyService {
         validateStrategy(strategy, request);
         validateConflict(strategy, null);
         strategyMapper.insert(strategy);
-        evaluateStrategyAgainstLatestData(strategy);
+        evaluateStrategyAgainstLatestData(strategy, "STRATEGY_SAVE", Map.of());
         return toStrategyVO(requireStrategy(strategy.getId()));
     }
 
@@ -113,7 +123,7 @@ public class StrategyServiceImpl implements StrategyService {
         validateStrategy(strategy, request);
         validateConflict(strategy, strategyId);
         strategyMapper.updateById(strategy);
-        evaluateStrategyAgainstLatestData(strategy);
+        evaluateStrategyAgainstLatestData(strategy, "STRATEGY_SAVE", Map.of());
         return toStrategyVO(requireStrategy(strategyId));
     }
 
@@ -143,35 +153,117 @@ public class StrategyServiceImpl implements StrategyService {
                 .build();
     }
 
-    private void evaluateStrategyAgainstLatestData(Strategy strategy) {
+    @Override
+    @Transactional
+    public void evaluateStrategiesForPlant(Long plantId, String triggerSource) {
+        evaluateStrategiesForPlant(plantId, triggerSource, Map.of());
+    }
+
+    @Override
+    @Transactional
+    public void evaluateStrategiesForPlant(Long plantId, String triggerSource, Map<String, BigDecimal> currentMetricValues) {
+        if (plantId == null) {
+            return;
+        }
+        String resolvedTriggerSource = StringUtils.hasText(triggerSource) ? triggerSource : "REALTIME_DATA";
+        Map<String, BigDecimal> metricValues = currentMetricValues == null ? Map.of() : currentMetricValues;
+        log.info("[STRATEGY_RT] start strategy evaluation. plantId={}, triggerSource={}",
+                plantId, resolvedTriggerSource);
+        List<Strategy> strategies = strategyMapper.selectByPlantIdAndFilters(plantId, true, TYPE_CONDITION);
+        log.info("[STRATEGY_RT] condition strategies loaded. plantId={}, count={}", plantId, strategies.size());
+        for (Strategy strategy : strategies) {
+            evaluateStrategyAgainstLatestData(strategy, resolvedTriggerSource, metricValues);
+        }
+    }
+
+    private void evaluateStrategyAgainstLatestData(Strategy strategy,
+                                                   String triggerSource,
+                                                   Map<String, BigDecimal> currentMetricValues) {
         if (!Boolean.TRUE.equals(strategy.getEnabled()) || !TYPE_CONDITION.equals(strategy.getStrategyType())) {
             return;
         }
-        BigDecimal currentValue = getLatestMetricValue(strategy);
-        if (currentValue == null || !isConditionTriggered(strategy, currentValue)) {
+        log.info("[STRATEGY_RT] evaluating strategy. strategyId={}, metricType={}, operatorType={}, thresholdMin={}, thresholdMax={}",
+                strategy.getId(),
+                strategy.getMetricType(),
+                strategy.getOperatorType(),
+                strategy.getThresholdMin(),
+                strategy.getThresholdMax());
+        if (!isWithinActiveTimeWindow(strategy)) {
+            log.info("[STRATEGY_RT] strategy skipped by time window. strategyId={}", strategy.getId());
+            return;
+        }
+        BigDecimal currentValue = resolveCurrentMetricValue(strategy, currentMetricValues);
+        boolean matched = currentValue != null && isConditionTriggered(strategy, currentValue);
+        log.info("[STRATEGY_RT] strategy metric evaluated. strategyId={}, metricType={}, currentValue={}, matched={}",
+                strategy.getId(), strategy.getMetricType(), currentValue, matched);
+        if (!matched) {
             return;
         }
 
-        String payload = buildTriggerPayload(strategy, currentValue);
+        String commandValue = resolveCommandValue(strategy);
+        String payload = buildTriggerPayload(strategy, currentValue, triggerSource, commandValue);
         StrategyExecutionLog latestLog = strategyExecutionLogMapper.selectLatestByStrategyId(strategy.getId());
-        if (isDuplicateTrigger(latestLog, currentValue, payload)) {
+        if (isDuplicateTrigger(strategy, latestLog, currentValue, payload)) {
+            log.info("[STRATEGY_RT] strategy skipped as duplicate. strategyId={}, currentValue={}",
+                    strategy.getId(), currentValue);
             return;
         }
 
-        StrategyExecutionLog log = new StrategyExecutionLog();
-        log.setStrategyId(strategy.getId());
-        log.setPlantId(strategy.getPlantId());
-        log.setTriggerSource("REALTIME_DATA");
-        log.setTriggerMetricValue(currentValue);
-        log.setTriggerPayload(payload);
-        log.setExecutionResult("TRIGGERED");
-        log.setResultMessage(buildTriggerResultMessage(strategy, currentValue));
-        log.setExecutedAt(LocalDateTime.now());
-        strategyExecutionLogMapper.insert(log);
+        executeTriggeredStrategy(strategy, currentValue, triggerSource, payload, commandValue);
     }
 
-    private boolean isDuplicateTrigger(StrategyExecutionLog latestLog, BigDecimal currentValue, String payload) {
+    private void executeTriggeredStrategy(Strategy strategy,
+                                          BigDecimal currentValue,
+                                          String triggerSource,
+                                          String payload,
+                                          String commandValue) {
+        StrategyExecutionLog executionLog = new StrategyExecutionLog();
+        executionLog.setStrategyId(strategy.getId());
+        executionLog.setPlantId(strategy.getPlantId());
+        executionLog.setTriggerSource(triggerSource);
+        executionLog.setTriggerMetricValue(currentValue);
+        executionLog.setTriggerPayload(payload);
+        executionLog.setExecutedAt(LocalDateTime.now());
+
+        try {
+            if (ACTION_NOTIFY_USER.equals(strategy.getActionType())) {
+                strategyNotificationService.createNotificationByStrategy(strategy.getId(), currentValue, payload);
+                executionLog.setExecutionResult(EXECUTION_SUCCESS);
+                executionLog.setResultMessage(buildTriggerResultMessage(strategy, currentValue, "notification created", null));
+            } else {
+                ControlCommandVO command = executeDeviceCommand(strategy, commandValue);
+                executionLog.setCommandLogId(command.getCommandLogId());
+                boolean success = EXECUTION_SUCCESS.equalsIgnoreCase(command.getExecuteStatus());
+                executionLog.setExecutionResult(success ? EXECUTION_SUCCESS : EXECUTION_FAILED);
+                executionLog.setResultMessage(buildTriggerResultMessage(strategy, currentValue, command.getMessage(), commandValue));
+            }
+        } catch (Exception ex) {
+            executionLog.setExecutionResult(EXECUTION_FAILED);
+            executionLog.setResultMessage(buildTriggerResultMessage(strategy, currentValue, "action failed: " + safeMessage(ex), commandValue));
+            log.warn("[STRATEGY] action failed. strategyId={}, plantId={}, actionType={}, actionValue={}, commandValue={}",
+                    strategy.getId(), strategy.getPlantId(), strategy.getActionType(), strategy.getActionValue(), commandValue, ex);
+        }
+
+        int inserted = strategyExecutionLogMapper.insert(executionLog);
+        log.info("[STRATEGY_RT] strategy_execution_logs insert result. strategyId={}, logId={}, inserted={}, executionResult={}, commandLogId={}",
+                strategy.getId(),
+                executionLog.getId(),
+                inserted,
+                executionLog.getExecutionResult(),
+                executionLog.getCommandLogId());
+    }
+
+    private boolean isDuplicateTrigger(Strategy strategy,
+                                       StrategyExecutionLog latestLog,
+                                       BigDecimal currentValue,
+                                       String payload) {
         if (latestLog == null) {
+            return false;
+        }
+        if (!isSuccessfulExecutionResult(latestLog.getExecutionResult())) {
+            return false;
+        }
+        if (isDeviceControlAction(strategy) && latestLog.getCommandLogId() == null) {
             return false;
         }
         if (latestLog.getTriggerMetricValue() != null
@@ -181,12 +273,31 @@ public class StrategyServiceImpl implements StrategyService {
         return payload.equals(latestLog.getTriggerPayload());
     }
 
+    private boolean isDeviceControlAction(Strategy strategy) {
+        return ACTION_AUTO_LIGHT.equals(strategy.getActionType())
+                || ACTION_AUTO_FAN.equals(strategy.getActionType());
+    }
+
+    private boolean isSuccessfulExecutionResult(String executionResult) {
+        return EXECUTION_SUCCESS.equalsIgnoreCase(executionResult)
+                || "TRIGGERED".equalsIgnoreCase(executionResult);
+    }
+
+    private BigDecimal resolveCurrentMetricValue(Strategy strategy, Map<String, BigDecimal> currentMetricValues) {
+        if (currentMetricValues.containsKey(strategy.getMetricType())) {
+            return currentMetricValues.get(strategy.getMetricType());
+        }
+        return getLatestMetricValue(strategy);
+    }
+
     private BigDecimal getLatestMetricValue(Strategy strategy) {
         return switch (strategy.getMetricType()) {
             case "TEMPERATURE" -> {
                 TemperatureData data = temperatureDataMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TemperatureData>()
                         .eq(TemperatureData::getPlantId, strategy.getPlantId())
                         .orderByDesc(TemperatureData::getCollectedAt)
+                        .orderByDesc(TemperatureData::getCreatedAt)
+                        .orderByDesc(TemperatureData::getId)
                         .last("limit 1"));
                 yield data == null ? null : data.getTemperature();
             }
@@ -194,6 +305,8 @@ public class StrategyServiceImpl implements StrategyService {
                 HumidityData data = humidityDataMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<HumidityData>()
                         .eq(HumidityData::getPlantId, strategy.getPlantId())
                         .orderByDesc(HumidityData::getCollectedAt)
+                        .orderByDesc(HumidityData::getCreatedAt)
+                        .orderByDesc(HumidityData::getId)
                         .last("limit 1"));
                 yield data == null ? null : data.getHumidity();
             }
@@ -201,6 +314,8 @@ public class StrategyServiceImpl implements StrategyService {
                 LightData data = lightDataMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<LightData>()
                         .eq(LightData::getPlantId, strategy.getPlantId())
                         .orderByDesc(LightData::getCollectedAt)
+                        .orderByDesc(LightData::getCreatedAt)
+                        .orderByDesc(LightData::getId)
                         .last("limit 1"));
                 yield data == null ? null : data.getLightLux();
             }
@@ -210,34 +325,102 @@ public class StrategyServiceImpl implements StrategyService {
 
     private boolean isConditionTriggered(Strategy strategy, BigDecimal value) {
         return switch (strategy.getOperatorType()) {
-            case OPERATOR_LT -> strategy.getThresholdMin() != null
-                    && value.compareTo(strategy.getThresholdMin()) < 0;
-            case OPERATOR_LTE -> strategy.getThresholdMin() != null
-                    && value.compareTo(strategy.getThresholdMin()) <= 0;
-            case OPERATOR_GT -> strategy.getThresholdMin() != null
-                    && value.compareTo(strategy.getThresholdMin()) > 0;
-            case OPERATOR_GTE -> strategy.getThresholdMin() != null
-                    && value.compareTo(strategy.getThresholdMin()) >= 0;
-            case OPERATOR_EQ -> strategy.getThresholdMin() != null
-                    && value.compareTo(strategy.getThresholdMin()) == 0;
+            case OPERATOR_LT -> upperThreshold(strategy) != null
+                    && value.compareTo(upperThreshold(strategy)) < 0;
+            case OPERATOR_LTE -> upperThreshold(strategy) != null
+                    && value.compareTo(upperThreshold(strategy)) <= 0;
+            case OPERATOR_GT -> lowerThreshold(strategy) != null
+                    && value.compareTo(lowerThreshold(strategy)) > 0;
+            case OPERATOR_GTE -> lowerThreshold(strategy) != null
+                    && value.compareTo(lowerThreshold(strategy)) >= 0;
+            case OPERATOR_EQ -> exactThreshold(strategy) != null
+                    && value.compareTo(exactThreshold(strategy)) == 0;
             case OPERATOR_BETWEEN -> strategy.getThresholdMin() != null
                     && strategy.getThresholdMax() != null
-                    && (value.compareTo(strategy.getThresholdMin()) < 0
-                    || value.compareTo(strategy.getThresholdMax()) > 0);
+                    && value.compareTo(strategy.getThresholdMin()) >= 0
+                    && value.compareTo(strategy.getThresholdMax()) <= 0;
             default -> false;
         };
     }
 
-    private String buildTriggerPayload(Strategy strategy, BigDecimal currentValue) {
+    private BigDecimal lowerThreshold(Strategy strategy) {
+        return strategy.getThresholdMin() != null ? strategy.getThresholdMin() : strategy.getThresholdMax();
+    }
+
+    private BigDecimal upperThreshold(Strategy strategy) {
+        return strategy.getThresholdMax() != null ? strategy.getThresholdMax() : strategy.getThresholdMin();
+    }
+
+    private BigDecimal exactThreshold(Strategy strategy) {
+        return strategy.getThresholdMin() != null ? strategy.getThresholdMin() : strategy.getThresholdMax();
+    }
+
+    private ControlCommandVO executeDeviceCommand(Strategy strategy, String commandValue) {
+        DeviceControlRequest request = new DeviceControlRequest();
+        request.setPlantId(strategy.getPlantId());
+        request.setDeviceId(resolveCommandDeviceId(strategy));
+        request.setCommandValue(commandValue);
+        request.setSourceType("STRATEGY");
+        if (ACTION_AUTO_LIGHT.equals(strategy.getActionType())) {
+            log.info("[STRATEGY_RT] calling controlLight. strategyId={}, plantId={}, deviceId={}, commandValue={}",
+                    strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue);
+            return deviceCommandService.controlLight(request);
+        }
+        if (ACTION_AUTO_FAN.equals(strategy.getActionType())) {
+            log.info("[STRATEGY_RT] calling controlFan. strategyId={}, plantId={}, deviceId={}, commandValue={}",
+                    strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue);
+            return deviceCommandService.controlFan(request);
+        }
+        throw badRequest("Unsupported strategy action for device control: " + strategy.getActionType());
+    }
+
+    private Long resolveCommandDeviceId(Strategy strategy) {
+        if (strategy.getTargetDeviceId() != null) {
+            return strategy.getTargetDeviceId();
+        }
+        Device ia1Device = deviceMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Device>()
+                .eq(Device::getPlantId, strategy.getPlantId())
+                .and(wrapper -> wrapper.eq(Device::getDeviceCode, "E53IA1")
+                        .or()
+                        .eq(Device::getDeviceType, "IA1"))
+                .orderByDesc(Device::getOnlineStatus)
+                .orderByDesc(Device::getLastSeenAt)
+                .orderByDesc(Device::getId)
+                .last("limit 1"));
+        if (ia1Device == null) {
+            throw badRequest("No targetDeviceId and no IA1 device found for plantId=" + strategy.getPlantId());
+        }
+        log.info("[STRATEGY_RT] targetDeviceId empty, resolved IA1 device. strategyId={}, plantId={}, deviceId={}",
+                strategy.getId(), strategy.getPlantId(), ia1Device.getId());
+        return ia1Device.getId();
+    }
+
+    private String resolveCommandValue(Strategy strategy) {
+        if (ACTION_AUTO_LIGHT.equals(strategy.getActionType())) {
+            return strategy.getActionValue();
+        }
+        if (ACTION_AUTO_FAN.equals(strategy.getActionType())) {
+            String actionValue = strategy.getActionValue() == null ? "" : strategy.getActionValue().trim().toUpperCase();
+            if ("OFF".equals(actionValue)) {
+                return "OFF";
+            }
+            return "ON";
+        }
+        return null;
+    }
+
+    private String buildTriggerPayload(Strategy strategy, BigDecimal currentValue, String triggerSource, String commandValue) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("strategyId", strategy.getId());
         payload.put("strategyName", strategy.getStrategyName());
+        payload.put("triggerSource", triggerSource);
         payload.put("metricType", strategy.getMetricType());
         payload.put("operatorType", strategy.getOperatorType());
         payload.put("thresholdMin", strategy.getThresholdMin());
         payload.put("thresholdMax", strategy.getThresholdMax());
         payload.put("actionType", strategy.getActionType());
         payload.put("actionValue", strategy.getActionValue());
+        payload.put("commandValue", commandValue);
         payload.put("value", currentValue);
         try {
             return objectMapper.writeValueAsString(payload);
@@ -246,11 +429,24 @@ public class StrategyServiceImpl implements StrategyService {
         }
     }
 
-    private String buildTriggerResultMessage(Strategy strategy, BigDecimal currentValue) {
-        return "策略触发：" + strategy.getStrategyName()
-                + "，当前值=" + currentValue
-                + "，条件=" + strategy.getMetricType() + " " + strategy.getOperatorType() + " " + strategy.getThresholdMin()
-                + "，动作=" + strategy.getActionType();
+    private String buildTriggerResultMessage(Strategy strategy, BigDecimal currentValue, String actionResult, String commandValue) {
+        StringBuilder message = new StringBuilder();
+        message.append("Strategy triggered: ").append(strategy.getStrategyName())
+                .append(", metric=").append(strategy.getMetricType())
+                .append(", value=").append(currentValue)
+                .append(", condition=").append(formatTriggerRange(strategy))
+                .append(", action=").append(strategy.getActionType()).append(" ").append(strategy.getActionValue());
+        if (StringUtils.hasText(commandValue)) {
+            message.append(", commandValue=").append(commandValue);
+        }
+        if (StringUtils.hasText(actionResult)) {
+            message.append(", result=").append(actionResult);
+        }
+        return message.toString();
+    }
+
+    private String safeMessage(Exception ex) {
+        return StringUtils.hasText(ex.getMessage()) ? ex.getMessage() : ex.getClass().getSimpleName();
     }
 
     private Strategy buildStrategy(StrategyUpsertDTO request, Strategy existing) {
@@ -304,7 +500,7 @@ public class StrategyServiceImpl implements StrategyService {
             }
             case ACTION_AUTO_FAN -> {
                 if (!AUTO_FAN_VALUES.contains(strategy.getActionValue())) {
-                    throw badRequest("AUTO_FAN 的 actionValue 仅支持 LOW 或 HIGH");
+                    throw badRequest("AUTO_FAN actionValue only supports ON/OFF/LOW/HIGH");
                 }
                 requireTargetDevice(strategy, true);
             }
@@ -330,12 +526,22 @@ public class StrategyServiceImpl implements StrategyService {
                 throw badRequest("CONDITION 策略不能传 cronExpr");
             }
             switch (strategy.getOperatorType()) {
-                case OPERATOR_GT, OPERATOR_GTE, OPERATOR_LT, OPERATOR_LTE, OPERATOR_EQ -> {
+                case OPERATOR_GT, OPERATOR_GTE -> {
                     if (strategy.getThresholdMin() == null) {
-                        throw badRequest(strategy.getOperatorType() + " 操作必须提供 thresholdMin");
+                        throw badRequest(strategy.getOperatorType() + " operation requires thresholdMin");
                     }
                     if (strategy.getThresholdMax() != null) {
-                        throw badRequest(strategy.getOperatorType() + " 操作不能传 thresholdMax");
+                        throw badRequest(strategy.getOperatorType() + " operation must not pass thresholdMax");
+                    }
+                }
+                case OPERATOR_LT, OPERATOR_LTE -> {
+                    if (upperThreshold(strategy) == null) {
+                        throw badRequest(strategy.getOperatorType() + " operation requires thresholdMax");
+                    }
+                }
+                case OPERATOR_EQ -> {
+                    if (exactThreshold(strategy) == null) {
+                        throw badRequest("EQ operation requires thresholdMin or thresholdMax");
                     }
                 }
                 case OPERATOR_BETWEEN -> {
@@ -416,11 +622,11 @@ public class StrategyServiceImpl implements StrategyService {
 
     private TriggerInterval buildInterval(Strategy strategy) {
         return switch (strategy.getOperatorType()) {
-            case OPERATOR_GT -> new TriggerInterval(strategy.getThresholdMin(), false, null, false);
-            case OPERATOR_GTE -> new TriggerInterval(strategy.getThresholdMin(), true, null, false);
-            case OPERATOR_LT -> new TriggerInterval(null, false, strategy.getThresholdMin(), false);
-            case OPERATOR_LTE -> new TriggerInterval(null, false, strategy.getThresholdMin(), true);
-            case OPERATOR_EQ -> new TriggerInterval(strategy.getThresholdMin(), true, strategy.getThresholdMin(), true);
+            case OPERATOR_GT -> new TriggerInterval(lowerThreshold(strategy), false, null, false);
+            case OPERATOR_GTE -> new TriggerInterval(lowerThreshold(strategy), true, null, false);
+            case OPERATOR_LT -> new TriggerInterval(null, false, upperThreshold(strategy), false);
+            case OPERATOR_LTE -> new TriggerInterval(null, false, upperThreshold(strategy), true);
+            case OPERATOR_EQ -> new TriggerInterval(exactThreshold(strategy), true, exactThreshold(strategy), true);
             case OPERATOR_BETWEEN -> new TriggerInterval(strategy.getThresholdMin(), true, strategy.getThresholdMax(), true);
             default -> throw badRequest("不支持的 operatorType");
         };
@@ -476,11 +682,11 @@ public class StrategyServiceImpl implements StrategyService {
 
     private String formatTriggerRange(Strategy strategy) {
         return switch (strategy.getOperatorType()) {
-            case OPERATOR_GT -> ">" + strategy.getThresholdMin();
-            case OPERATOR_GTE -> ">=" + strategy.getThresholdMin();
-            case OPERATOR_LT -> "<" + strategy.getThresholdMin();
-            case OPERATOR_LTE -> "<=" + strategy.getThresholdMin();
-            case OPERATOR_EQ -> "=" + strategy.getThresholdMin();
+            case OPERATOR_GT -> ">" + lowerThreshold(strategy);
+            case OPERATOR_GTE -> ">=" + lowerThreshold(strategy);
+            case OPERATOR_LT -> "<" + upperThreshold(strategy);
+            case OPERATOR_LTE -> "<=" + upperThreshold(strategy);
+            case OPERATOR_EQ -> "=" + exactThreshold(strategy);
             case OPERATOR_BETWEEN -> "[" + strategy.getThresholdMin() + ", " + strategy.getThresholdMax() + "]";
             default -> strategy.getOperatorType();
         };
@@ -512,6 +718,10 @@ public class StrategyServiceImpl implements StrategyService {
             return TimeWindow.allDay();
         }
         return TimeWindow.of(parseTime(startText, "startTime"), parseTime(endText, "endTime"));
+    }
+
+    private boolean isWithinActiveTimeWindow(Strategy strategy) {
+        return extractTimeWindow(strategy).contains(LocalTime.now());
     }
 
     private String buildConfigJson(StrategyUpsertDTO request) {
@@ -765,6 +975,17 @@ public class StrategyServiceImpl implements StrategyService {
                 return true;
             }
             return overlapsWithin48Hours(startMinute, endMinute, other.startMinute, other.endMinute);
+        }
+
+        private boolean contains(LocalTime time) {
+            if (fullDay) {
+                return true;
+            }
+            int minute = time.getHour() * 60 + time.getMinute();
+            if (startMinute < endMinute) {
+                return minute >= startMinute && minute <= endMinute;
+            }
+            return minute >= startMinute || minute <= endMinute;
         }
 
         private boolean overlapsWithin48Hours(int startA, int endA, int startB, int endB) {

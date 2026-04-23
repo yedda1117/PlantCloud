@@ -14,6 +14,7 @@ import com.plantcloud.monitoring.mapper.LightDataMapper;
 import com.plantcloud.monitoring.mapper.TemperatureDataMapper;
 import com.plantcloud.mqtt.dto.TelemetryPayload;
 import com.plantcloud.mqtt.service.impl.TelemetryPersistenceService;
+import com.plantcloud.strategy.service.StrategyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -24,6 +25,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,6 +48,7 @@ public class Ia1TelemetryMqttListener {
     private final ObjectMapper objectMapper;
     private final DeviceMapper deviceMapper;
     private final TelemetryPersistenceService telemetryPersistenceService;
+    private final StrategyService strategyService;
 
     // 保留这些 mapper，避免本类中的辅助方法编译失败
     private final TemperatureDataMapper temperatureDataMapper;
@@ -83,9 +87,46 @@ public class Ia1TelemetryMqttListener {
                     payload,
                     resolveCollectedAt(telemetry.getTimestamp())
             );
+            log.info("[STRATEGY_RT] telemetry persisted. plantId={}, deviceId={}, temperature={}, humidity={}, lightIntensity={}",
+                    device.getPlantId(),
+                    device.getId(),
+                    telemetry.getTemperature(),
+                    telemetry.getHumidity(),
+                    telemetry.getLightIntensity());
+
+            evaluateStrategiesAfterTelemetryPersisted(device, telemetry);
         } catch (Exception ex) {
             log.error("Failed to process telemetry message. topic={}, payload={}", topic, payload, ex);
         }
+    }
+
+    private void evaluateStrategiesAfterTelemetryPersisted(Device device, TelemetryPayload telemetry) {
+        try {
+            log.info("[STRATEGY_RT] start strategy evaluation. plantId={}, deviceId={}, triggerSource=REALTIME_DATA",
+                    device.getPlantId(), device.getId());
+            strategyService.evaluateStrategiesForPlant(
+                    device.getPlantId(),
+                    "REALTIME_DATA",
+                    buildRealtimeMetricValues(telemetry)
+            );
+        } catch (Exception ex) {
+            log.error("Strategy evaluation failed after telemetry persisted. plantId={}, deviceId={}",
+                    device.getPlantId(), device.getId(), ex);
+        }
+    }
+
+    private Map<String, BigDecimal> buildRealtimeMetricValues(TelemetryPayload telemetry) {
+        Map<String, BigDecimal> values = new LinkedHashMap<>();
+        if (telemetry.getTemperature() != null) {
+            values.put("TEMPERATURE", telemetry.getTemperature());
+        }
+        if (telemetry.getHumidity() != null) {
+            values.put("HUMIDITY", BigDecimal.valueOf(telemetry.getHumidity()));
+        }
+        if (telemetry.getLightIntensity() != null) {
+            values.put("LIGHT", BigDecimal.valueOf(telemetry.getLightIntensity()));
+        }
+        return values;
     }
 
     private String extractDeviceToken(String topic) {

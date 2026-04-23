@@ -15,4 +15,6 @@ public class DeviceControlRequest {
 
     @NotBlank
     private String commandValue;
+
+    private String sourceType;
 }
