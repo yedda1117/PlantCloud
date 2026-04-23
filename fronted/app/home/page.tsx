@@ -380,7 +380,7 @@ export default function HomePage() {
   }
 
   const activityLogs = useMemo(() => sortActivityLogs(realtimeData?.activityLogs ?? []), [realtimeData?.activityLogs])
-  const unresolvedCount = realtimeData?.abnormal.count ?? 0
+  const unresolvedCount = (realtimeData?.abnormal.count ?? 0) + (realtimeData?.tilt.count ?? 0)
   const resolvedCount = activityLogs.filter((log) => isResolvedLog(log.status)).length
   const totalAlertCount = Math.max(unresolvedCount + resolvedCount, 1)
   const unresolvedRatio = Math.min(Math.max(unresolvedCount / totalAlertCount, 0), 1)
