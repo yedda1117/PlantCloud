@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PlantCloud</string>
+    <string name="title_activity_main">PlantCloud</string>
+    <string name="package_name">com.plantcloud.mobile</string>
+    <string name="custom_url_scheme">com.plantcloud.mobile</string>
+</resources>
