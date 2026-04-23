@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { AuthGuard } from "@/components/auth-guard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -32,9 +32,12 @@ import { formatStrategyAction, formatStrategyCondition, resolveStrategyConfig } 
 import {
   AlertCircle,
   Bell,
+  ChevronRight,
   CheckCircle,
   Clock,
+  Cpu,
   Droplets,
+  Eye,
   Leaf,
   Pencil,
   Plus,
@@ -46,6 +49,7 @@ import {
   Thermometer,
   Trash2,
   Wifi,
+  Wind,
   Zap,
 } from "lucide-react"
 
@@ -278,6 +282,85 @@ function buildFriendlyStrategySaveFeedback(
   return { title: "保存策略失败", description: message }
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function getPlantStatusMeta(status?: string) {
+  if (status === "ACTIVE") {
+    return {
+      label: "在线",
+      className: "border-emerald-300/60 bg-white/70 text-emerald-700 shadow-[0_0_18px_rgba(110,231,183,0.28)]",
+    }
+  }
+  if (status === "DELETED") {
+    return {
+      label: "已删除",
+      className: "border-rose-300/55 bg-white/70 text-rose-500",
+    }
+  }
+  return {
+    label: "离线",
+    className: "border-emerald-200/50 bg-white/65 text-emerald-700/70",
+  }
+}
+
+function getStrategyTypeMeta(strategy: StrategyItem) {
+  switch (strategy.actionType) {
+    case "AUTO_LIGHT":
+      return { label: "补光", icon: Sun }
+    case "AUTO_FAN":
+      return { label: "通风", icon: Wind }
+    case "NOTIFY_USER":
+      return { label: "通知", icon: Bell }
+    default:
+      return { label: "策略", icon: Zap }
+  }
+}
+
+function getStrategySummary(strategy: StrategyItem) {
+  const condition = formatStrategyCondition(strategy)
+  const action = formatStrategyAction(strategy, {})
+  return `${condition}，${action}`
+}
+
+function getStrategyStatusClass(enabled: boolean) {
+  return enabled
+    ? "border-emerald-300/60 bg-white/72 text-emerald-700 shadow-[0_0_18px_rgba(110,231,183,0.22)]"
+    : "border-emerald-200/45 bg-white/60 text-emerald-800/65"
+}
+
+function getLogTypeMeta(type: PolicyLog["type"]) {
+  if (type === "warning") {
+    return {
+      icon: AlertCircle,
+      className: "border-amber-300/45 bg-white/70 text-amber-700",
+      iconClassName: "text-amber-500",
+    }
+  }
+  if (type === "success") {
+    return {
+      icon: CheckCircle,
+      className: "border-emerald-300/45 bg-white/72 text-emerald-700",
+      iconClassName: "text-emerald-500",
+    }
+  }
+  return {
+    icon: Zap,
+    className: "border-cyan-300/45 bg-white/72 text-cyan-700",
+    iconClassName: "text-cyan-500",
+  }
+}
+
 // ─── Strategy Dialog ──────────────────────────────────────────────────────────
 
 function StrategyDialog({
@@ -301,35 +384,36 @@ function StrategyDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>新建策略</DialogTitle>
+      <DialogContent className="max-w-lg overflow-hidden border border-emerald-300/20 bg-[linear-gradient(180deg,rgba(11,24,28,0.96),rgba(6,14,18,0.98))] text-white shadow-[0_32px_80px_rgba(0,0,0,0.52),0_0_48px_rgba(16,185,129,0.14)] backdrop-blur-3xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.16),transparent_32%)]" />
+        <DialogHeader className="relative">
+          <DialogTitle className="text-xl font-semibold tracking-[0.03em] text-white">新建策略</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2">
+        <div className="relative space-y-4 py-2">
           {notifyConflictHint ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
               {notifyConflictHint}
             </div>
           ) : null}
           {submitError ? (
-            <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <div className="rounded-2xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
               {submitError}
             </div>
           ) : null}
           <div>
-            <label className="text-sm text-muted-foreground">策略名称</label>
+            <label className="text-sm text-white/55">策略名称</label>
             <Input
-              className="mt-1"
+              className="mt-1 border-white/10 bg-white/5 text-white placeholder:text-white/28"
               placeholder="例如：光照不足自动补光"
               value={form.strategyName}
               onChange={(e) => onChange({ strategyName: e.target.value })}
             />
           </div>
           <Separator />
-          <p className="text-sm font-medium">触发条件</p>
+          <p className="text-sm font-medium text-white/85">触发条件</p>
           <div className="grid grid-cols-3 gap-2">
             <Select value={form.metricType} onValueChange={(v) => onChange({ metricType: v as StrategyFormState["metricType"] })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="LIGHT">光照强度</SelectItem>
                 <SelectItem value="TEMPERATURE">温度</SelectItem>
@@ -337,40 +421,40 @@ function StrategyDialog({
               </SelectContent>
             </Select>
             <Select value={form.operatorType} onValueChange={(v) => onChange({ operatorType: v as StrategyFormState["operatorType"] })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="LT">小于</SelectItem>
                 <SelectItem value="GT">大于</SelectItem>
                 <SelectItem value="EQ">等于</SelectItem>
               </SelectContent>
             </Select>
-            <Input placeholder="阈值" value={form.thresholdMin} onChange={(e) => onChange({ thresholdMin: e.target.value })} />
+            <Input className="border-white/10 bg-white/5 text-white placeholder:text-white/28" placeholder="阈值" value={form.thresholdMin} onChange={(e) => onChange({ thresholdMin: e.target.value })} />
           </div>
           <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-xl bg-muted/50 p-3">
+            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3">
               <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">限制时间范围</span>
+                <Clock className="h-4 w-4 text-emerald-300" />
+                <span className="text-sm font-medium text-white/82">限制时间范围</span>
               </div>
               <Switch checked={form.timeLimitEnabled} onCheckedChange={(checked) => onChange({ timeLimitEnabled: checked })} />
             </div>
             {form.timeLimitEnabled ? (
-              <div className="grid grid-cols-2 gap-3 rounded-xl border bg-background p-4">
+              <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
                 <div>
-                  <label className="mb-1.5 block text-xs text-muted-foreground">开始时间</label>
-                  <Input type="time" className="font-mono" value={form.startTime} onChange={(e) => onChange({ startTime: e.target.value })} />
+                  <label className="mb-1.5 block text-xs text-white/45">开始时间</label>
+                  <Input type="time" className="border-white/10 bg-white/5 font-mono text-white" value={form.startTime} onChange={(e) => onChange({ startTime: e.target.value })} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs text-muted-foreground">结束时间</label>
-                  <Input type="time" className="font-mono" value={form.endTime} onChange={(e) => onChange({ endTime: e.target.value })} />
+                  <label className="mb-1.5 block text-xs text-white/45">结束时间</label>
+                  <Input type="time" className="border-white/10 bg-white/5 font-mono text-white" value={form.endTime} onChange={(e) => onChange({ endTime: e.target.value })} />
                 </div>
               </div>
             ) : null}
           </div>
           <Separator />
-          <p className="text-sm font-medium">执行动作</p>
+          <p className="text-sm font-medium text-white/85">执行动作</p>
           <Select value={form.actionType} onValueChange={(v) => onChange({ actionType: v as StrategyFormState["actionType"] })}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="AUTO_LIGHT">开启补光灯</SelectItem>
               <SelectItem value="AUTO_FAN">启动风扇</SelectItem>
@@ -378,9 +462,9 @@ function StrategyDialog({
             </SelectContent>
           </Select>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={submitting}>取消</Button>
-          <Button onClick={onSubmit} disabled={submitting}>{submitting ? "提交中..." : "保存"}</Button>
+        <DialogFooter className="relative gap-3 border-t border-white/10 pt-5">
+          <Button variant="outline" className="rounded-full border-white/12 bg-white/5 text-white/78 hover:border-white/20 hover:bg-white/10 hover:text-white" onClick={onClose} disabled={submitting}>取消</Button>
+          <Button className="rounded-full border border-emerald-300/20 bg-emerald-400/12 text-emerald-50 shadow-[0_0_22px_rgba(16,185,129,0.18)] hover:bg-emerald-400/20" onClick={onSubmit} disabled={submitting}>{submitting ? "提交中..." : "保存"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -388,6 +472,104 @@ function StrategyDialog({
 }
 
 // ─── Edit Plant Modal ─────────────────────────────────────────────────────────
+
+function StrategyDetailDialog({
+  strategy,
+  devicesStatus,
+  onClose,
+  onDelete,
+}: {
+  strategy: StrategyItem | null
+  devicesStatus: DevicesStatus | null
+  onClose: () => void
+  onDelete: (strategy: StrategyItem) => void
+}) {
+  const open = strategy !== null
+  const config = strategy ? resolveStrategyConfig(strategy) : null
+  const typeMeta = strategy ? getStrategyTypeMeta(strategy) : null
+  const TypeIcon = typeMeta?.icon
+
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      {strategy ? (
+        <DialogContent className="max-w-3xl overflow-hidden border border-white/50 bg-[linear-gradient(180deg,rgba(244,255,242,0.94),rgba(215,243,224,0.92))] p-0 text-emerald-950 shadow-[0_24px_80px_rgba(79,132,102,0.16)] backdrop-blur-2xl">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(233,255,189,0.55),transparent_30%),radial-gradient(circle_at_bottom_left,rgba(183,236,207,0.42),transparent_36%)]" />
+          <div className="relative">
+            <DialogHeader className="space-y-5 border-b border-emerald-900/10 px-6 py-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-emerald-300/45 bg-white/55 text-emerald-600 shadow-[0_0_20px_rgba(163,230,53,0.18)]">
+                    {TypeIcon ? <TypeIcon className="h-5 w-5" /> : null}
+                  </div>
+                  <div>
+                    <DialogTitle className="text-2xl font-semibold tracking-[0.02em] text-emerald-950">
+                      {strategy.strategyName}
+                    </DialogTitle>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-emerald-900/60">
+                      {getStrategySummary(strategy)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Badge className={`rounded-full border px-3 py-1 text-xs font-medium ${getStrategyStatusClass(strategy.enabled)}`}>
+                    {strategy.enabled ? "已启用" : "已停用"}
+                  </Badge>
+                  <Badge className="rounded-full border border-emerald-300/45 bg-white/58 px-3 py-1 text-xs font-medium text-emerald-700">
+                    {typeMeta?.label}
+                  </Badge>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="grid gap-4 px-6 py-6 md:grid-cols-2">
+              {[
+                { label: "触发条件", value: formatStrategyCondition(strategy) },
+                { label: "执行动作", value: formatStrategyAction(strategy, { light: devicesStatus?.light, fan: devicesStatus?.fan }) },
+                {
+                  label: "时间范围",
+                  value: config?.timeLimitEnabled && config.startTime && config.endTime ? `${config.startTime} - ${config.endTime}` : "不限时段",
+                },
+                { label: "关联设备", value: strategy.targetDeviceId ? `设备 #${strategy.targetDeviceId}` : "系统自动分配" },
+                { label: "优先级", value: strategy.priority != null ? String(strategy.priority) : "—" },
+                { label: "策略类型", value: strategy.strategyType || "CONDITION" },
+                { label: "创建时间", value: formatDateTime(strategy.createdAt) },
+                { label: "更新时间", value: formatDateTime(strategy.updatedAt) },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-[1.5rem] border border-white/55 bg-white/48 px-4 py-4 shadow-[0_14px_32px_rgba(90,141,110,0.1)] backdrop-blur-xl"
+                >
+                  <p className="text-xs uppercase tracking-[0.24em] text-emerald-900/38">{item.label}</p>
+                  <p className="mt-3 text-sm leading-6 text-emerald-950/88">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <DialogFooter className="border-t border-emerald-900/10 bg-white/28 px-6 py-5 sm:justify-between">
+              <div className="text-xs text-white/40">完整信息集中展示，列表只保留摘要，减少视觉噪音</div>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  className="rounded-full border-emerald-300/40 bg-white/60 px-5 text-emerald-800 hover:border-emerald-400/55 hover:bg-white/85 hover:text-emerald-950"
+                  onClick={onClose}
+                >
+                  关闭
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-full border-rose-300/45 bg-white/60 px-5 text-rose-500 hover:border-rose-400/55 hover:bg-rose-50 hover:text-rose-600"
+                  onClick={() => onDelete(strategy)}
+                >
+                  删除策略
+                </Button>
+              </div>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      ) : null}
+    </Dialog>
+  )
+}
 
 type EditPlantFormState = {
   tempRange: [number, number]
@@ -1037,6 +1219,7 @@ function SettingsPageContent() {
   const [strategiesError, setStrategiesError] = useState<string | null>(null)
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [strategyDialogOpen, setStrategyDialogOpen] = useState(false)
+  const [selectedStrategy, setSelectedStrategy] = useState<StrategyItem | null>(null)
   const [strategyForm, setStrategyForm] = useState<StrategyFormState>(initialFormState)
   const [strategySubmitError, setStrategySubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -1064,6 +1247,7 @@ function SettingsPageContent() {
   const visiblePlants = plants.filter((p) => !removedPlantIds.has(p.id))
   const enabledStrategiesCount = strategies.filter((strategy) => strategy.enabled).length
   const latestLogTime = logs[0]?.time ?? "--:--"
+  const syncedDevicesLabel = devicesLoading ? "同步中" : "已同步"
 
   function getCompactLogMessage(message: string) {
     const matched = message.match(/^\[([^\]]+)\]/)
@@ -1210,6 +1394,7 @@ function SettingsPageContent() {
     try {
       await deleteStrategy(strategy.id)
       setStrategies((cur) => cur.filter((item) => item.id !== strategy.id))
+      setSelectedStrategy((current) => (current?.id === strategy.id ? null : current))
       toast({ title: "策略已删除" })
     } catch (error) {
       toast({ title: "删除策略失败", description: error instanceof Error ? error.message : "请稍后重试", variant: "destructive" })
@@ -1251,7 +1436,7 @@ function SettingsPageContent() {
   return (
     <AuthGuard>
       {/* 单屏展示：背景铺满视口，内容保持紧凑的上下分组 */}
-      <div className="min-h-screen overflow-hidden bg-[linear-gradient(180deg,#eefbf1_0%,#e4f8ea_45%,#f7fcf8_100%)]">
+      <div className="min-h-screen overflow-hidden bg-[#dff6de] text-emerald-950">
         <style jsx>{`
           /* 模块内部滚动：保留滚动能力，但隐藏内部滚动条，避免整页滚动视觉 */
           .settings-scroll {
@@ -1263,11 +1448,41 @@ function SettingsPageContent() {
             display: none;
           }
         `}</style>
-        <main className="mx-auto flex min-h-screen max-w-[1480px] flex-col px-4 pb-1 pt-9 sm:px-5 lg:px-6">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(233,255,188,0.95),transparent_25%),radial-gradient(circle_at_bottom_left,rgba(113,188,148,0.35),transparent_22%),radial-gradient(circle_at_bottom_right,rgba(223,255,210,0.9),transparent_22%),linear-gradient(135deg,#dff6de_0%,#a6d7c8_44%,#79b7af_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_24%_72%,rgba(250,255,229,0.45),transparent_12%),radial-gradient(circle_at_68%_58%,rgba(238,255,205,0.25),transparent_14%)]" />
+        <main className="relative mx-auto flex min-h-screen w-full max-w-[1580px] flex-col px-6 py-10 xl:px-10">
           {/* 单屏展示：页面本身固定为一屏，主内容和底部通栏共同占满可视高度 */}
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          <div className="mx-auto mb-7 w-full max-w-[1380px] rounded-[2.2rem] border border-white/45 bg-white/22 px-7 py-7 shadow-[0_30px_80px_rgba(109,170,145,0.22),inset_0_1px_0_rgba(255,255,255,0.52)] backdrop-blur-3xl">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="space-y-3">
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/45 bg-white/45 px-3 py-1 text-[11px] uppercase tracking-[0.28em] text-emerald-700">
+                  <Cpu className="h-3.5 w-3.5" />
+                  Plant Cloud Control Matrix
+                </div>
+                <div>
+                  <h1 className="text-3xl font-semibold tracking-[0.02em] text-white sm:text-4xl">植物智能控制面板</h1>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {[
+                  { label: "当前植物", value: `${currentPlant.emoji} ${currentPlant.name}` },
+                  { label: "绑定植物", value: String(visiblePlants.length) },
+                  { label: "启用策略", value: String(enabledStrategiesCount) },
+                  { label: "最新日志", value: latestLogTime },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="rounded-[1.45rem] border border-white/55 bg-white/28 px-5 py-4 text-left shadow-[0_16px_45px_rgba(113,174,151,0.18)] backdrop-blur-2xl transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-[1.02] hover:border-emerald-300/65 hover:bg-white/42 hover:shadow-[0_24px_52px_rgba(113,174,151,0.24),0_0_30px_rgba(187,247,208,0.34)]"
+                  >
+                    <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-800/55">{item.label}</p>
+                    <p className="mt-3 truncate text-xl font-semibold text-emerald-950">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
           {/* 三列栅格分布式布局：多个内容块共同分布在 3 个纵向栅格中，而不是三大面板并排 */}
-          <div className="mx-auto grid min-h-0 w-full max-w-[1180px] shrink-0 grid-cols-1 gap-4 overflow-hidden py-0 xl:grid-cols-3">
+          <div className="mx-auto grid w-full max-w-[1380px] grid-cols-1 gap-6 xl:grid-cols-3">
             {/* 避免“三大面板并排”：这里是分散卡片，不是一列只放一个大模块 */}
             <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
               <div className="px-1">
@@ -1277,7 +1492,7 @@ function SettingsPageContent() {
                 </div>
 
               </div>
-              <Card className="rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+              <Card className="rounded-[2rem] border border-white/45 bg-white/24 shadow-[0_20px_48px_rgba(109,170,145,0.16)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_58px_rgba(109,170,145,0.22)]">
                 <CardContent className="space-y-3 p-3.5">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3">
@@ -1304,7 +1519,7 @@ function SettingsPageContent() {
                 </CardContent>
               </Card>
               {/* 模块内部滚动：植物列表卡片固定高度，超出内容仅在卡片内部滚动 */}
-              <Card className="min-h-0 flex-1 rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+              <Card className="min-h-0 flex-1 rounded-[2rem] border border-white/45 bg-white/24 shadow-[0_20px_48px_rgba(109,170,145,0.16)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_58px_rgba(109,170,145,0.22)]">
                 <CardContent className="flex h-full min-h-0 flex-col p-3.5">
                   {plantsLoading ? (
                     <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
@@ -1533,28 +1748,6 @@ function SettingsPageContent() {
             </section>
           </div>
 
-          {/* 应用信息四项同排：底部通栏区域独立放置，4 项固定在同一行横向排布 */}
-          <section className="shrink-0 space-y-0.5">
-
-            <Card className="mx-auto w-full max-w-[1180px] rounded-[1.2rem] border-white/40 bg-white/38 shadow-[0_14px_30px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-              <CardContent className="p-1">
-                <div className="grid min-w-0 grid-cols-4 gap-2 text-sm">
-                  {[
-                    { label: "应用版本", value: "v1.0.0" },
-                    { label: "硬件型号", value: "BearPi-HM Nano" },
-                    { label: "系统版本", value: "HarmonyOS 3.0" },
-                    { label: "最近同步", value: "2026-04-13 10:00" },
-                  ].map((item) => (
-                    <div key={item.label} className="min-w-0 rounded-[0.8rem] border border-white/45 bg-white/34 px-3 py-1 backdrop-blur-sm">
-                      <p className="truncate text-[11px] text-muted-foreground">{item.label}</p>
-                      <p className="mt-0.5 truncate text-[0.8rem] font-semibold leading-none">{item.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-          </div>
         </main>
 
         <StrategyDialog
@@ -1573,6 +1766,13 @@ function SettingsPageContent() {
             setStrategyForm((cur) => ({ ...cur, ...patch }))
           }}
           onSubmit={() => void handleCreateStrategyFriendly()}
+        />
+
+        <StrategyDetailDialog
+          strategy={selectedStrategy}
+          devicesStatus={devicesStatus}
+          onClose={() => setSelectedStrategy(null)}
+          onDelete={(strategy) => void handleDeleteStrategy(strategy)}
         />
 
         <AddPlantModal

@@ -48,12 +48,12 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void handleTiltAlert(Long deviceId, TiltAlertMessage message, String rawPayload) {
+    public synchronized void handleTiltAlert(Long deviceId, TiltAlertMessage message, String rawPayload) {
         Long plantId = resolvePlantId(deviceId);
         LocalDateTime eventTime = resolveEventTime(message.getTimestamp());
         boolean currentTilt = Boolean.TRUE.equals(message.getIsTilt());
-        AlertLog latestUnresolvedAlert = findLatestUnresolvedAlert(deviceId);
-        boolean previousTilt = latestUnresolvedAlert != null;
+        AlertLog latestAlert = findLatestTiltAlert(deviceId);
+        boolean previousTilt = isUnresolved(latestAlert);
 
         log.info("Evaluating tilt state transition. deviceId={}, plantId={}, previousTilt={}, currentTilt={}, eventTime={}",
                 deviceId, plantId, previousTilt, currentTilt, eventTime);
@@ -64,7 +64,7 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
         }
 
         if (previousTilt && !currentTilt) {
-            handleTiltRecovered(deviceId, plantId, eventTime, rawPayload, latestUnresolvedAlert);
+            handleTiltRecovered(deviceId, plantId, eventTime, rawPayload, latestAlert);
             return;
         }
 
@@ -145,15 +145,19 @@ public class TiltAlertMessageServiceImpl implements TiltAlertMessageService {
                 interactionEvent.getId(), deviceId, plantId, eventTitle);
     }
 
-    private AlertLog findLatestUnresolvedAlert(Long deviceId) {
+    private AlertLog findLatestTiltAlert(Long deviceId) {
         return alertLogMapper.selectOne(
                 new LambdaQueryWrapper<AlertLog>()
                         .eq(AlertLog::getDeviceId, deviceId)
                         .eq(AlertLog::getAlertType, ALERT_TYPE_TILT)
-                        .eq(AlertLog::getStatus, ALERT_STATUS_UNRESOLVED)
                         .orderByDesc(AlertLog::getCreatedAt)
+                        .orderByDesc(AlertLog::getId)
                         .last("limit 1")
         );
+    }
+
+    private boolean isUnresolved(AlertLog alertLog) {
+        return alertLog != null && ALERT_STATUS_UNRESOLVED.equals(alertLog.getStatus());
     }
 
     private Long resolvePlantId(Long deviceId) {

@@ -12,14 +12,21 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class DeviceAlertMqttCallback implements MqttCallbackExtended {
 
+    private static final long DUPLICATE_WINDOW_MILLIS = 5000L;
+
     private final MqttProperties mqttProperties;
     private final MqttMessageHandler mqttMessageHandler;
+    private final ConcurrentMap<String, Long> recentMessages = new ConcurrentHashMap<>();
 
     private volatile MqttClient mqttClient;
 
@@ -41,8 +48,35 @@ public class DeviceAlertMqttCallback implements MqttCallbackExtended {
     @Override
     public void messageArrived(String topic, MqttMessage message) {
         String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-        log.info("MQTT message arrived. topic={}, qos={}, payload={}", topic, message.getQos(), payload);
+        long now = System.currentTimeMillis();
+        cleanupExpiredMessages(now);
+
+        String messageFingerprint = buildMessageFingerprint(topic, payload);
+        Long previousSeenAt = recentMessages.putIfAbsent(messageFingerprint, now);
+        if (previousSeenAt != null && now - previousSeenAt < DUPLICATE_WINDOW_MILLIS) {
+            log.warn("Duplicate MQTT message skipped. topic={}, qos={}, duplicate={}, fingerprint={}, firstSeenAt={}, payload={}",
+                    topic, message.getQos(), message.isDuplicate(), messageFingerprint, previousSeenAt, payload);
+            return;
+        }
+        recentMessages.put(messageFingerprint, now);
+
+        log.info("MQTT message arrived. topic={}, qos={}, duplicate={}, fingerprint={}, payload={}",
+                topic, message.getQos(), message.isDuplicate(), messageFingerprint, payload);
         mqttMessageHandler.handleMessage(topic, payload);
+    }
+
+    private String buildMessageFingerprint(String topic, String payload) {
+        return topic + "|" + payload;
+    }
+
+    private void cleanupExpiredMessages(long now) {
+        Iterator<Map.Entry<String, Long>> iterator = recentMessages.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, Long> entry = iterator.next();
+            if (now - entry.getValue() >= DUPLICATE_WINDOW_MILLIS) {
+                iterator.remove();
+            }
+        }
     }
 
     @Override

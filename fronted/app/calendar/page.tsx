@@ -278,7 +278,7 @@ export default function CalendarPage() {
 
   const handlePrevMonth = () => setCurrentDate(new Date(year, month - 1, 1))
   const handleNextMonth = () => setCurrentDate(new Date(year, month + 1, 1))
-  const handleToday = () => setCurrentDate(new Date(2026, 3, 1))
+  const handleToday = () => setCurrentDate(new Date())
 
   const handleDayClick = (day: number) => {
     setSelectedDay(day)
@@ -489,7 +489,7 @@ export default function CalendarPage() {
 
   return (
     <AuthGuard>
-    <div className="min-h-screen flex flex-col bg-background overflow-hidden">
+    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#d0e8de' }}>
 
       <main className="flex-1 flex gap-0 overflow-hidden min-h-0">
         <div className="flex-[7] flex flex-col overflow-hidden border-r border-border/50">
@@ -499,21 +499,21 @@ export default function CalendarPage() {
             <h3 className="mt-2 text-lg font-semibold">{year}年{String(month + 1).padStart(2, "0")}月</h3>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            {isBoardLoading ? (
+          <div className="flex-1 overflow-y-auto px-12 pb-6 hide-scrollbar" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {isBoardLoading ? (
               <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在整理本月便利贴记录...</div>
             ) : noteBoardItems.length === 0 ? (
               <div className="flex h-full items-center justify-center rounded-3xl border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
                 本月还没有照片记录
               </div>
             ) : (
-              <div className="space-y-4 max-w-2xl">
+              <div className="grid grid-cols-2 gap-x-10 gap-y-12 w-full">
                 {noteBoardItems.map((item, index) => {
                   const style = getMilestoneStyle(item.milestone)
                   const milestoneLabel = getMilestoneLabel(item.milestone)
-                  const isEven = index % 2 === 1
-                  const rotation = isEven ? "rotate-1" : "-rotate-1"
-                  const translateClass = isEven ? "translate-x-3" : "-translate-x-3"
+                  const colIndex = index % 2 // 0:left,1:right
+                  const rowIndex = Math.floor(index / 2)
+                  const topOffsetClass = colIndex === 1 ? 'mt-10' : ''
 
                   return (
                     <button
@@ -525,11 +525,14 @@ export default function CalendarPage() {
                         setDialogOpen(true)
                         void loadDayDetail(dayNum)
                       }}
-                      style={{ marginTop: isEven ? "-1.5rem" : "-1.5rem" }}
-                      className={`block w-full transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(15,23,42,0.15)] ${rotation} ${translateClass}`}
+                      className={`block w-full transition-all duration-300 hover:-translate-y-2 ${topOffsetClass}`}
                     >
-                      <div className={`flex flex-col border border-black/5 p-5 text-left ${style.paper} ${style.shadow}`}>
-                        <div className="mx-auto mb-3 h-2 w-16 rounded-full bg-white/65 shadow-[0_1px_2px_rgba(148,163,184,0.2)]" />
+                      <div className={`relative overflow-visible flex flex-col border border-black/5 p-4 text-left ${style.paper} ${style.shadow} w-full`}>
+                        
+                        <div aria-hidden className="pointer-events-none absolute -top-4 left-1/2 transform -translate-x-1/2 w-24 h-8 bg-white/40 backdrop-blur-[1px] rounded-sm border border-black/[0.03] shadow-[inset_0_1px_2px_rgba(255,255,255,0.5),0_1px_4px_rgba(0,0,0,0.05)] z-20" >
+                          {/* 胶带中间的小撕裂感 */}
+                          <div className="absolute inset-x-0 top-1/2 h-px bg-black/5" />
+                        </div>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div>
                             <p className="text-[11px] uppercase tracking-[0.22em] text-zinc-500">Growth Log</p>
@@ -543,7 +546,7 @@ export default function CalendarPage() {
                         </div>
 
                         <div className="mb-3 overflow-hidden border border-black/5 bg-white/50 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
-                          <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="h-40 w-full object-cover" />
+                          <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="h-48 w-full object-cover" />
                         </div>
 
                         <p className="line-clamp-2 text-sm leading-5 text-zinc-700">
@@ -561,15 +564,40 @@ export default function CalendarPage() {
         {/* 右侧：工具栏 */}
         <div className="flex-[3] flex flex-col bg-slate-50/50 overflow-hidden">
           {/* 上部：极简日历 */}
-          <div className="flex flex-col p-4 flex-shrink-0 border-b border-border/30 overflow-y-auto" style={{ height: "30%" }}>
+          <div className="flex flex-col p-4 flex-shrink-0 border-b border-border/30 overflow-y-auto" style={{ height: "40%" }}>
             <div className="flex items-center justify-between mb-3">
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrevMonth}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <h3 className="text-sm font-semibold min-w-24 text-center">
-                  {String(month + 1).padStart(2, "0")}月
-                </h3>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={year}
+                    onChange={(e) => setCurrentDate(new Date(Number(e.target.value), month, 1))}
+                    className="text-sm bg-transparent outline-none"
+                  >
+                    {Array.from({ length: 10 }).map((_, i) => {
+                      const y = realToday.getFullYear() - 5 + i
+                      return (
+                        <option key={y} value={y}>
+                          {y}年
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <select
+                    value={month}
+                    onChange={(e) => setCurrentDate(new Date(year, Number(e.target.value), 1))}
+                    className="text-sm bg-transparent outline-none"
+                  >
+                    {Array.from({ length: 12 }).map((_, m) => (
+                      <option key={m} value={m}>
+                        {String(m + 1).padStart(2, "0")}月
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleNextMonth}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -580,7 +608,7 @@ export default function CalendarPage() {
             </div>
 
             {/* 日期网格 - 极简版 */}
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-7 gap-2">
               {weekDays.map((day) => (
                 <div key={day} className="text-center text-xs font-medium text-muted-foreground py-1">
                   {day}
@@ -594,19 +622,15 @@ export default function CalendarPage() {
                 const data = calendarData[day]
                 const isToday = day === today
                 const hasMilestone = data?.milestone
-                const milestoneColor = hasMilestone ? 
-                  (hasMilestone === "sprout" ? "text-green-500" : 
-                   hasMilestone === "flower" ? "text-pink-500" :
-                   hasMilestone === "fruit" ? "text-yellow-600" :
-                   hasMilestone === "repot" ? "text-orange-500" : "") : ""
+                const style = getMilestoneStyle(hasMilestone)
+                const dayTextClass = isToday ? "text-emerald-700" : "text-foreground"
 
                 return (
                   <button
                     key={day}
                     onClick={() => handleDayClick(day)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
-                      isToday ? "bg-primary text-white" : hasMilestone ? `${milestoneColor}` : "text-foreground hover:bg-muted"
-                    }`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${dayTextClass}`}
+                    style={isToday ? { color: "#b42323" } : hasMilestone ? { backgroundColor: style.bgColor } : undefined}
                   >
                     {day}
                   </button>
@@ -616,8 +640,13 @@ export default function CalendarPage() {
           </div>
 
           {/* 下部：新建记录区 */}
-          <div className="flex-1 flex flex-col p-4 overflow-y-auto" style={{ height: "70%" }}>
-            <h4 className="text-sm font-semibold mb-3">新建记录</h4>
+          <div className="flex-1 flex flex-col p-4 overflow-y-auto" style={{ height: "60%" }}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold">新建记录</h4>
+              <div className="text-xs text-muted-foreground">
+                {selectedDay ? `${month + 1}月${selectedDay}日` : "未选择日期"}
+              </div>
+            </div>
 
             {selectedDay ? (
               <div className="flex flex-col gap-3 flex-1">
@@ -656,6 +685,41 @@ export default function CalendarPage() {
                       )
                     })}
                   </div>
+                </div>
+
+                {/* 图片区域（置于备注上方） */}
+                <div>
+                  <p className="text-xs font-medium mb-2">照片</p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-28 h-28 bg-white/60 border border-border rounded-md overflow-hidden flex items-center justify-center">
+                      {selectedDayRecord?.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={selectedDayRecord.photoUrl} alt="preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-xs text-muted-foreground">暂无照片</div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handlePhotoButtonClick} disabled={isProcessingPhoto}>
+                          <Upload className="mr-2 h-4 w-4" /> 上传
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={handleViewPhoto} disabled={!selectedDayRecord?.photoUrl}>
+                          <ImageIcon className="mr-2 h-4 w-4" /> 查看
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={handleDeletePhoto} disabled={!selectedDayRecord?.photoUrl}>
+                          <Trash2 className="mr-2 h-4 w-4" /> 删除
+                        </Button>
+                      </div>
+                      {isProcessingPhoto ? (
+                        <p className="text-xs text-muted-foreground">{photoProcessMessage || "上传中..."}</p>
+                      ) : photoProcessMessage ? (
+                        <p className="text-xs text-muted-foreground">{photoProcessMessage}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoFileChange} className="hidden" />
                 </div>
 
                 {/* 备注 */}
