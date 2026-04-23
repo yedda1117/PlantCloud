@@ -1,4 +1,17 @@
-import type { AlertItem, EnvironmentData, HomeDeviceStatus, HomeRealtimeData, InfraredData, Plant, PlantAiAnalysis } from "./types"
+import type {
+  AlertItem,
+  EnvironmentData,
+  HomeDeviceStatus,
+  HomeRealtimeData,
+  InfraredData,
+  Plant,
+  PlantAiAnalysis,
+  CalendarDayDetail,
+  CalendarSummary,
+  PhotoUploadResult,
+  StrategyAgentProposal,
+  UploadedFileItem,
+} from "./types"
 
 const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:8080"
 const WEB_API_BASE_URL = import.meta.env.VITE_WEB_API_BASE_URL || "http://localhost:3000"
@@ -259,4 +272,103 @@ export async function askPlantAi(message: string, plantContextText: string, hist
     answer: data.answer || "暂时没有获得回答",
     sources: Array.isArray(data.sources) ? data.sources : [],
   }
+}
+
+export async function getKnowledgeFiles() {
+  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/files`, {
+    method: "GET",
+    headers: authHeaders({ accept: "application/json" }),
+    cache: "no-store",
+  })
+  const data = await response.json()
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || "获取文件列表失败")
+  }
+  return Array.isArray(data.files) ? (data.files as UploadedFileItem[]) : []
+}
+
+export async function uploadKnowledgeFiles(files: FileList | File[]) {
+  const formData = new FormData()
+  Array.from(files).forEach((file) => {
+    formData.append("files", file)
+  })
+
+  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/upload`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  })
+  const data = await response.json()
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || "上传失败")
+  }
+  return data
+}
+
+export async function getStrategyProposal(message: string, chatAnswer: string, plantContext: unknown, plantContextText: string) {
+  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/strategy-agent`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
+    cache: "no-store",
+    body: JSON.stringify({ message, chatAnswer, plantContext, plantContextText }),
+  })
+  const data = await response.json()
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.error || "策略建议生成失败")
+  }
+  return (data.proposal ?? null) as StrategyAgentProposal | null
+}
+
+export async function createStrategyFromProposal(payload: Record<string, unknown>) {
+  const response = await fetch(`${WEB_API_BASE_URL}/api/strategies`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
+    cache: "no-store",
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || data?.code === 400 || data?.success === false) {
+    throw new Error(data?.message || data?.error || "新增策略失败")
+  }
+  return data
+}
+
+export async function getCalendarSummary(plantId: number, year: number, month: number) {
+  return parseResponse<CalendarSummary[]>(
+    await fetch(`${BACKEND_BASE_URL}/calendar?plant_id=${plantId}&year=${year}&month=${month}`, {
+      headers: authHeaders({ accept: "application/json" }),
+      cache: "no-store",
+    }),
+  )
+}
+
+export async function getCalendarDayDetail(plantId: number, date: string) {
+  return parseResponse<CalendarDayDetail>(
+    await fetch(`${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`, {
+      headers: authHeaders({ accept: "application/json" }),
+      cache: "no-store",
+    }),
+  )
+}
+
+export async function updateCalendarDayLog(plantId: number, date: string, payload: { note?: string; milestone?: string | null }) {
+  return parseResponse<CalendarDayDetail>(
+    await fetch(`${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`, {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
+      cache: "no-store",
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+
+export async function uploadPlantPhoto(formData: FormData) {
+  return parseResponse<PhotoUploadResult>(
+    await fetch(`${BACKEND_BASE_URL}/photos/upload`, {
+      method: "POST",
+      headers: authHeaders(),
+      cache: "no-store",
+      body: formData,
+    }),
+  )
 }

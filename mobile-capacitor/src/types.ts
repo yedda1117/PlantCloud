@@ -90,3 +90,58 @@ export type ChatMessage = {
   time: string
   sources?: Array<{ file: string; section?: string }>
 }
+
+export type UploadedFileItem = {
+  id?: string
+  name: string
+  time: string
+  status: "已入库" | "解析中" | "失败" | string
+}
+
+export type StrategyAgentProposal = {
+  shouldSuggest: boolean
+  detected: string
+  strategyName: string
+  metricType: "LIGHT" | "TEMPERATURE" | "HUMIDITY"
+  operatorType: "LT" | "GT" | "EQ"
+  thresholdMin: number
+  actionType: "AUTO_LIGHT" | "AUTO_FAN" | "NOTIFY_USER"
+  actionValue: "ON" | "OFF" | "LOW" | "HIGH" | "INFO" | "WARNING" | "DANGER"
+  timeLimitEnabled?: boolean
+  startTime?: string | null
+  endTime?: string | null
+  reason: string
+}
+
+export type CalendarSummary = {
+  date: string
+  hasPhoto: boolean
+  thumbnailUrl: string | null
+  milestone: string | null
+}
+
+export type CalendarDayDetail = {
+  plantId: number
+  date: string
+  photoUrl: string | null
+  originPhotoUrl: string | null
+  note: string | null
+  milestone: string | null
+  temperature: number | null
+  humidity: number | null
+  light: number | null
+  hasPhoto: boolean
+}
+
+export type PhotoUploadResult = {
+  id: number
+  plantId: number
+  date: string
+  originPhotoUrl: string | null
+  photoUrl: string | null
+  thumbnailUrl: string | null
+  milestone: string | null
+  note: string | null
+  hasPhoto: boolean
+  aiStatus: string | null
+}
