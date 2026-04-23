@@ -17,6 +17,9 @@ const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://localh
 const WEB_API_BASE_URL = import.meta.env.VITE_WEB_API_BASE_URL || "http://localhost:3000"
 const IA1_DEVICE_CODE = "E53IA1"
 
+console.log("BACKEND_BASE_URL =", BACKEND_BASE_URL)
+console.log("WEB_API_BASE_URL =", WEB_API_BASE_URL)
+
 type ApiResult<T> = {
   code?: number
   message?: string
@@ -25,6 +28,13 @@ type ApiResult<T> = {
 
 type PageResult<T> = {
   records: T[]
+}
+
+function logApiRequest(label: string, url: string, baseURL: string) {
+  console.log(`[PlantCloud API] ${label}`, {
+    url,
+    baseURL,
+  })
 }
 
 type DeviceStatusItem = {
@@ -59,6 +69,12 @@ async function parseResponse<T>(response: Response): Promise<T> {
   }
 
   if (!response.ok || (typeof payload?.code === "number" && payload.code !== 0)) {
+    console.warn("[PlantCloud API] response error", {
+      url: response.url,
+      status: response.status,
+      statusText: response.statusText,
+      payload,
+    })
     throw new Error(payload?.message || response.statusText || "请求失败")
   }
 
@@ -390,8 +406,10 @@ export async function getCalendarDayDetail(plantId: number, date: string) {
 }
 
 export async function updateCalendarDayLog(plantId: number, date: string, payload: { note?: string; milestone?: string | null }) {
+  const url = `${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`
+  logApiRequest("updateCalendarDayLog", url, BACKEND_BASE_URL)
   return parseResponse<CalendarDayDetail>(
-    await fetch(`${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`, {
+    await fetch(url, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
       cache: "no-store",
@@ -401,8 +419,10 @@ export async function updateCalendarDayLog(plantId: number, date: string, payloa
 }
 
 export async function uploadPlantPhoto(formData: FormData) {
+  const url = `${BACKEND_BASE_URL}/photos/upload`
+  logApiRequest("uploadPlantPhoto", url, BACKEND_BASE_URL)
   return parseResponse<PhotoUploadResult>(
-    await fetch(`${BACKEND_BASE_URL}/photos/upload`, {
+    await fetch(url, {
       method: "POST",
       headers: authHeaders(),
       cache: "no-store",

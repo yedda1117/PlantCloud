@@ -15,10 +15,12 @@ import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Implementation of MQTT publish service.
- * Publishes control messages to MQTT broker with QoS 1 and error handling.
+ * Uses a connection pool to maintain persistent MQTT connections for publishing control messages.
  */
 @Slf4j
 @Service
@@ -27,10 +29,13 @@ public class MqttPublishServiceImpl implements MqttPublishService {
     
     private final MqttProperties mqttProperties;
     
+    // Connection pool: key is broker URL, value is MQTT client
+    private final ConcurrentMap<String, MqttClient> connectionPool = new ConcurrentHashMap<>();
+    
     @Override
     public PublishResult publish(String topic, String payload) {
         try {
-            publishWithDedicatedClient(topic, payload);
+            publishWithPooledClient(topic, payload);
             
             log.info("Successfully published MQTT message. topic={}, payload={}", 
                     topic, truncatePayload(payload));
@@ -40,13 +45,14 @@ public class MqttPublishServiceImpl implements MqttPublishService {
                     .build();
                     
         } catch (MqttException ex) {
-            log.warn("MQTT publish failed, will retry with a new publisher client. topic={}, payload={}, reasonCode={}, error={}",
+            log.warn("MQTT publish failed with pooled client, will retry with new client. topic={}, payload={}, reasonCode={}, error={}",
                     topic, truncatePayload(payload), ex.getReasonCode(), ex.getMessage(), ex);
 
             try {
+                // Fallback to dedicated client if pooled client fails
                 publishWithDedicatedClient(topic, payload);
 
-                log.info("Successfully published MQTT message after retry. topic={}, payload={}",
+                log.info("Successfully published MQTT message after fallback. topic={}, payload={}",
                         topic, truncatePayload(payload));
 
                 return PublishResult.builder()
@@ -54,7 +60,7 @@ public class MqttPublishServiceImpl implements MqttPublishService {
                         .build();
             } catch (MqttException retryEx) {
                 String errorMessage = describeMqttException(retryEx);
-                log.error("Failed to publish MQTT message after reconnect. topic={}, payload={}, reasonCode={}, error={}",
+                log.error("Failed to publish MQTT message after fallback. topic={}, payload={}, reasonCode={}, error={}",
                         topic, truncatePayload(payload), retryEx.getReasonCode(), retryEx.getMessage(), retryEx);
 
                 return PublishResult.builder()
@@ -62,6 +68,41 @@ public class MqttPublishServiceImpl implements MqttPublishService {
                         .errorMessage(errorMessage)
                         .build();
             }
+        }
+    }
+
+    private void publishWithPooledClient(String topic, String payload) throws MqttException {
+        String brokerUrl = mqttProperties.getBrokerUrl();
+        MqttClient mqttClient = connectionPool.computeIfAbsent(brokerUrl, this::createPooledClient);
+        
+        // Ensure connection is alive
+        if (!mqttClient.isConnected()) {
+            synchronized (mqttClient) {
+                if (!mqttClient.isConnected()) {
+                    log.info("[CTRL] pooled mqtt reconnect start broker={} clientId={}", brokerUrl, mqttClient.getClientId());
+                    mqttClient.connect(buildConnectOptions());
+                    log.info("[CTRL] pooled mqtt reconnect success broker={} clientId={}", brokerUrl, mqttClient.getClientId());
+                }
+            }
+        }
+        
+        log.info("[CTRL] mqtt publish start topic={} payload={} clientId={}", topic, payload, mqttClient.getClientId());
+        publishWithClient(mqttClient, topic, payload);
+        log.info("[CTRL] mqtt publish success topic={} payload={} clientId={}", topic, payload, mqttClient.getClientId());
+    }
+
+    private MqttClient createPooledClient(String brokerUrl) {
+        try {
+            String clientId = buildPooledClientId();
+            MqttClient mqttClient = new MqttClient(brokerUrl, clientId, new MemoryPersistence());
+            
+            log.info("[CTRL] creating pooled mqtt client broker={} clientId={}", brokerUrl, clientId);
+            mqttClient.connect(buildConnectOptions());
+            log.info("[CTRL] pooled mqtt client connected broker={} clientId={}", brokerUrl, clientId);
+            
+            return mqttClient;
+        } catch (MqttException ex) {
+            throw new RuntimeException("Failed to create pooled MQTT client for " + brokerUrl, ex);
         }
     }
 
@@ -74,12 +115,12 @@ public class MqttPublishServiceImpl implements MqttPublishService {
         );
 
         try {
-            log.info("[CTRL] mqtt connect start broker={} clientId={}", mqttProperties.getBrokerUrl(), clientId);
+            log.info("[CTRL] fallback mqtt connect start broker={} clientId={}", mqttProperties.getBrokerUrl(), clientId);
             mqttClient.connect(buildConnectOptions());
-            log.info("[CTRL] mqtt connect success broker={} clientId={}", mqttProperties.getBrokerUrl(), clientId);
-            log.info("[CTRL] mqtt publish start topic={} payload={}", topic, payload);
+            log.info("[CTRL] fallback mqtt connect success broker={} clientId={}", mqttProperties.getBrokerUrl(), clientId);
+            log.info("[CTRL] fallback mqtt publish start topic={} payload={}", topic, payload);
             publishWithClient(mqttClient, topic, payload);
-            log.info("[CTRL] mqtt publish success topic={} payload={}", topic, payload);
+            log.info("[CTRL] fallback mqtt publish success topic={} payload={}", topic, payload);
         } finally {
             closePublisherClient(mqttClient);
         }
@@ -94,8 +135,8 @@ public class MqttPublishServiceImpl implements MqttPublishService {
 
     private MqttConnectOptions buildConnectOptions() {
         MqttConnectOptions options = new MqttConnectOptions();
-        options.setAutomaticReconnect(false);
-        options.setCleanSession(true);
+        options.setAutomaticReconnect(true); // Enable auto-reconnect for pooled clients
+        options.setCleanSession(false); // Keep session for better reliability
         options.setMqttVersion(MqttConnectOptions.MQTT_VERSION_3_1_1);
         options.setConnectionTimeout(mqttProperties.getConnectionTimeout());
         options.setKeepAliveInterval(mqttProperties.getKeepAliveInterval());
@@ -107,6 +148,10 @@ public class MqttPublishServiceImpl implements MqttPublishService {
             options.setPassword(mqttProperties.getPassword().toCharArray());
         }
         return options;
+    }
+
+    private String buildPooledClientId() {
+        return "pc-ctrl-pooled-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
 
     private String buildPublisherClientId() {

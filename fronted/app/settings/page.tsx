@@ -13,7 +13,6 @@ import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { ApiError } from "@/lib/api-client"
 import { getDevicesStatus, type DevicesStatus } from "@/lib/device-api"
 import { DEFAULT_PLANT_ID, getPlantApiId, getPlantOption, plantOptions, SELECTED_PLANT_STORAGE_KEY } from "@/lib/plants"
 import { usePlantSelection } from "@/context/plant-selection"
@@ -70,7 +69,8 @@ type StrategyFormState = {
   timeLimitEnabled: boolean
   startTime: string
   endTime: string
-  actionType: "AUTO_LIGHT" | "AUTO_FAN" | "NOTIFY_USER"
+  actionType: "AUTO_LIGHT" | "AUTO_FAN"
+  actionValue: "ON" | "OFF"
 }
 
 type StrategySaveFeedback = {
@@ -111,7 +111,17 @@ const initialFormState: StrategyFormState = {
   startTime: "18:00",
   endTime: "22:00",
   actionType: "AUTO_LIGHT",
+  actionValue: "ON",
 }
+
+const strategyActionOptions = [
+  { value: "AUTO_LIGHT_ON", label: "开启补光灯", actionType: "AUTO_LIGHT", actionValue: "ON" },
+  { value: "AUTO_LIGHT_OFF", label: "关闭补光灯", actionType: "AUTO_LIGHT", actionValue: "OFF" },
+  { value: "AUTO_FAN_ON", label: "启动风扇", actionType: "AUTO_FAN", actionValue: "ON" },
+  { value: "AUTO_FAN_OFF", label: "关闭风扇", actionType: "AUTO_FAN", actionValue: "OFF" },
+] as const
+
+type StrategyActionSelectValue = (typeof strategyActionOptions)[number]["value"]
 
 // Mock device list: #1-#6 bound, #7-#8 available
 const MOCK_DEVICES = Array.from({ length: 8 }, (_, i) => ({
@@ -173,18 +183,74 @@ function getCurrentUserId() {
 
 // ─── Strategy helpers ─────────────────────────────────────────────────────────
 
+function resolveStrategyActionValue(value: string): Pick<StrategyFormState, "actionType" | "actionValue"> {
+  const option = strategyActionOptions.find((item) => item.value === value)
+  if (!option) {
+    return { actionType: "AUTO_LIGHT", actionValue: "ON" }
+  }
+  return { actionType: option.actionType, actionValue: option.actionValue }
+}
+
+function getStrategyActionSelectValue(actionType: string, actionValue?: string | null): StrategyActionSelectValue {
+  const normalizedActionValue = actionValue?.toUpperCase()
+  if (actionType === "AUTO_LIGHT") {
+    return normalizedActionValue === "OFF" ? "AUTO_LIGHT_OFF" : "AUTO_LIGHT_ON"
+  }
+  if (actionType === "AUTO_FAN") {
+    return normalizedActionValue === "OFF" ? "AUTO_FAN_OFF" : "AUTO_FAN_ON"
+  }
+  return "AUTO_LIGHT_ON"
+}
+
+function getStrategyFormActionSelectValue(form: StrategyFormState): StrategyActionSelectValue {
+  return getStrategyActionSelectValue(form.actionType, form.actionValue)
+}
+
+function buildStrategyFormFromItem(strategy: StrategyItem): StrategyFormState {
+  const config = resolveStrategyConfig(strategy)
+  const action = resolveStrategyActionValue(getStrategyActionSelectValue(strategy.actionType, strategy.actionValue))
+  return {
+    strategyName: strategy.strategyName ?? "",
+    metricType: strategy.metricType === "TEMPERATURE" || strategy.metricType === "HUMIDITY" ? strategy.metricType : "LIGHT",
+    operatorType: strategy.operatorType === "GT" || strategy.operatorType === "EQ" ? strategy.operatorType : "LT",
+    thresholdMin: String(strategy.thresholdMin ?? strategy.thresholdMax ?? ""),
+    timeLimitEnabled: Boolean(config.timeLimitEnabled),
+    startTime: config.startTime ?? "18:00",
+    endTime: config.endTime ?? "22:00",
+    ...action,
+  }
+}
+
+function resolveTargetDeviceId(
+  actionType: StrategyFormState["actionType"],
+  devicesStatus: DevicesStatus | null,
+  fallback?: string | number | null,
+) {
+  const resolved =
+    actionType === "AUTO_LIGHT"
+      ? devicesStatus?.light?.deviceId
+      : devicesStatus?.fan?.deviceId
+  if (resolved != null) {
+    return String(resolved)
+  }
+  return fallback != null ? String(fallback) : null
+}
+
+function buildThresholdPayload(form: StrategyFormState) {
+  const threshold = Number(form.thresholdMin)
+  return {
+    thresholdMin: form.operatorType === "LT" ? null : threshold,
+    thresholdMax: form.operatorType === "LT" ? threshold : null,
+  }
+}
+
 function buildCreatePayload(
   form: StrategyFormState,
   plantId: number,
   userId: string | undefined,
   devicesStatus: DevicesStatus | null,
 ): StrategyUpsertPayload {
-  const targetDeviceId =
-    form.actionType === "AUTO_LIGHT"
-      ? devicesStatus?.light?.deviceId != null ? String(devicesStatus.light.deviceId) : null
-      : form.actionType === "AUTO_FAN"
-        ? devicesStatus?.fan?.deviceId != null ? String(devicesStatus.fan.deviceId) : null
-        : null
+  const targetDeviceId = resolveTargetDeviceId(form.actionType, devicesStatus)
 
   return {
     plantId: String(plantId),
@@ -193,15 +259,50 @@ function buildCreatePayload(
     strategyType: "CONDITION",
     metricType: form.metricType,
     operatorType: form.operatorType,
-    thresholdMin: Number(form.thresholdMin),
+    ...buildThresholdPayload(form),
     actionType: form.actionType,
-    actionValue: form.actionType === "AUTO_LIGHT" ? "ON" : form.actionType === "AUTO_FAN" ? "HIGH" : "INFO",
+    actionValue: form.actionValue,
     targetDeviceId,
     enabled: true,
     priority: 10,
     timeLimitEnabled: form.timeLimitEnabled,
     startTime: form.timeLimitEnabled ? form.startTime : null,
     endTime: form.timeLimitEnabled ? form.endTime : null,
+    configJson: {
+      timeLimitEnabled: form.timeLimitEnabled,
+      ...(form.timeLimitEnabled ? { startTime: form.startTime, endTime: form.endTime } : {}),
+    },
+  }
+}
+
+function buildEditPayload(
+  strategy: StrategyItem,
+  form: StrategyFormState,
+  devicesStatus: DevicesStatus | null,
+): StrategyUpsertPayload {
+  return {
+    plantId: strategy.plantId,
+    createdBy: strategy.createdBy,
+    strategyName: form.strategyName.trim(),
+    strategyType: "CONDITION",
+    targetDeviceId: resolveTargetDeviceId(
+      form.actionType,
+      devicesStatus,
+      strategy.actionType === form.actionType ? strategy.targetDeviceId : null,
+    ),
+    metricType: form.metricType,
+    operatorType: form.operatorType,
+    ...buildThresholdPayload(form),
+    cronExpr: null,
+    actionType: form.actionType,
+    actionValue: form.actionValue,
+    enabled: strategy.enabled,
+    priority: strategy.priority ?? 10,
+    timeLimitEnabled: form.timeLimitEnabled,
+    startTime: form.timeLimitEnabled ? form.startTime : null,
+    endTime: form.timeLimitEnabled ? form.endTime : null,
+    notifyTitleTemplate: null,
+    notifyContentTemplate: null,
     configJson: {
       timeLimitEnabled: form.timeLimitEnabled,
       ...(form.timeLimitEnabled ? { startTime: form.startTime, endTime: form.endTime } : {}),
@@ -241,44 +342,27 @@ function buildUpdatePayload(strategy: StrategyItem, enabled: boolean): StrategyU
   }
 }
 
-function validateStrategyForm(form: StrategyFormState, devicesStatus: DevicesStatus | null, userId: string | undefined) {
-  if (!userId) return "当前登录信息缺少 userId，无法满足后端 createdBy 要求，请重新登录后再试"
+function validateStrategyForm(
+  form: StrategyFormState,
+  devicesStatus: DevicesStatus | null,
+  userId: string | undefined,
+  requireUserId: boolean,
+  fallbackTargetDeviceId?: string | number | null,
+) {
+  if (requireUserId && !userId) return "当前登录信息缺少 userId，无法满足后端 createdBy 要求，请重新登录后再试"
   if (!form.strategyName.trim()) return "请输入策略名称"
   if (!form.thresholdMin.trim() || Number.isNaN(Number(form.thresholdMin))) return "请输入有效的触发阈值"
   if (form.timeLimitEnabled && (!form.startTime || !form.endTime)) return "请完整填写时间范围"
-  if (form.actionType === "AUTO_LIGHT" && !devicesStatus?.light?.deviceId) return "当前未获取到补光灯设备，暂时无法创建补光策略"
-  if (form.actionType === "AUTO_FAN" && !devicesStatus?.fan?.deviceId) return "当前未获取到风扇设备，暂时无法创建风扇策略"
+  const hasFallbackTarget = fallbackTargetDeviceId != null
+  if (form.actionType === "AUTO_LIGHT" && !devicesStatus?.light?.deviceId && !hasFallbackTarget) return "当前未获取到补光灯设备，暂时无法创建补光策略"
+  if (form.actionType === "AUTO_FAN" && !devicesStatus?.fan?.deviceId && !hasFallbackTarget) return "当前未获取到风扇设备，暂时无法创建风扇策略"
   return null
-}
-
-function findPotentialNotifyConflict(strategies: StrategyItem[], form: StrategyFormState) {
-  if (form.actionType !== "NOTIFY_USER") return null
-  return (
-    strategies.find(
-      (s) => s.enabled && s.strategyType === "CONDITION" && s.actionType === "NOTIFY_USER" && s.metricType === form.metricType,
-    ) ?? null
-  )
 }
 
 function buildFriendlyStrategySaveFeedback(
   error: unknown,
-  payload: StrategyUpsertPayload,
-  potentialConflict?: StrategyItem | null,
 ): StrategySaveFeedback {
   const message = error instanceof Error ? error.message : "保存策略失败，请稍后重试。"
-  if (payload.actionType === "NOTIFY_USER") {
-    const isConflict =
-      (error instanceof ApiError && error.status === 409) ||
-      message.includes("冲突") ||
-      message.includes("已启用策略")
-    if (isConflict) {
-      const conflictName = potentialConflict?.strategyName ? `"${potentialConflict.strategyName}"` : "现有启用中的同类通知策略"
-      return {
-        title: "通知用户策略可能冲突",
-        description: `当前"通知用户"策略很可能与 ${conflictName} 冲突，后端已拒绝保存。后端返回：${message}`,
-      }
-    }
-  }
   return { title: "保存策略失败", description: message }
 }
 
@@ -365,19 +449,19 @@ function getLogTypeMeta(type: PolicyLog["type"]) {
 
 function StrategyDialog({
   open,
+  title,
   form,
   submitting,
   submitError,
-  notifyConflictHint,
   onClose,
   onChange,
   onSubmit,
 }: {
   open: boolean
+  title: string
   form: StrategyFormState
   submitting: boolean
   submitError: string | null
-  notifyConflictHint: string | null
   onClose: () => void
   onChange: (patch: Partial<StrategyFormState>) => void
   onSubmit: () => void
@@ -387,14 +471,9 @@ function StrategyDialog({
       <DialogContent className="max-w-lg overflow-hidden border border-emerald-300/20 bg-[linear-gradient(180deg,rgba(11,24,28,0.96),rgba(6,14,18,0.98))] text-white shadow-[0_32px_80px_rgba(0,0,0,0.52),0_0_48px_rgba(16,185,129,0.14)] backdrop-blur-3xl">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.16),transparent_32%)]" />
         <DialogHeader className="relative">
-          <DialogTitle className="text-xl font-semibold tracking-[0.03em] text-white">新建策略</DialogTitle>
+          <DialogTitle className="text-xl font-semibold tracking-[0.03em] text-white">{title}</DialogTitle>
         </DialogHeader>
         <div className="relative space-y-4 py-2">
-          {notifyConflictHint ? (
-            <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
-              {notifyConflictHint}
-            </div>
-          ) : null}
           {submitError ? (
             <div className="rounded-2xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
               {submitError}
@@ -453,12 +532,12 @@ function StrategyDialog({
           </div>
           <Separator />
           <p className="text-sm font-medium text-white/85">执行动作</p>
-          <Select value={form.actionType} onValueChange={(v) => onChange({ actionType: v as StrategyFormState["actionType"] })}>
+          <Select value={getStrategyFormActionSelectValue(form)} onValueChange={(v) => onChange(resolveStrategyActionValue(v))}>
             <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="AUTO_LIGHT">开启补光灯</SelectItem>
-              <SelectItem value="AUTO_FAN">启动风扇</SelectItem>
-              <SelectItem value="NOTIFY_USER">通知用户</SelectItem>
+              {strategyActionOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -477,11 +556,13 @@ function StrategyDetailDialog({
   strategy,
   devicesStatus,
   onClose,
+  onEdit,
   onDelete,
 }: {
   strategy: StrategyItem | null
   devicesStatus: DevicesStatus | null
   onClose: () => void
+  onEdit: (strategy: StrategyItem) => void
   onDelete: (strategy: StrategyItem) => void
 }) {
   const open = strategy !== null
@@ -548,6 +629,13 @@ function StrategyDetailDialog({
             <DialogFooter className="border-t border-emerald-900/10 bg-white/28 px-6 py-5 sm:justify-between">
               <div className="text-xs text-white/40">完整信息集中展示，列表只保留摘要，减少视觉噪音</div>
               <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  className="rounded-full border-emerald-300/40 bg-white/60 px-5 text-emerald-800 hover:border-emerald-400/55 hover:bg-white/85 hover:text-emerald-950"
+                  onClick={() => onEdit(strategy)}
+                >
+                  编辑策略
+                </Button>
                 <Button
                   variant="outline"
                   className="rounded-full border-emerald-300/40 bg-white/60 px-5 text-emerald-800 hover:border-emerald-400/55 hover:bg-white/85 hover:text-emerald-950"
@@ -1220,6 +1308,7 @@ function SettingsPageContent() {
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [strategyDialogOpen, setStrategyDialogOpen] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyItem | null>(null)
+  const [editingStrategy, setEditingStrategy] = useState<StrategyItem | null>(null)
   const [strategyForm, setStrategyForm] = useState<StrategyFormState>(initialFormState)
   const [strategySubmitError, setStrategySubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -1237,12 +1326,6 @@ function SettingsPageContent() {
   const [addPlantOpen, setAddPlantOpen] = useState(false)
   const [removedPlantIds, setRemovedPlantIds] = useState<Set<string>>(new Set())
   const [editingPlant, setEditingPlant] = useState<PlantItem | null>(null)
-
-  const potentialNotifyConflict = findPotentialNotifyConflict(strategies, strategyForm)
-  const notifyConflictHint =
-    potentialNotifyConflict && strategyForm.actionType === "NOTIFY_USER"
-      ? `已存在启用中的同类通知策略"${potentialNotifyConflict.strategyName}"，本次保存可能发生冲突，最终以后端校验结果为准。`
-      : null
 
   const visiblePlants = plants.filter((p) => !removedPlantIds.has(p.id))
   const enabledStrategiesCount = strategies.filter((strategy) => strategy.enabled).length
@@ -1403,29 +1486,56 @@ function SettingsPageContent() {
     }
   }
 
-  const handleCreateStrategyFriendly = async () => {
+  const openCreateStrategyDialog = () => {
+    setEditingStrategy(null)
+    setStrategySubmitError(null)
+    setStrategyForm(initialFormState)
+    setStrategyDialogOpen(true)
+  }
+
+  const openEditStrategyDialog = (strategy: StrategyItem) => {
+    setSelectedStrategy(null)
+    setEditingStrategy(strategy)
+    setStrategySubmitError(null)
+    setStrategyForm(buildStrategyFormFromItem(strategy))
+    setStrategyDialogOpen(true)
+  }
+
+  const handleSaveStrategy = async () => {
     const currentUserId = getCurrentUserId()
     setStrategySubmitError(null)
-    const validationMessage = validateStrategyForm(strategyForm, devicesStatus, currentUserId)
+    const fallbackTargetDeviceId =
+      editingStrategy?.actionType === strategyForm.actionType ? editingStrategy.targetDeviceId : null
+    const validationMessage = validateStrategyForm(
+      strategyForm,
+      devicesStatus,
+      currentUserId,
+      !editingStrategy,
+      fallbackTargetDeviceId,
+    )
     if (validationMessage) {
       setStrategySubmitError(validationMessage)
       toast({ title: "表单校验失败", description: validationMessage, variant: "destructive" })
       return
     }
-    const payload = buildCreatePayload(strategyForm, currentPlantApiId, currentUserId, devicesStatus)
-    if (payload.actionType === "NOTIFY_USER" && potentialNotifyConflict) {
-      toast({ title: "通知策略可能冲突", description: notifyConflictHint ?? "当前已存在启用中的同类通知策略，保存时可能被后端判定为冲突。" })
-    }
+    const payload = editingStrategy
+      ? buildEditPayload(editingStrategy, strategyForm, devicesStatus)
+      : buildCreatePayload(strategyForm, currentPlantApiId, currentUserId, devicesStatus)
     setSubmitting(true)
     try {
-      await createStrategy(payload)
+      if (editingStrategy) {
+        await updateStrategy(editingStrategy.id, payload)
+      } else {
+        await createStrategy(payload)
+      }
       setStrategySubmitError(null)
       setStrategyDialogOpen(false)
+      setEditingStrategy(null)
       setStrategyForm(initialFormState)
       await loadStrategies()
       toast({ title: "策略保存成功", description: "策略已保存并刷新列表。" })
     } catch (error) {
-      const feedback = buildFriendlyStrategySaveFeedback(error, payload, potentialNotifyConflict)
+      const feedback = buildFriendlyStrategySaveFeedback(error)
       setStrategySubmitError(feedback.description)
       toast({ title: feedback.title, description: feedback.description, variant: "destructive" })
     } finally {
@@ -1602,7 +1712,7 @@ function SettingsPageContent() {
                       <RefreshCw className={`mr-2 h-4 w-4 ${strategiesLoading ? "animate-spin" : ""}`} />
                       刷新
                     </Button>
-                    <Button variant="outline" size="sm" className="h-11 rounded-[1.15rem]" onClick={() => setStrategyDialogOpen(true)}>
+                    <Button variant="outline" size="sm" className="h-11 rounded-[1.15rem]" onClick={openCreateStrategyDialog}>
                       <Plus className="mr-2 h-4 w-4" />
                       新建
                     </Button>
@@ -1657,6 +1767,14 @@ function SettingsPageContent() {
                                 disabled={togglingId === strategy.id}
                                 onCheckedChange={(checked) => void handleToggleStrategy(strategy, checked)}
                               />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditStrategyDialog(strategy)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1752,12 +1870,13 @@ function SettingsPageContent() {
 
         <StrategyDialog
           open={strategyDialogOpen}
+          title={editingStrategy ? "编辑策略" : "新建策略"}
           form={strategyForm}
           submitting={submitting}
           submitError={strategySubmitError}
-          notifyConflictHint={notifyConflictHint}
           onClose={() => {
             setStrategyDialogOpen(false)
+            setEditingStrategy(null)
             setStrategySubmitError(null)
             setStrategyForm(initialFormState)
           }}
@@ -1765,13 +1884,14 @@ function SettingsPageContent() {
             setStrategySubmitError(null)
             setStrategyForm((cur) => ({ ...cur, ...patch }))
           }}
-          onSubmit={() => void handleCreateStrategyFriendly()}
+          onSubmit={() => void handleSaveStrategy()}
         />
 
         <StrategyDetailDialog
           strategy={selectedStrategy}
           devicesStatus={devicesStatus}
           onClose={() => setSelectedStrategy(null)}
+          onEdit={openEditStrategyDialog}
           onDelete={(strategy) => void handleDeleteStrategy(strategy)}
         />
 

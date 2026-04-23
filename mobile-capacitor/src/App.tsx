@@ -64,7 +64,7 @@ export default function App() {
       setRealtime(data)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "实时数据获取失败")
+      setError(err instanceof Error ? err.message : "实时数据加载失败")
     } finally {
       setLoading(false)
     }
@@ -156,4 +156,3 @@ export default function App() {
     </div>
   )
 }
-

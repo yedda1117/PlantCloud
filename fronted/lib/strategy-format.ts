@@ -23,8 +23,10 @@ const operatorLabels: Record<string, string> = {
 }
 
 const actionLabels: Record<string, string> = {
-  AUTO_LIGHT: "开启补光灯",
-  AUTO_FAN: "启动风扇",
+  AUTO_LIGHT_ON: "开启补光灯",
+  AUTO_LIGHT_OFF: "关闭补光灯",
+  AUTO_FAN_ON: "启动风扇",
+  AUTO_FAN_OFF: "关闭风扇",
   NOTIFY_USER: "通知用户",
 }
 
@@ -96,7 +98,22 @@ export function formatStrategyCondition(strategy: StrategyItem) {
     return `${metric} 介于 ${strategy.thresholdMin ?? "-"}${unit} 到 ${strategy.thresholdMax ?? "-"}${unit}${formatTimeLimit(config)}`
   }
 
-  return `${metric} ${operator} ${strategy.thresholdMin ?? "-"}${unit}${formatTimeLimit(config)}`
+  const threshold =
+    strategy.operatorType === "LT" || strategy.operatorType === "LTE"
+      ? strategy.thresholdMax ?? strategy.thresholdMin ?? "-"
+      : strategy.thresholdMin ?? strategy.thresholdMax ?? "-"
+  return `${metric} ${operator} ${threshold}${unit}${formatTimeLimit(config)}`
+}
+
+function getActionLabel(strategy: StrategyItem) {
+  const actionValue = strategy.actionValue?.toUpperCase()
+  if (strategy.actionType === "AUTO_LIGHT") {
+    return actionValue === "OFF" ? actionLabels.AUTO_LIGHT_OFF : actionLabels.AUTO_LIGHT_ON
+  }
+  if (strategy.actionType === "AUTO_FAN") {
+    return actionValue === "OFF" ? actionLabels.AUTO_FAN_OFF : actionLabels.AUTO_FAN_ON
+  }
+  return actionLabels[strategy.actionType] ?? strategy.actionType
 }
 
 export function formatStrategyAction(
@@ -114,7 +131,7 @@ export function formatStrategyAction(
         ? devices.fan
         : null
 
-  const label = actionLabels[strategy.actionType] ?? strategy.actionType
+  const label = getActionLabel(strategy)
   if (device?.deviceName) {
     return `${label} ${device.deviceName}`
   }

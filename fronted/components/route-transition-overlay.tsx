@@ -26,6 +26,7 @@ export function RouteTransitionOverlay() {
   const [visible, setVisible] = useState(false)
   const didMountRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const deferredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const showTransition = () => {
     if (timerRef.current) {
@@ -36,6 +37,17 @@ export function RouteTransitionOverlay() {
     timerRef.current = setTimeout(() => {
       setVisible(false)
     }, TRANSITION_DURATION)
+  }
+
+  const scheduleTransition = () => {
+    if (deferredTimerRef.current) {
+      clearTimeout(deferredTimerRef.current)
+    }
+
+    deferredTimerRef.current = setTimeout(() => {
+      deferredTimerRef.current = null
+      showTransition()
+    }, 0)
   }
 
   useEffect(() => {
@@ -67,17 +79,21 @@ export function RouteTransitionOverlay() {
     const originalReplaceState = window.history.replaceState
 
     window.history.pushState = function pushState(data, unused, url) {
-      if (typeof url === "string" && isInternalNavigationTarget(url)) {
-        showTransition()
+      const shouldShowTransition = typeof url === "string" && isInternalNavigationTarget(url)
+      const result = originalPushState.call(this, data, unused, url)
+      if (shouldShowTransition) {
+        scheduleTransition()
       }
-      return originalPushState.call(this, data, unused, url)
+      return result
     }
 
     window.history.replaceState = function replaceState(data, unused, url) {
-      if (typeof url === "string" && isInternalNavigationTarget(url)) {
-        showTransition()
+      const shouldShowTransition = typeof url === "string" && isInternalNavigationTarget(url)
+      const result = originalReplaceState.call(this, data, unused, url)
+      if (shouldShowTransition) {
+        scheduleTransition()
       }
-      return originalReplaceState.call(this, data, unused, url)
+      return result
     }
 
     document.addEventListener("click", handleClick, true)
@@ -89,6 +105,9 @@ export function RouteTransitionOverlay() {
 
       if (timerRef.current) {
         clearTimeout(timerRef.current)
+      }
+      if (deferredTimerRef.current) {
+        clearTimeout(deferredTimerRef.current)
       }
     }
   }, [])
