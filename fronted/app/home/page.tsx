@@ -23,7 +23,7 @@ const GpsMap = dynamic(() => import("@/components/gps-map"), {
 })
 
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
-const POLL_INTERVAL_MS = 30000
+const POLL_INTERVAL_MS = 5000
 
 type ApiResult<T> = {
   code?: number
