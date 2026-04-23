@@ -43,10 +43,15 @@ export type HomeDeviceStatus = {
   deviceName: string | null
   onlineStatus: string | null
   connected: boolean | null
+  fanConnected: boolean | null
   fanStatus: string | null
   fanOn: boolean | null
+  lightConnected: boolean | null
   lightStatus: string | null
   lightOn: boolean | null
+  infraredDeviceId: number | string | null
+  infraredConnected: boolean | null
+  infraredDetected: boolean | null
   statusUpdatedAt: string | null
   rawStatus: string | null
 }

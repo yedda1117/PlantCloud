@@ -306,6 +306,7 @@ function PlantThinkingLoader() {
 type DynamicBookshelfProps = {
   files: UploadedFileItem[]
   isFilesLoading: boolean
+  filesError: string
   isUploading: boolean
   dragActive: boolean
   selectedIndex: number
@@ -318,6 +319,7 @@ type DynamicBookshelfProps = {
 function DynamicBookshelf({
   files,
   isFilesLoading,
+  filesError,
   isUploading,
   dragActive,
   selectedIndex,
@@ -326,7 +328,7 @@ function DynamicBookshelf({
   onDrop,
   onDragActiveChange,
 }: DynamicBookshelfProps) {
-  const visibleFiles = files.length > 0 ? files : fallbackFiles
+  const visibleFiles = files.length > 0 ? files : filesError ? [] : fallbackFiles
 
   return (
     <aside className="flex min-h-0 flex-col border-l border-white/10 bg-gradient-to-b from-emerald-950 via-teal-900 to-cyan-800 p-6 text-white">
@@ -368,6 +370,12 @@ function DynamicBookshelf({
         </div>
       </div>
 
+      {filesError ? (
+        <div className="mb-5 rounded-[1.1rem] border border-amber-200/30 bg-amber-200/12 px-3 py-2 text-xs leading-5 text-amber-50">
+          {filesError}
+        </div>
+      ) : null}
+
       <div
         onClick={onUploadClick}
         onDragEnter={(e) => {
@@ -402,7 +410,7 @@ function DynamicBookshelf({
       </div>
 
       <div className="knowledge-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-1.5">
-        {visibleFiles.map((file, index) => {
+        {visibleFiles.length > 0 ? visibleFiles.map((file, index) => {
           const active = index === selectedIndex
           return (
             <button
@@ -424,7 +432,11 @@ function DynamicBookshelf({
               {file.status === "解析中" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-200" /> : <span className="h-2 w-2 shrink-0 rounded-full bg-lime-200" />}
             </button>
           )
-        })}
+        }) : (
+          <div className="rounded-[1.2rem] border border-white/12 bg-white/8 p-4 text-sm text-cyan-50/72">
+            暂无文件
+          </div>
+        )}
       </div>
     </aside>
   )
@@ -440,6 +452,7 @@ export default function ChatPage() {
 
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileItem[]>([])
   const [isFilesLoading, setIsFilesLoading] = useState(true)
+  const [filesError, setFilesError] = useState("")
   const [isUploading, setIsUploading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [pendingProposal, setPendingProposal] = useState<StrategyAgentProposal | null>(null)
@@ -455,22 +468,35 @@ export default function ChatPage() {
   const fetchFiles = async () => {
     try {
       setIsFilesLoading(true)
+      setFilesError("")
 
       const res = await fetch("/api/ragflow/files", {
         method: "GET",
         cache: "no-store",
       })
 
-      const data = await res.json()
+      const data = await res.json().catch(() => null)
 
-      if (!data.success) {
-        throw new Error(data.error || "获取文件列表失败")
+      if (!res.ok || !data?.success) {
+        const errorMessage =
+          typeof data?.error === "string" && data.error.trim()
+            ? data.error
+            : "知识库文件暂时不可用，已为你显示空文件列表。"
+        console.warn("fetchFiles unavailable:", errorMessage)
+        setUploadedFiles([])
+        setSelectedKnowledgeIndex(0)
+        setFilesError(errorMessage)
+        return
       }
 
       setUploadedFiles(Array.isArray(data.files) ? data.files : [])
       setSelectedKnowledgeIndex(0)
+      setFilesError("")
     } catch (error) {
-      console.error("fetchFiles error:", error)
+      console.warn("fetchFiles unavailable:", error)
+      setUploadedFiles([])
+      setSelectedKnowledgeIndex(0)
+      setFilesError("知识库文件暂时不可用，已为你显示空文件列表。")
     } finally {
       setIsFilesLoading(false)
     }
@@ -859,6 +885,7 @@ export default function ChatPage() {
             <DynamicBookshelf
               files={uploadedFiles}
               isFilesLoading={isFilesLoading}
+              filesError={filesError}
               isUploading={isUploading}
               dragActive={dragActive}
               selectedIndex={selectedKnowledgeIndex}

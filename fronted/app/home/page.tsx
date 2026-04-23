@@ -172,6 +172,32 @@ function sortActivityLogs(logs: HomeRealtimeData["activityLogs"]) {
   })
 }
 
+function formatDeviceRuntimeStatus(value: string | null | undefined, isOn: boolean | null) {
+  if (isOn === true) return "\u5df2\u5f00\u542f"
+  if (isOn === false) return "\u5df2\u5173\u95ed"
+  if (!value) return "\u540c\u6b65\u4e2d"
+
+  switch (value.trim().toUpperCase()) {
+    case "ON":
+    case "TURN_ON":
+    case "OPEN":
+    case "RUNNING":
+    case "TRUE":
+    case "1":
+      return "\u5df2\u5f00\u542f"
+    case "OFF":
+    case "TURN_OFF":
+    case "CLOSE":
+    case "CLOSED":
+    case "STOPPED":
+    case "FALSE":
+    case "0":
+      return "\u5df2\u5173\u95ed"
+    default:
+      return value
+  }
+}
+
 function VerticalMetricBar({
   label,
   value,
@@ -223,15 +249,19 @@ function ControlLine({
   icon: Icon,
   label,
   isOn,
+  status,
   disabled,
   onToggle,
 }: {
   icon: typeof Fan
   label: string
   isOn: boolean | null
+  status: string | null | undefined
   disabled: boolean
   onToggle: () => void
 }) {
+  const statusLabel = formatDeviceRuntimeStatus(status, isOn)
+
   return (
     <button
       type="button"
@@ -242,16 +272,16 @@ function ControlLine({
       <span className="flex items-center gap-3">
         <Icon className={`h-5 w-5 ${isOn ? "text-emerald-700" : "text-stone-500"} ${label === "风扇" && isOn ? "animate-spin" : ""}`} />
         <span>
-          <span className="block text-sm uppercase tracking-[0.18em] text-stone-500">{label}</span>
-          <span className="mt-1 block text-lg font-light text-stone-800">
-            {isOn === null ? "\u540c\u6b65\u4e2d" : isOn ? "\u5df2\u5f00\u542f" : "\u5df2\u5173\u95ed"}
+            <span className="block text-sm uppercase tracking-[0.18em] text-stone-500">{label}</span>
+            <span className="mt-1 block text-lg font-light text-stone-800">
+              {statusLabel}
+            </span>
           </span>
         </span>
-      </span>
-      <span className={`text-xs uppercase tracking-[0.22em] ${isOn ? "text-emerald-700" : "text-stone-500"} group-hover:text-stone-900`}>
-        {isOn === null ? "--" : isOn ? "Turn Off" : "Turn On"}
-      </span>
-    </button>
+        <span className={`text-xs uppercase tracking-[0.22em] ${isOn ? "text-emerald-700" : "text-stone-500"} group-hover:text-stone-900`}>
+          {statusLabel}
+        </span>
+      </button>
   )
 }
 
@@ -601,6 +631,7 @@ export default function HomePage() {
                     icon={Lightbulb}
                     label="补光灯"
                     isOn={lightOn}
+                    status={realtimeData?.device.lightStatus}
                     disabled={controlPending !== null}
                     onToggle={() => void handleDeviceToggle("light", !(lightOn ?? false))}
                   />
@@ -608,6 +639,7 @@ export default function HomePage() {
                     icon={Fan}
                     label="风扇"
                     isOn={fanOn}
+                    status={realtimeData?.device.fanStatus}
                     disabled={controlPending !== null}
                     onToggle={() => void handleDeviceToggle("fan", !(fanOn ?? false))}
                   />

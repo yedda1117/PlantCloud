@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { Bot, Fan, Lightbulb, RefreshCw, Sprout, Thermometer, Trees, Wind } from "lucide-react"
+import { Bot, Fan, Lightbulb, RefreshCw, Sprout, Thermometer, Trees, UserRound, Wind } from "lucide-react"
 import type { HomeRealtimeData, Plant } from "../types"
 import { formatLight, formatNumber, healthScore } from "../mobile-utils"
 
@@ -43,6 +43,29 @@ function MetricCard({ icon: Icon, label, value, hint }: { icon: typeof Thermomet
   )
 }
 
+function formatDeviceRuntimeStatus(value: string | null | undefined) {
+  if (!value) return "未知"
+  switch (value.trim().toUpperCase()) {
+    case "ON":
+    case "TURN_ON":
+    case "OPEN":
+    case "RUNNING":
+    case "TRUE":
+    case "1":
+      return "已开启"
+    case "OFF":
+    case "TURN_OFF":
+    case "CLOSE":
+    case "CLOSED":
+    case "STOPPED":
+    case "FALSE":
+    case "0":
+      return "已关闭"
+    default:
+      return value
+  }
+}
+
 export function HomePage({
   plant,
   plants,
@@ -68,6 +91,15 @@ export function HomePage({
 }) {
   const score = healthScore(realtime)
   const env = realtime?.environment
+  const deviceOnline = realtime?.device.connected === true
+  const fanActive = realtime?.device.fanOn === true
+  const lightActive = realtime?.device.lightOn === true
+  const fanStateLabel = formatDeviceRuntimeStatus(realtime?.device.fanStatus)
+  const lightStateLabel = formatDeviceRuntimeStatus(realtime?.device.lightStatus)
+  const infraredDetected = realtime?.infrared.currentDetected === true || realtime?.device.infraredDetected === true
+  const infraredCount = realtime?.infrared.approachCount ?? 0
+  const infraredStateLabel = infraredDetected ? "DETECTED" : "CLEAR"
+  const infraredStatusText = infraredDetected ? "当前检测到红外活动" : "当前未检测到红外活动"
 
   return (
     <main className="screen">
@@ -112,18 +144,33 @@ export function HomePage({
       <section className="status-card">
         <div>
           <p>设备联动</p>
-          <h3>{realtime?.device.connected ? "设备在线" : "等待设备同步"}</h3>
+          <h3>{deviceOnline ? "设备在线" : "等待设备同步"}</h3>
         </div>
         <div className="device-states">
-          <span className={realtime?.device.fanOn ? "on" : ""}>
+          <span className={fanActive ? "on" : ""}>
             <Fan size={15} />
             风扇
+            <b>{fanStateLabel}</b>
           </span>
-          <span className={realtime?.device.lightOn ? "on" : ""}>
+          <span className={lightActive ? "on" : ""}>
             <Lightbulb size={15} />
             补光
+            <b>{lightStateLabel}</b>
           </span>
         </div>
+      </section>
+
+      <section className="status-card pir-status-card">
+        <div>
+          <p className="pir-status-title">
+            <UserRound size={15} />
+            <span>PIR STATUS</span>
+          </p>
+          <h3>
+            {infraredStatusText} {" · 今日靠近 "} {infraredCount} {" 次"}
+          </h3>
+        </div>
+        <strong className="pir-state current" aria-label="PIR current status">{infraredStateLabel}</strong>
       </section>
     </main>
   )

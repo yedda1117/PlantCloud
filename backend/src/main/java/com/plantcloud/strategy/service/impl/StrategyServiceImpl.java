@@ -193,6 +193,12 @@ public class StrategyServiceImpl implements StrategyService {
             return;
         }
         BigDecimal currentValue = resolveCurrentMetricValue(strategy, currentMetricValues);
+        log.info("[STRATEGY_RT] Evaluating strategy: {} metricType={} value={} thresholdMin={} thresholdMax={}",
+                strategy.getStrategyName(),
+                strategy.getMetricType(),
+                currentValue,
+                strategy.getThresholdMin(),
+                strategy.getThresholdMax());
         boolean matched = currentValue != null && isConditionTriggered(strategy, currentValue);
         log.info("[STRATEGY_RT] strategy metric evaluated. strategyId={}, metricType={}, currentValue={}, matched={}",
                 strategy.getId(), strategy.getMetricType(), currentValue, matched);
@@ -356,11 +362,14 @@ public class StrategyServiceImpl implements StrategyService {
     }
 
     private ControlCommandVO executeDeviceCommand(Strategy strategy, String commandValue) {
+        Long targetDeviceId = resolveCommandDeviceId(strategy);
         DeviceControlRequest request = new DeviceControlRequest();
         request.setPlantId(strategy.getPlantId());
-        request.setDeviceId(resolveCommandDeviceId(strategy));
+        request.setDeviceId(targetDeviceId);
         request.setCommandValue(commandValue);
         request.setSourceType("STRATEGY");
+        log.info("[STRATEGY_RT] Sending command: {} to deviceId={} actionValue={}",
+                strategy.getActionType(), targetDeviceId, strategy.getActionValue());
         if (ACTION_AUTO_LIGHT.equals(strategy.getActionType())) {
             log.info("[STRATEGY_RT] calling controlLight. strategyId={}, plantId={}, deviceId={}, commandValue={}",
                     strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue);
