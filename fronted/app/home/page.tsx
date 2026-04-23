@@ -187,9 +187,9 @@ function StatusMetric({
   hint: string
 }) {
   return (
-    <div className="aspect-[1.08] rounded-[1.8rem] bg-white/20 p-4 shadow-[0_18px_40px_rgba(120,104,74,0.06)] backdrop-blur-[1px]">
-      <div className="flex h-full flex-col justify-between">
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-stone-500">
+    <div className="aspect-[1.08] rounded-[1.8rem]   bg-white/20 p-4 shadow-[0_18px_40px_rgba(120,104,74,0.06)] backdrop-blur-[1px] ">
+      <div className="flex h-full flex-col justify-between ">
+        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-stone-500 ">
           <Icon className="h-4 w-4" />
           <span>{label}</span>
         </div>
@@ -397,10 +397,23 @@ export default function HomePage() {
     ? realtimeData.infrared.latestEventTitle || "检测到有人靠近植物"
     : realtimeData?.infrared.latestEventTitle || "当前未检测到红外活动"
 
+  function toDMS(value: number | null | undefined, isLat = true) {
+    if (value === null || value === undefined) return "--"
+    const abs = Math.abs(value)
+    const integer = Math.floor(abs)
+    const decimals = Math.floor((abs - integer) * 1000) // 三位作为分'
+    const decimals2 = Math.floor((abs - integer) * 1000000) % 1000 // 后三位作为分''
+    const degree = integer
+    const minute = decimals
+    const second = decimals2
+    const hemi = isLat ? (value >= 0 ? "N" : "S") : value >= 0 ? "E" : "W"
+    return `${degree}°${String(minute).padStart(3, "0")}' ${String(second).padStart(3, "0")}" ${hemi}`
+  }
+
   return (
     <AuthGuard>
-      <div className="h-screen overflow-hidden bg-[#d0e8de] text-stone-900">
-        <div className="h-full overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.48),_transparent_38%),linear-gradient(135deg,_rgba(255,248,236,0.96),_rgba(236,226,209,0.98))]">
+      <div className="h-screen overflow-hidden text-stone-900" style={{ backgroundColor: '#d0e8de' }}>
+        <div className="h-full overflow-hidden" style={{ background: 'radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)' }}>
           <main className="mx-auto flex h-full max-w-[1600px] items-center overflow-hidden px-6 py-[4vh] xl:px-10">
             <div className="grid h-full max-h-[92vh] w-full grid-cols-1 items-center gap-8 overflow-hidden xl:grid-cols-[320px_minmax(560px,1fr)_360px] xl:gap-10 2xl:grid-cols-[360px_minmax(680px,1fr)_400px]">
               <section className="flex h-full min-h-0 flex-col justify-center gap-6">
@@ -420,7 +433,7 @@ export default function HomePage() {
                       <div className="space-y-2 px-1 pb-1 pt-4">
                         <div className="flex items-center gap-2 text-sm text-stone-700">
                           <MapPin className="h-4 w-4 text-stone-500" />
-                          <span>{hasLocation ? `${formatCoordinate(longitude)}, ${formatCoordinate(latitude)}` : "--"}</span>
+                          <span>{hasLocation ? `${toDMS(latitude, true)}, ${toDMS(longitude, false)}` : "--"}</span>
                         </div>
                         <p className="text-sm leading-6 text-stone-600">
                           {hasLocation ? `植物 ${currentPlant.name} 最近一次定位更新时间 ${formatLocationTime(latestLocation?.createdAt)}` : "暂未同步到本植物的 GPS 位置记录。"}
@@ -430,7 +443,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="relative w-[calc(100%+1.35rem)] rounded-[2.2rem] border border-stone-400/45 p-5">
+                <div className="relative w-[calc(100%+2.2rem)] rounded-[2.2rem] border border-stone-400/45 p-6" style={{ marginTop: '15px' }}>
                   <div className="grid grid-cols-2 gap-4">
                     <StatusMetric
                       icon={Thermometer}
@@ -461,11 +474,16 @@ export default function HomePage() {
               </section>
 
               <section className="flex h-full min-h-0 flex-col items-center justify-center">
-                <div className="mb-4 text-center">
+                <div className="mb-4 text-center" style={{ marginTop: '10px' }}>
                   <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Current Plant</p>
-                  <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
-                    {currentPlant.emoji} {currentPlant.name}
-                  </h1>
+                  <div className="relative inline-block">
+                    <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
+                      {currentPlant.emoji} {currentPlant.name}
+                    </h1>
+                    <div aria-hidden className="mt-2 text-4xl font-light tracking-[0.08em] text-stone-800 transform scale-y-[-1] opacity-30">
+                      {currentPlant.emoji} {currentPlant.name}
+                    </div>
+                  </div>
                 </div>
                 <div className="relative flex h-full min-h-0 w-full items-center justify-center">
                   <div className="pointer-events-none absolute inset-x-[18%] top-[16%] h-28 rounded-full bg-white/45 blur-3xl" />
@@ -478,7 +496,7 @@ export default function HomePage() {
 
               <section className="flex h-full min-h-0 flex-col justify-center gap-6 overflow-hidden">
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <div className="mb-8 flex items-start justify-between gap-6">
+                  <div className="mb-8 flex items-end justify-between gap-6">
                     <div>
                       <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Pending Issues</p>
                       <p className="mt-3 text-5xl font-extralight tracking-tight text-stone-900">{unresolvedCount}</p>
