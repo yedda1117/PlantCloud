@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -32,12 +32,10 @@ function DashboardContent() {
     return <DashDetail plant={plant} onBack={() => router.push("/dashboard")} />
   }
 
-    return (
-    <div className="min-h-screen overflow-hidden bg-background">
-      <main className="mx-auto flex min-h-screen w-full max-w-[1560px] flex-col overflow-hidden px-3 pb-1 pt-14 sm:px-4 lg:px-5">
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <DashMain plants={plants} />
-        </div>
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-background">
+      <main className="h-full w-full overflow-hidden">
+        <DashMain plants={plants} />
       </main>
     </div>
   )

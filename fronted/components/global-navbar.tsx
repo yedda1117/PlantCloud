@@ -83,13 +83,13 @@ export function GlobalNavbar() {
         </div>
       )}
 
-      <aside className="fixed left-3 top-0 z-50 flex w-20 flex-col items-start bg-transparent py-5 gap-0 pl-1"
+      <aside className="fixed left-1.5 top-0 z-50 flex w-16 flex-col items-start gap-0 bg-transparent py-5 pl-0.5"
         style={{ height: "100vh" }}
       >
         {/* 顶部：植物抽屉按钮 */}
         <div
           ref={plantDrawerRef}
-          className="relative w-full flex flex-col items-center px-1 mb-3"
+          className="relative mb-3 flex w-full flex-col items-center px-0.5"
         >
           <button
             onClick={() => setPlantDrawerOpen(!plantDrawerOpen)}
@@ -133,7 +133,7 @@ export function GlobalNavbar() {
         </div>
 
         {/* 导航项，flex-1 居中 */}
-        <nav className="flex flex-1 flex-col items-center justify-center gap-8 w-full px-1">
+        <nav className="flex w-full flex-1 flex-col items-center justify-center gap-7 px-0.5">
           {navItems.map(({ href, label, icon: Icon, type }) => {
             const isActive = href ? pathname.startsWith(href) : false
             const isLogout = type === "logout"

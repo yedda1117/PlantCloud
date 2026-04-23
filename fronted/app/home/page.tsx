@@ -8,13 +8,10 @@ import { controlHomeDevice, getHomeRealtime, type HomeControlTarget, type HomeRe
 import { usePlantSelection } from "@/context/plant-selection"
 import {
   AlertTriangle,
-  Droplets,
   Fan,
   Lightbulb,
   MapPin,
-  Thermometer,
   Trees,
-  Wind,
 } from "lucide-react"
 
 const GpsMap = dynamic(() => import("@/components/gps-map"), {
@@ -175,29 +172,49 @@ function sortActivityLogs(logs: HomeRealtimeData["activityLogs"]) {
   })
 }
 
-function StatusMetric({
-  icon: Icon,
+function VerticalMetricBar({
   label,
   value,
-  hint,
+  max,
+  unit,
+  gradientStyle,
+  delayMs = 0,
 }: {
-  icon: typeof Thermometer
   label: string
-  value: string
-  hint: string
+  value: number | null | undefined
+  max: number
+  unit: "°C" | "%" | "lux"
+  gradientStyle: string
+  delayMs?: number
 }) {
+  const safeValue = value ?? null
+  const ratio = safeValue === null ? 0 : Math.min(Math.max(safeValue / max, 0), 1)
+  const fillRatio = Math.max(ratio * 100, safeValue === null ? 0 : 8)
+  const valueBottom = Math.min(fillRatio, 88) + 6
+  const displayValue =
+    unit === "lux" ? formatLightValue(safeValue) : formatNumericValue(safeValue, unit, unit === "%" ? 0 : 1)
+
   return (
-    <div className="aspect-[1.08] rounded-[1.8rem] border border-white/35 bg-[linear-gradient(180deg,color(display-p3_0.62_0.92_0.76/0.82),oklch(0.696_0.17_162.48/0.68))] p-4 shadow-[0_18px_40px_rgba(70,120,100,0.12),0_0_26px_color(display-p3_0.42_0.86_0.62/0.24)] backdrop-blur-md">
-      <div className="flex h-full flex-col justify-between">
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-emerald-900/70">
-          <Icon className="h-4 w-4 text-emerald-700 drop-shadow-[0_0_8px_rgba(16,185,129,0.28)]" />
-          <span>{label}</span>
+    <div className="liquidColumn group flex flex-col items-center gap-3 h-full">
+      <div className="relative flex-[1] w-[4.2rem] overflow-hidden rounded-[999px] border border-white/45 bg-[rgba(238,245,242,0.78)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7),inset_0_-10px_18px_rgba(120,140,130,0.08)] transition-all duration-300 ease-out group-hover:scale-[1.05] group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_10px_22px_rgba(60,100,90,0.16)]">
+        <div className="absolute inset-[1px] rounded-[999px] bg-[linear-gradient(180deg,rgba(255,255,255,0.32)_0%,rgba(255,255,255,0.05)_100%)]" />
+        <div
+          className={`absolute inset-x-[5px] bottom-[5px] overflow-hidden rounded-[999px] ${gradientStyle} transition-[height] duration-700 ease-out`}
+          style={{ height: `${fillRatio}%` }}
+        >
+          <div className="liquidWave liquidWaveA absolute -top-3 left-[-30%] h-8 w-[160%] rounded-[46%] bg-white/52" style={{ animationDelay: `${delayMs}ms` }} />
+          <div className="liquidWave liquidWaveB absolute -top-2 left-[-35%] h-7 w-[170%] rounded-[43%] bg-white/34" style={{ animationDelay: `${delayMs + 220}ms` }} />
+          <div className="liquidWave liquidWaveC absolute -top-1 left-[-25%] h-6 w-[150%] rounded-[44%] bg-white/22" style={{ animationDelay: `${delayMs + 360}ms` }} />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.38)_0%,rgba(255,255,255,0.08)_40%,rgba(255,255,255,0.02)_100%)]" />
         </div>
-        <div>
-          <p className="text-2xl font-light tracking-tight text-emerald-950">{value}</p>
-          <p className="mt-2 text-xs leading-5 text-emerald-900/68">{hint}</p>
-        </div>
+        <p
+          className="pointer-events-none absolute left-1/2 z-20 -translate-x-1/2 whitespace-nowrap text-[0.9rem] font-semibold tracking-tight text-emerald-950/90 drop-shadow-[0_1px_0_rgba(255,255,255,0.7)]"
+          style={{ bottom: `${valueBottom}%` }}
+        >
+          {displayValue}
+        </p>
       </div>
+      <p className="text-[11px] uppercase tracking-[0.2em] text-stone-500">{label}</p>
     </div>
   )
 }
@@ -391,9 +408,6 @@ export default function HomePage() {
   const hasLocation = latestLocation !== null && latitude !== null && longitude !== null
   const lightOn = realtimeData?.device.lightOn ?? null
   const fanOn = realtimeData?.device.fanOn ?? null
-  const abnormalText = realtimeData?.abnormal.hasAlert
-    ? realtimeData.abnormal.latestTitle || realtimeData.abnormal.latestContent || "检测到异常，请及时处理"
-    : "当前未发现待处理异常"
   const infraredText = realtimeData?.infrared.currentDetected
     ? realtimeData.infrared.latestEventTitle || "检测到有人靠近植物"
     : realtimeData?.infrared.latestEventTitle || "当前未检测到红外活动"
@@ -417,10 +431,10 @@ export default function HomePage() {
         <div className="h-full overflow-hidden" style={{ background: 'radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)' }}>
           <main className="mx-auto flex h-full max-w-[1600px] items-center overflow-hidden px-6 py-[4vh] xl:px-10">
             <div className="grid h-full max-h-[92vh] w-full grid-cols-1 items-center gap-8 overflow-hidden xl:grid-cols-[320px_minmax(560px,1fr)_360px] xl:gap-10 2xl:grid-cols-[360px_minmax(680px,1fr)_400px]">
-              <section className="flex h-full min-h-0 flex-col justify-center gap-6">
+              <section className="flex h-full min-h-0 flex-col gap-6">
                 <div className="flex flex-col gap-3">
                   <p className="text-xs font-light uppercase tracking-[0.38em] text-stone-500">GPS Location</p>
-                  <div className="aspect-square overflow-hidden rounded-[2rem]">
+                  <div className="aspect-square w-[86%] overflow-hidden rounded">
                     <div className="grid h-full grid-rows-[1fr_auto]">
                       <div className="min-h-0 overflow-hidden rounded-[2rem] bg-black/5">
                         {hasLocation ? (
@@ -444,32 +458,51 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="relative w-[calc(100%+2.2rem)] rounded-[2.2rem] border border-stone-400/45 p-6" style={{ marginTop: '15px' }}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <StatusMetric
-                      icon={Thermometer}
+                <div className="relative mt-[15px] w-[86%] flex-1 rounded-[2.2rem] border border-stone-400/45 px-4 py-9 border border-white/40  bg-white/10 backdrop-blur-md shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+                  <div className="h-full flex flex-col justify-between">
+                    <div className="grid grid-cols-3 place-items-center gap-4 h-full">
+                      <VerticalMetricBar
                       label="温度"
-                      value={formatNumericValue(realtimeData?.environment.temperature, "°C")}
-                      hint={realtimeData?.environment.temperatureStatus || "暂无状态"}
-                    />
-                    <StatusMetric
-                      icon={Droplets}
+                        value={realtimeData?.environment.temperature}
+                        max={40}
+                        unit="°C"
+                        gradientStyle="bg-gradient-to-t from-[#f19ab4]/70 via-[#f8b4c6]/80 to-[#fde4eb]/88"
+                        delayMs={0}
+                      />
+                      <VerticalMetricBar
                       label="湿度"
-                      value={formatNumericValue(realtimeData?.environment.humidity, "%")}
-                      hint={realtimeData?.environment.humidityStatus || "暂无状态"}
-                    />
-                    <StatusMetric
-                      icon={Wind}
-                      label="空气质量"
-                      value={formatLightValue(realtimeData?.environment.lightLux)}
-                      hint={abnormalText}
-                    />
-                    <StatusMetric
-                      icon={Trees}
-                      label="红外"
-                      value={realtimeData?.infrared.currentDetected ? "Detected" : "Clear"}
-                      hint={`${infraredText} · 今日靠近 ${realtimeData?.infrared.approachCount ?? 0} 次`}
-                    />
+                        value={realtimeData?.environment.humidity}
+                        max={100}
+                        unit="%"
+                        gradientStyle="bg-gradient-to-t from-[#7ec4e1]/72 via-[#a0d8ef]/82 to-[#e2f4fb]/90"
+                        delayMs={180}
+                      />
+                      <VerticalMetricBar
+                        label="光照"
+                        value={realtimeData?.environment.lightLux}
+                        max={2000}
+                        unit="lux"
+                        gradientStyle="bg-gradient-to-t from-[#efbe5a]/72 via-[#f6d186]/82 to-[#fff4d1]/90"
+                        delayMs={320}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className=" w-[86%] ">
+                  <div className="group rounded-[1.2rem] border border-white/45 bg-[linear-gradient(135deg,rgba(249,255,251,0.86),rgba(233,245,238,0.68))] px-4 py-3 shadow-[0_10px_24px_rgba(70,120,100,0.08)] transition-all duration-300 ease-out hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(70,120,100,0.14)]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Trees className={`h-4 w-4 ${realtimeData?.infrared.currentDetected ? "text-emerald-700" : "text-stone-500"}`} />
+                        <p className="text-xs uppercase tracking-[0.2em] text-stone-600">PIR Status</p>
+                      </div>
+                      <p className={`flex items-center gap-1.5 text-sm uppercase tracking-[0.2em] ${realtimeData?.infrared.currentDetected ? "text-emerald-700 pirPulseText" : "text-stone-600"}`}>
+                        {realtimeData?.infrared.currentDetected ? <span className="pirPulseDot h-2 w-2 rounded-full bg-emerald-500" /> : null}
+                        {realtimeData?.infrared.currentDetected ? "Detected" : "Clear"}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-stone-700">
+                      {infraredText} · 今日靠近 {realtimeData?.infrared.approachCount ?? 0} 次
+                    </p>
                   </div>
                 </div>
               </section>
@@ -584,6 +617,65 @@ export default function HomePage() {
           </main>
         </div>
       </div>
+      <style jsx global>{`
+        .liquidColumn {
+          animation: envColumnBreath 3.4s ease-in-out infinite;
+        }
+        .liquidWave {
+          animation: envWaveFlow 2.8s ease-in-out infinite;
+          will-change: transform;
+        }
+        .liquidColumn:hover .liquidWave {
+          animation-duration: 1.9s;
+        }
+        .pirPulseDot {
+          animation: pirDotPulse 1.9s ease-in-out infinite;
+        }
+        .pirPulseText {
+          animation: pirTextBreath 2.6s ease-in-out infinite;
+        }
+        @keyframes envWaveFlow {
+          0% {
+            transform: translateX(-12%) translateY(2px);
+          }
+          50% {
+            transform: translateX(12%) translateY(-4px);
+          }
+          100% {
+            transform: translateX(-12%) translateY(2px);
+          }
+        }
+        @keyframes envColumnBreath {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 0.97;
+          }
+          50% {
+            transform: scale(1.025);
+            opacity: 1;
+          }
+        }
+        @keyframes pirDotPulse {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 0.66;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35);
+          }
+          50% {
+            transform: scale(1.18);
+            opacity: 1;
+            box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+          }
+        }
+        @keyframes pirTextBreath {
+          0%, 100% {
+            opacity: 0.82;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+      `}</style>
     </AuthGuard>
   )
 }

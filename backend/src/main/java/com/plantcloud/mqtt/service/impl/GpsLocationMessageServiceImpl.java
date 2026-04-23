@@ -33,15 +33,12 @@ public class GpsLocationMessageServiceImpl implements GpsLocationMessageService 
         // 1. 设备校验
         Device device = deviceMapper.selectById(deviceId);
         if (device == null) {
-            log.error("Cannot persist GPS location because device does not exist. deviceId={}", deviceId);
+            log.error("设备不存在,无法保存GPS数据.deviceId={}", deviceId);
             throw new IllegalArgumentException("Device not found, deviceId=" + deviceId);
         }
 
         // 2. 植物绑定校验
-        if (device.getPlantId() == null) {
-            log.error("Cannot persist GPS location because device is not bound to a plant. deviceId={}", deviceId);
-            throw new IllegalArgumentException("Plant binding missing for deviceId=" + deviceId);
-        }
+        Long targetPlantId = message.getPlantId();
 
         Double longitude = message.getLongitude();
         Double latitude  = message.getLatitude();
@@ -64,6 +61,7 @@ public class GpsLocationMessageServiceImpl implements GpsLocationMessageService 
 
         GpsLocationLog locationLog = new GpsLocationLog();
         locationLog.setDeviceId(deviceId);
+        locationLog.setPlantId(targetPlantId);
         locationLog.setLongitude(longitude);
         locationLog.setLatitude(latitude);
         locationLog.setCreatedAt(eventTime);

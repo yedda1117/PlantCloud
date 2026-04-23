@@ -22,6 +22,7 @@ public class St1LocationMqttListener {
     private final ObjectMapper objectMapper;
     private final GpsLocationMessageService gpsLocationMessageService;
 
+    // 在 onMessage 方法中修改逻辑
     public void onMessage(String topic, String payload) {
         Matcher matcher = ST1_TOPIC_PATTERN.matcher(topic);
         if (!matcher.matches()) {
@@ -29,18 +30,20 @@ public class St1LocationMqttListener {
             return;
         }
 
-        Long deviceId = Long.valueOf(matcher.group(1));
+        // 依然获取 deviceId（即使是虚拟的 6），用于日志记录
+        Long deviceId = Long.valueOf(matcher.group(1)); 
+
         try {
             GpsLocationMessage message = objectMapper.readValue(payload, GpsLocationMessage.class);
-            log.info("Parsed ST1 GPS location message. deviceId={}, longitude={}, latitude={}, timestamp={}",
-                    deviceId, message.getLongitude(), message.getLatitude(), message.getTimestamp());
+        
+            log.info("Parsed ST1 GPS message. deviceId={}, plantId={}, lon={}, lat={}",
+                 deviceId, message.getPlantId(), message.getLongitude(), message.getLatitude());
 
+            // 将解析出的消息（包含 plantId）传给 Service
             gpsLocationMessageService.handleGpsLocation(deviceId, message, payload);
 
         } catch (JsonProcessingException ex) {
-            log.error("Failed to parse ST1 GPS location payload. topic={}, payload={}", topic, payload, ex);
-        } catch (Exception ex) {
-            log.error("Failed to handle ST1 GPS location message. topic={}, payload={}", topic, payload, ex);
+            log.error("Failed to parse payload", ex);
         }
     }
 }

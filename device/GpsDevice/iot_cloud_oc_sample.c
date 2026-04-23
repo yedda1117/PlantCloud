@@ -11,11 +11,19 @@
 #include "E53_ST1.h"
 #include "app_config.h"
 
+#define APP_MQTT_TOPIC    "device/7/st1/alert"
+
 #define TASK_STACK_SIZE         10240
 #define TASK_PRIO               24
 #define MQTT_SEND_BUF_SIZE      1024
 #define MQTT_READ_BUF_SIZE      1024
 #define MQTT_PAYLOAD_BUF_SIZE   256
+
+// 设定经纬度变化的阈值（例如 0.0001 度大约代表 10-15 米）
+#define GPS_DIFF_THRESHOLD      0.0001f 
+// 记录上一次成功上报的位置
+static float g_last_longitude = 0.0f;
+static float g_last_latitude  = 0.0f;
 
 static unsigned char g_send_buf[MQTT_SEND_BUF_SIZE];
 static unsigned char g_read_buf[MQTT_READ_BUF_SIZE];
@@ -93,7 +101,7 @@ static int ReportGpsLocation(float longitude, float latitude)
 
     rc = snprintf(payload, sizeof(payload),
         "{"
-        "\"alert_type\":\"gps_location\","
+        "\"plant_id\":1,"
         "\"longitude\":%.5f,"
         "\"latitude\":%.5f,"
         "\"timestamp\":0"
@@ -126,6 +134,9 @@ static int ReportGpsLocation(float longitude, float latitude)
         return -1;
     }
 
+    g_last_longitude = longitude;
+    g_last_latitude  = latitude;
+
     printf("MQTT publish success: %s\r\n", payload);
     return 0;
 }
@@ -155,22 +166,36 @@ static void GpsBackendTask(void)
         /* 读取 GPS 数据 */
         E53_ST1_Read_Data();
 
+        // --- 临时测试代码：手动赋值 ---
+        E53_ST1_Data.Longitude = 114.057; // 随便写一个经度
+        E53_ST1_Data.Latitude  = 22.543;  // 随便写一个纬度
+
+        float cur_lon = E53_ST1_Data.Longitude;
+        float cur_lat = E53_ST1_Data.Latitude;
+
         printf("Longitude: %.5f\r\n", E53_ST1_Data.Longitude);
         printf("Latitude : %.5f\r\n", E53_ST1_Data.Latitude);
 
-        /* 收到有效 GPS 信号时上报并触发蜂鸣器 */
-        if (E53_ST1_Data.Longitude != 0.0f || E53_ST1_Data.Latitude != 0.0f) {
-            (void)ReportGpsLocation(E53_ST1_Data.Longitude, E53_ST1_Data.Latitude);
+        // 逻辑：必须有信号（非0）
+        if (cur_lon != 0.0f || cur_lat != 0.0f) {
+        
+        // 计算与上一次位置的差值（绝对值）
+        float diff_lon = (float)fabs(cur_lon - g_last_longitude);
+        float diff_lat = (float)fabs(cur_lat - g_last_latitude);
 
-            printf("GPs Connected!\r\n");
-        }else {
-            // 如果经纬度为0，在串口打印提示，方便调试
-            printf("Waiting for GPS Signal (No Satellite fix yet)...\r\n");
-            // 即使没信号，也可以强制调用一次来检查 MQTT 链路是否活着
-            MQTTEnsureConnected(); 
+        // 逻辑：只有当经度或纬度变化超过阈值时才传输
+        if (diff_lon > GPS_DIFF_THRESHOLD || diff_lat > GPS_DIFF_THRESHOLD) {
+            printf("Significant movement detected, reporting...\r\n");
+            (void)ReportGpsLocation(cur_lon, cur_lat);
+        } else {
+            printf("Position unchanged, skipping MQTT publish.\r\n");
         }
-
-        osDelay(APP_GPS_POLL_INTERVAL_MS);
+        
+    } else {
+        printf("Waiting for GPS Signal...\r\n");
+        MQTTEnsureConnected(); 
+    }
+        osDelay(5000);
     }
 }
 
