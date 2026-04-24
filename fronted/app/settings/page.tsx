@@ -1785,11 +1785,11 @@ function SettingsPageContent() {
                       </div>
                     ) : (
                       <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                        {visiblePlants.map((plant) => (
+                        {visiblePlants.map((plant, index) => (
                           <div key={plant.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3.5">
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium">{plant.plantName}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">绑定设备 ID：{plant.deviceId}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">绑定设备 ID：{index + 1}</p>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                               <Badge
