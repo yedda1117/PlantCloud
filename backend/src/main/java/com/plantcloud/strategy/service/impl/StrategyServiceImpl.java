@@ -43,9 +43,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -76,6 +79,10 @@ public class StrategyServiceImpl implements StrategyService {
     private static final Set<String> NOTIFY_VALUES = Set.of("INFO", "WARNING", "DANGER");
     private static final String EXECUTION_SUCCESS = "SUCCESS";
     private static final String EXECUTION_FAILED = "FAILED";
+    private static final String TRIGGER_SOURCE_STRATEGY_UPDATE = "STRATEGY_UPDATE";
+    private static final String OPERATION_ENABLE = "ENABLE";
+    private static final String OPERATION_DISABLE = "DISABLE";
+    private static final String OPERATION_UPDATE = "UPDATE";
 
     private final StrategyMapper strategyMapper;
     private final StrategyExecutionLogMapper strategyExecutionLogMapper;
@@ -120,10 +127,17 @@ public class StrategyServiceImpl implements StrategyService {
         Strategy existing = requireStrategy(strategyId);
         Strategy strategy = buildStrategy(request, existing);
         strategy.setId(strategyId);
+        String traceId = "strategy-update-" + strategyId + "-" + System.currentTimeMillis();
+        String operationType = resolveStrategyUpdateOperationType(existing, strategy);
+        log.info("[STRATEGY_UPDATE] start traceId={} strategyId={} operationType={} previousEnabled={} nextEnabled={}",
+                traceId, strategyId, operationType, existing.getEnabled(), strategy.getEnabled());
         validateStrategy(strategy, request);
         validateConflict(strategy, strategyId);
         strategyMapper.updateById(strategy);
+        recordStrategyStatusChangeLogIfNeeded(strategy, operationType, traceId);
         evaluateStrategyAgainstLatestData(strategy, "STRATEGY_SAVE", Map.of());
+        log.info("[STRATEGY_UPDATE] success traceId={} strategyId={} operationType={} sourceMethod=StrategyServiceImpl.updateStrategy",
+                traceId, strategyId, operationType);
         return toStrategyVO(requireStrategy(strategyId));
     }
 
@@ -209,7 +223,7 @@ public class StrategyServiceImpl implements StrategyService {
         String commandValue = resolveCommandValue(strategy);
         String payload = buildTriggerPayload(strategy, currentValue, triggerSource, commandValue);
         StrategyExecutionLog latestLog = strategyExecutionLogMapper.selectLatestByStrategyId(strategy.getId());
-        if (isDuplicateTrigger(strategy, latestLog, currentValue, payload)) {
+        if (isDuplicateTrigger(strategy, latestLog, currentValue, payload, commandValue)) {
             log.info("[STRATEGY_RT] strategy skipped as duplicate. strategyId={}, currentValue={}",
                     strategy.getId(), currentValue);
             return;
@@ -262,21 +276,50 @@ public class StrategyServiceImpl implements StrategyService {
     private boolean isDuplicateTrigger(Strategy strategy,
                                        StrategyExecutionLog latestLog,
                                        BigDecimal currentValue,
-                                       String payload) {
+                                       String payload,
+                                       String commandValue) {
         if (latestLog == null) {
             return false;
         }
         if (!isSuccessfulExecutionResult(latestLog.getExecutionResult())) {
             return false;
         }
-        if (isDeviceControlAction(strategy) && latestLog.getCommandLogId() == null) {
-            return false;
+        if (isDeviceControlAction(strategy)) {
+            return isDuplicateDeviceControlTrigger(strategy, latestLog, commandValue);
         }
         if (latestLog.getTriggerMetricValue() != null
                 && latestLog.getTriggerMetricValue().compareTo(currentValue) == 0) {
             return true;
         }
         return payload.equals(latestLog.getTriggerPayload());
+    }
+
+    private boolean isDuplicateDeviceControlTrigger(Strategy strategy,
+                                                    StrategyExecutionLog latestLog,
+                                                    String commandValue) {
+        if (latestLog.getCommandLogId() == null) {
+            return false;
+        }
+        Device targetDevice = resolveCommandTargetDeviceForDedup(strategy);
+        if (targetDevice == null) {
+            log.info("[STRATEGY_RT] device-state dedupe skipped because target device was not found. strategyId={}, targetDeviceId={}",
+                    strategy.getId(), strategy.getTargetDeviceId());
+            return false;
+        }
+
+        String currentState = resolveCurrentDeviceActionState(targetDevice, strategy.getActionType());
+        String normalizedCurrentState = normalizeDeviceState(currentState);
+        String normalizedCommandValue = normalizeDeviceState(commandValue);
+        if (!StringUtils.hasText(normalizedCurrentState) || !StringUtils.hasText(normalizedCommandValue)) {
+            log.info("[STRATEGY_RT] device-state dedupe skipped because current state is unavailable. strategyId={}, targetDeviceId={}, actionType={}, commandValue={}, currentState={}",
+                    strategy.getId(), targetDevice.getId(), strategy.getActionType(), commandValue, currentState);
+            return false;
+        }
+
+        boolean duplicate = normalizedCommandValue.equals(normalizedCurrentState);
+        log.info("[STRATEGY_RT] device-state dedupe evaluated. strategyId={}, targetDeviceId={}, actionType={}, commandValue={}, currentState={}, duplicate={}",
+                strategy.getId(), targetDevice.getId(), strategy.getActionType(), normalizedCommandValue, normalizedCurrentState, duplicate);
+        return duplicate;
     }
 
     private boolean isDeviceControlAction(Strategy strategy) {
@@ -404,6 +447,21 @@ public class StrategyServiceImpl implements StrategyService {
         return ia1Device.getId();
     }
 
+    private Device resolveCommandTargetDeviceForDedup(Strategy strategy) {
+        if (strategy.getTargetDeviceId() != null) {
+            return deviceMapper.selectById(strategy.getTargetDeviceId());
+        }
+        return deviceMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Device>()
+                .eq(Device::getPlantId, strategy.getPlantId())
+                .and(wrapper -> wrapper.eq(Device::getDeviceCode, "E53IA1")
+                        .or()
+                        .eq(Device::getDeviceType, "IA1"))
+                .orderByDesc(Device::getOnlineStatus)
+                .orderByDesc(Device::getLastSeenAt)
+                .orderByDesc(Device::getId)
+                .last("limit 1"));
+    }
+
     private String resolveCommandValue(Strategy strategy) {
         if (ACTION_AUTO_LIGHT.equals(strategy.getActionType())) {
             return strategy.getActionValue();
@@ -456,6 +514,106 @@ public class StrategyServiceImpl implements StrategyService {
 
     private String safeMessage(Exception ex) {
         return StringUtils.hasText(ex.getMessage()) ? ex.getMessage() : ex.getClass().getSimpleName();
+    }
+
+    private String resolveStrategyUpdateOperationType(Strategy existing, Strategy strategy) {
+        if (!Objects.equals(existing.getEnabled(), strategy.getEnabled())) {
+            return Boolean.TRUE.equals(strategy.getEnabled()) ? OPERATION_ENABLE : OPERATION_DISABLE;
+        }
+        return OPERATION_UPDATE;
+    }
+
+    private void recordStrategyStatusChangeLogIfNeeded(Strategy strategy, String operationType, String traceId) {
+        if (!OPERATION_ENABLE.equals(operationType) && !OPERATION_DISABLE.equals(operationType)) {
+            return;
+        }
+
+        StrategyExecutionLog executionLog = new StrategyExecutionLog();
+        executionLog.setStrategyId(strategy.getId());
+        executionLog.setPlantId(strategy.getPlantId());
+        executionLog.setTriggerSource(TRIGGER_SOURCE_STRATEGY_UPDATE);
+        executionLog.setTriggerPayload(buildStrategyStatusChangePayload(strategy, operationType, traceId));
+        executionLog.setExecutionResult(EXECUTION_SUCCESS);
+        executionLog.setResultMessage(buildStrategyStatusChangeMessage(strategy, operationType));
+        executionLog.setExecutedAt(LocalDateTime.now());
+
+        int inserted = strategyExecutionLogMapper.insert(executionLog);
+        log.info("[STRATEGY_UPDATE] status log inserted traceId={} strategyId={} operationType={} inserted={} logId={} sourceMethod=StrategyServiceImpl.recordStrategyStatusChangeLogIfNeeded",
+                traceId, strategy.getId(), operationType, inserted, executionLog.getId());
+    }
+
+    private String buildStrategyStatusChangePayload(Strategy strategy, String operationType, String traceId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("traceId", traceId);
+        payload.put("strategyId", strategy.getId());
+        payload.put("strategyName", strategy.getStrategyName());
+        payload.put("operationType", operationType);
+        payload.put("enabled", strategy.getEnabled());
+        payload.put("sourceMethod", "StrategyServiceImpl.recordStrategyStatusChangeLogIfNeeded");
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException ex) {
+            return payload.toString();
+        }
+    }
+
+    private String buildStrategyStatusChangeMessage(Strategy strategy, String operationType) {
+        if (OPERATION_DISABLE.equals(operationType)) {
+            return "策略已停用：" + strategy.getStrategyName();
+        }
+        if (OPERATION_ENABLE.equals(operationType)) {
+            return "策略已启用：" + strategy.getStrategyName();
+        }
+        return "策略已更新：" + strategy.getStrategyName();
+    }
+
+    private String resolveCurrentDeviceActionState(Device device, String actionType) {
+        Map<String, Object> statusMap = parseStatusMap(device.getCurrentStatus());
+        Object state = null;
+        if (ACTION_AUTO_LIGHT.equals(actionType)) {
+            state = firstNonNull(statusMap, "lightStatus", "light_status", "light", "power", "status", "switch", "value");
+        } else if (ACTION_AUTO_FAN.equals(actionType)) {
+            state = firstNonNull(statusMap, "fanStatus", "fan_status", "fan", "power", "status", "switch", "value");
+        }
+        if (state != null) {
+            return String.valueOf(state);
+        }
+        if (statusMap.isEmpty() && StringUtils.hasText(device.getCurrentStatus())) {
+            return device.getCurrentStatus();
+        }
+        return null;
+    }
+
+    private Map<String, Object> parseStatusMap(String json) {
+        if (!StringUtils.hasText(json)) {
+            return Collections.emptyMap();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
+        } catch (Exception ex) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private Object firstNonNull(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            if (map.containsKey(key) && map.get(key) != null) {
+                return map.get(key);
+            }
+        }
+        return null;
+    }
+
+    private String normalizeDeviceState(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return switch (value.trim().toUpperCase(Locale.ROOT)) {
+            case "OPEN", "RUNNING", "TRUE", "1", "LOW", "HIGH" -> "ON";
+            case "CLOSE", "STOPPED", "FALSE", "0" -> "OFF";
+            default -> value.trim().toUpperCase(Locale.ROOT);
+        };
     }
 
     private Strategy buildStrategy(StrategyUpsertDTO request, Strategy existing) {

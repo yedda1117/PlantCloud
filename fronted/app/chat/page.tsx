@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { getDevicesStatus } from "@/lib/device-api"
+import { getIntegratedControlDeviceId } from "@/lib/device-api"
 import { getHomeRealtime, type HomeRealtimeData } from "@/lib/home-api"
 import { getPlantContextPayload, type PlantContextPayload } from "@/lib/plant-context"
 import { createStrategy, type StrategyUpsertPayload } from "@/lib/strategy-api"
@@ -641,17 +641,13 @@ export default function ChatPage() {
         throw new Error("当前登录信息缺少 userId，请重新登录后再新增策略")
       }
 
-      const devicesStatus = await getDevicesStatus(pendingPlantContext.selectedPlant.plantId)
       const targetDeviceId =
-        pendingProposal.actionType === "AUTO_LIGHT"
-          ? devicesStatus?.light?.deviceId != null
-            ? String(devicesStatus.light.deviceId)
-            : null
-          : pendingProposal.actionType === "AUTO_FAN"
-            ? devicesStatus?.fan?.deviceId != null
-              ? String(devicesStatus.fan.deviceId)
-              : null
-            : null
+        pendingProposal.actionType === "AUTO_LIGHT" || pendingProposal.actionType === "AUTO_FAN"
+          ? await getIntegratedControlDeviceId(
+              pendingPlantContext.selectedPlant.plantId,
+              pendingPlantContext.realtime?.device.deviceId ?? null,
+            )
+          : null
 
       if (pendingProposal.actionType !== "NOTIFY_USER" && !targetDeviceId) {
         throw new Error("未获取到对应执行设备，暂时无法创建自动控制策略")

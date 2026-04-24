@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { getDevicesStatus, type DevicesStatus } from "@/lib/device-api"
+import { getDevicesStatus, getIntegratedControlDeviceId, type DevicesStatus } from "@/lib/device-api"
 import { DEFAULT_PLANT_ID, getPlantApiId, getPlantOption, plantOptions, SELECTED_PLANT_STORAGE_KEY } from "@/lib/plants"
 import { usePlantSelection } from "@/context/plant-selection"
 import {
@@ -31,6 +31,7 @@ import { formatStrategyAction, formatStrategyCondition, resolveStrategyConfig } 
 import {
   AlertCircle,
   Bell,
+  CircleMinus,
   ChevronRight,
   CheckCircle,
   Clock,
@@ -57,9 +58,11 @@ import {
 
 type PolicyLog = {
   id: string
+  strategyId: string
+  stateKey: string
   time: string
   message: string
-  type: "info" | "success" | "warning"
+  variant: "info" | "success" | "warning" | "status-enabled" | "status-disabled"
 }
 
 type StrategyFormState = {
@@ -222,21 +225,6 @@ function buildStrategyFormFromItem(strategy: StrategyItem): StrategyFormState {
   }
 }
 
-function resolveTargetDeviceId(
-  actionType: StrategyFormState["actionType"],
-  devicesStatus: DevicesStatus | null,
-  fallback?: string | number | null,
-) {
-  const resolved =
-    actionType === "AUTO_LIGHT"
-      ? devicesStatus?.light?.deviceId
-      : devicesStatus?.fan?.deviceId
-  if (resolved != null) {
-    return String(resolved)
-  }
-  return fallback != null ? String(fallback) : null
-}
-
 function buildThresholdPayload(form: StrategyFormState) {
   const threshold = Number(form.thresholdMin)
   return {
@@ -249,10 +237,8 @@ function buildCreatePayload(
   form: StrategyFormState,
   plantId: number,
   userId: string | undefined,
-  devicesStatus: DevicesStatus | null,
+  targetDeviceId: string | null,
 ): StrategyUpsertPayload {
-  const targetDeviceId = resolveTargetDeviceId(form.actionType, devicesStatus)
-
   return {
     plantId: String(plantId),
     createdBy: userId,
@@ -279,18 +265,14 @@ function buildCreatePayload(
 function buildEditPayload(
   strategy: StrategyItem,
   form: StrategyFormState,
-  devicesStatus: DevicesStatus | null,
+  targetDeviceId: string | null,
 ): StrategyUpsertPayload {
   return {
     plantId: strategy.plantId,
     createdBy: strategy.createdBy,
     strategyName: form.strategyName.trim(),
     strategyType: "CONDITION",
-    targetDeviceId: resolveTargetDeviceId(
-      form.actionType,
-      devicesStatus,
-      strategy.actionType === form.actionType ? strategy.targetDeviceId : null,
-    ),
+    targetDeviceId,
     metricType: form.metricType,
     operatorType: form.operatorType,
     ...buildThresholdPayload(form),
@@ -345,18 +327,17 @@ function buildUpdatePayload(strategy: StrategyItem, enabled: boolean): StrategyU
 
 function validateStrategyForm(
   form: StrategyFormState,
-  devicesStatus: DevicesStatus | null,
   userId: string | undefined,
   requireUserId: boolean,
-  fallbackTargetDeviceId?: string | number | null,
+  targetDeviceId?: string | number | null,
 ) {
   if (requireUserId && !userId) return "当前登录信息缺少 userId，无法满足后端 createdBy 要求，请重新登录后再试"
   if (!form.strategyName.trim()) return "请输入策略名称"
   if (!form.thresholdMin.trim() || Number.isNaN(Number(form.thresholdMin))) return "请输入有效的触发阈值"
   if (form.timeLimitEnabled && (!form.startTime || !form.endTime)) return "请完整填写时间范围"
-  const hasFallbackTarget = fallbackTargetDeviceId != null
-  if (form.actionType === "AUTO_LIGHT" && !devicesStatus?.light?.deviceId && !hasFallbackTarget) return "当前未获取到补光灯设备，暂时无法创建补光策略"
-  if (form.actionType === "AUTO_FAN" && !devicesStatus?.fan?.deviceId && !hasFallbackTarget) return "当前未获取到风扇设备，暂时无法创建风扇策略"
+  if ((form.actionType === "AUTO_LIGHT" || form.actionType === "AUTO_FAN") && targetDeviceId == null) {
+    return "当前未获取到 E53IA1 一体化控制设备，暂时无法保存自动控制策略"
+  }
   return null
 }
 
@@ -424,25 +405,45 @@ function getStrategyStatusClass(enabled: boolean) {
     : "border-emerald-200/45 bg-white/60 text-emerald-800/65"
 }
 
-function getLogTypeMeta(type: PolicyLog["type"]) {
-  if (type === "warning") {
+function getLogVariantMeta(variant: PolicyLog["variant"]) {
+  const defaultCardClassName = "border-emerald-100/75 bg-emerald-50/72 hover:border-emerald-200/80 hover:bg-emerald-50/90 hover:shadow-[0_14px_30px_rgba(16,185,129,0.12)]"
+  if (variant === "warning") {
     return {
       icon: AlertCircle,
-      className: "border-amber-300/45 bg-white/70 text-amber-700",
+      className: defaultCardClassName,
       iconClassName: "text-amber-500",
+      timeClassName: "text-amber-800/60",
+      timeTextClassName: "text-amber-900/55",
+      textClassName: "text-amber-700/90",
     }
   }
-  if (type === "success") {
+  if (variant === "status-disabled") {
+    return {
+      icon: CircleMinus,
+      className: "border-[#d7ead8]/58 bg-[linear-gradient(135deg,rgba(247,252,245,0.62),rgba(231,245,235,0.44))] shadow-[0_8px_20px_rgba(102,153,113,0.08),inset_0_1px_0_rgba(255,255,255,0.52)] backdrop-blur-[10px] hover:border-[#cce4cd]/72 hover:bg-[linear-gradient(135deg,rgba(248,253,246,0.72),rgba(234,247,238,0.54))] hover:shadow-[0_12px_24px_rgba(102,153,113,0.10),inset_0_1px_0_rgba(255,255,255,0.6)]",
+      iconClassName: "text-[#71967a]/88",
+      timeClassName: "text-[#7da186]/76",
+      timeTextClassName: "text-[#6e9174]/74",
+      textClassName: "text-[#5f7d66]/94",
+    }
+  }
+  if (variant === "success" || variant === "status-enabled") {
     return {
       icon: CheckCircle,
-      className: "border-emerald-300/45 bg-white/72 text-emerald-700",
+      className: defaultCardClassName,
       iconClassName: "text-emerald-500",
+      timeClassName: "text-emerald-800/60",
+      timeTextClassName: "text-emerald-900/55",
+      textClassName: "text-emerald-800/90",
     }
   }
   return {
     icon: Zap,
-    className: "border-cyan-300/45 bg-white/72 text-cyan-700",
+    className: defaultCardClassName,
     iconClassName: "text-cyan-500",
+    timeClassName: "text-cyan-800/60",
+    timeTextClassName: "text-cyan-900/55",
+    textClassName: "text-emerald-950/80",
   }
 }
 
@@ -1442,12 +1443,26 @@ function SettingsPageContent() {
   const latestLogTime = logs[0]?.time ?? "--:--"
   const syncedDevicesLabel = devicesLoading ? "同步中" : "已同步"
 
-  function getCompactLogMessage(message: string) {
-    const matched = message.match(/^\[([^\]]+)\]/)
-    const strategyName = matched?.[1]?.trim() || "未命名策略"
-    const relatedStrategy = strategies.find((strategy) => strategy.strategyName === strategyName)
-    const statusLabel = relatedStrategy?.enabled === false ? "已停用" : "已开启"
-    return `策略 ${strategyName} ${statusLabel}`
+  function buildPolicyLogSummary(log: StrategyExecutionLogItem, strategyName: string): Pick<PolicyLog, "message" | "variant" | "stateKey"> {
+    const rawMessage = log.resultMessage?.trim() || log.executionResult
+    if (log.triggerSource === "STRATEGY_UPDATE") {
+      if (rawMessage.includes("已停用")) {
+        return { message: rawMessage, variant: "status-disabled", stateKey: "status-disabled" }
+      }
+      if (rawMessage.includes("已启用")) {
+        return { message: rawMessage, variant: "status-enabled", stateKey: "status-enabled" }
+      }
+      const message = rawMessage || `策略 ${strategyName} 已更新`
+      return { message, variant: "info", stateKey: `info:${message}` }
+    }
+    if (log.executionResult === "FAILED" || log.executionResult === "ERROR") {
+      return { message: `策略 ${strategyName} 执行失败`, variant: "warning", stateKey: "warning" }
+    }
+    if (log.executionResult === "SUCCESS" || log.executionResult === "TRIGGERED") {
+      return { message: `策略 ${strategyName} 执行成功`, variant: "success", stateKey: "success" }
+    }
+    const message = rawMessage || `策略 ${strategyName} 已记录`
+    return { message, variant: "info", stateKey: `info:${message}` }
   }
 
   const loadPlants = async () => {
@@ -1530,21 +1545,31 @@ function SettingsPageContent() {
         if (r.status !== "fulfilled") return
         const records = r.value?.records ?? []
         records.forEach((log: StrategyExecutionLogItem) => {
-          const isSuccess = log.executionResult === "SUCCESS"
-          const isFail = log.executionResult === "FAILED" || log.executionResult === "ERROR"
+          const strategyName = strategyList[idx]?.strategyName ?? "策略"
+          const summary = buildPolicyLogSummary(log, strategyName)
           merged.push({
             id: log.id,
+            strategyId: log.strategyId,
+            stateKey: summary.stateKey,
             time: log.executedAt
               ? new Date(log.executedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
               : "--:--",
-            message: `[${strategyList[idx]?.strategyName ?? "策略"}] ${log.resultMessage ?? log.executionResult}`,
-            type: isSuccess ? "success" : isFail ? "warning" : "info",
+            message: summary.message,
+            variant: summary.variant,
           })
         })
       })
       // 按时间倒序
       merged.sort((a, b) => b.time.localeCompare(a.time))
-      setLogs(merged)
+      const deduped = merged.reduce<PolicyLog[]>((acc, current) => {
+        const previous = acc[acc.length - 1]
+        if (previous && previous.strategyId === current.strategyId && previous.stateKey === current.stateKey) {
+          return acc
+        }
+        acc.push(current)
+        return acc
+      }, [])
+      setLogs(deduped)
     } catch (error) {
       setLogsError(error instanceof Error ? error.message : "日志加载失败")
     } finally {
@@ -1566,14 +1591,37 @@ function SettingsPageContent() {
   }, [strategies, strategiesLoading])
 
   const handleToggleStrategy = async (strategy: StrategyItem, nextEnabled: boolean) => {
+    const requestAt = new Date().toISOString()
+    const requestUrl = `/api/strategies/${strategy.id}`
+    console.info("[settings][strategy-toggle] request:start", {
+      strategyId: strategy.id,
+      enabled: nextEnabled,
+      url: requestUrl,
+      requestAt,
+    })
     setTogglingId(strategy.id)
     setStrategies((cur) => cur.map((item) => (item.id === strategy.id ? { ...item, enabled: nextEnabled } : item)))
     try {
       const detail = await getStrategyDetail(strategy.id)
       const payload = buildUpdatePayload(detail, nextEnabled)
       await updateStrategy(strategy.id, payload)
+      console.info("[settings][strategy-toggle] request:success", {
+        strategyId: strategy.id,
+        enabled: nextEnabled,
+        url: requestUrl,
+        requestAt,
+        responseAt: new Date().toISOString(),
+      })
       await loadStrategies()
     } catch (error) {
+      console.error("[settings][strategy-toggle] request:error", {
+        strategyId: strategy.id,
+        enabled: nextEnabled,
+        url: requestUrl,
+        requestAt,
+        responseAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : error,
+      })
       setStrategies((cur) => cur.map((item) => (item.id === strategy.id ? { ...item, enabled: strategy.enabled } : item)))
       toast({ title: "更新策略失败", description: error instanceof Error ? error.message : "请稍后重试", variant: "destructive" })
     } finally {
@@ -1614,14 +1662,12 @@ function SettingsPageContent() {
   const handleSaveStrategy = async () => {
     const currentUserId = getCurrentUserId()
     setStrategySubmitError(null)
-    const fallbackTargetDeviceId =
-      editingStrategy?.actionType === strategyForm.actionType ? editingStrategy.targetDeviceId : null
+    const targetDeviceId = await getIntegratedControlDeviceId(currentPlantApiId)
     const validationMessage = validateStrategyForm(
       strategyForm,
-      devicesStatus,
       currentUserId,
       !editingStrategy,
-      fallbackTargetDeviceId,
+      targetDeviceId,
     )
     if (validationMessage) {
       setStrategySubmitError(validationMessage)
@@ -1629,8 +1675,8 @@ function SettingsPageContent() {
       return
     }
     const payload = editingStrategy
-      ? buildEditPayload(editingStrategy, strategyForm, devicesStatus)
-      : buildCreatePayload(strategyForm, currentPlantApiId, currentUserId, devicesStatus)
+      ? buildEditPayload(editingStrategy, strategyForm, targetDeviceId)
+      : buildCreatePayload(strategyForm, currentPlantApiId, currentUserId, targetDeviceId)
     setSubmitting(true)
     try {
       if (editingStrategy) {
@@ -1949,22 +1995,27 @@ function SettingsPageContent() {
                         暂无策略执行日志。保存策略后，当实时温度、湿度或光照满足触发条件时会自动写入。
                       </div>
                     ) : null}
-                    {!logsLoading && !logsError ? logs.map((log) => (
-                      <div key={log.id} className="flex items-start gap-3 rounded-[1.25rem] border border-emerald-100/75 bg-emerald-50/72 p-3.5 shadow-[0_10px_24px_rgba(16,185,129,0.08)] transition-all duration-200 hover:border-emerald-200/80 hover:bg-emerald-50/90 hover:shadow-[0_14px_30px_rgba(16,185,129,0.12)]">
-                        <div className="mt-0.5 flex shrink-0 items-center gap-1.5 text-emerald-800/60">
-                          <Clock className="h-3.5 w-3.5" />
-                          <span className="font-mono text-xs text-emerald-900/55">{log.time}</span>
+                    {!logsLoading && !logsError ? logs.map((log) => {
+                      const meta = getLogVariantMeta(log.variant)
+                      const StatusIcon = meta.icon
+                      return (
+                        <div
+                          key={log.id}
+                          className={`flex items-start gap-3 rounded-[1.25rem] border p-3.5 shadow-[0_10px_24px_rgba(16,185,129,0.08)] transition-all duration-200 ${meta.className}`}
+                        >
+                          <div className={`mt-0.5 flex shrink-0 items-center gap-1.5 ${meta.timeClassName}`}>
+                            <Clock className="h-3.5 w-3.5" />
+                            <span className={`font-mono text-xs ${meta.timeTextClassName}`}>{log.time}</span>
+                          </div>
+                          <div className="flex flex-1 items-start gap-2">
+                            <StatusIcon className={`mt-0.5 h-4 w-4 shrink-0 ${meta.iconClassName}`} />
+                            <p className={`text-sm leading-6 ${meta.textClassName}`}>
+                              {log.message}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex flex-1 items-start gap-2">
-                          {log.type === "warning" ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" /> : null}
-                          {log.type === "success" ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : null}
-                          {log.type === "info" ? <Zap className="mt-0.5 h-4 w-4 shrink-0 text-teal-600" /> : null}
-                          <p className={`text-sm leading-6 ${log.type === "warning" ? "text-amber-700/90" : log.type === "success" ? "text-emerald-800/90" : "text-emerald-950/80"}`}>
-                            {getCompactLogMessage(log.message)}
-                          </p>
-                        </div>
-                      </div>
-                    )) : null}
+                      )
+                    }) : null}
                   </div>
                 </CardContent>
               </Card>
