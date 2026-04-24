@@ -1,45 +1,148 @@
+import type { CSSProperties } from "react"
 import { motion } from "framer-motion"
-import { Bot, Fan, Lightbulb, Loader2, RefreshCw, Sprout, Thermometer, Trees, UserRound, Wind } from "lucide-react"
-import type { HomeRealtimeData, Plant } from "../types"
-import { formatLight, formatNumber, healthScore } from "../mobile-utils"
+import { Droplets, Fan, Lightbulb, Loader2, RefreshCw, Sprout, SunMedium, Thermometer } from "lucide-react"
+import { PlantModelViewer } from "../components/PlantModelViewer"
+import type { AlertItem, HomeRealtimeData, Plant } from "../types"
 
-function PlantPicker({ plants, selectedPlantId, onSelect }: { plants: Plant[]; selectedPlantId: number; onSelect: (id: number) => void }) {
+function isUnresolvedTiltLog(log: AlertItem) {
+  return (log.alertType || "").toUpperCase() === "TILT_ABNORMAL" && (log.status || "UNRESOLVED").toUpperCase() === "UNRESOLVED"
+}
+
+function getModelPath(realtime: HomeRealtimeData | null) {
+  const activityLogs = realtime?.activityLogs ?? []
+  const hasUnresolvedTilt = activityLogs.some(isUnresolvedTiltLog)
+  if (hasUnresolvedTilt) return "/models/qingxie.glb"
+
+  const humidityStatus = (realtime?.environment.humidityStatus || "").toUpperCase()
+  const lightStatus = (realtime?.environment.lightStatus || "").toUpperCase()
+  const temperatureStatus = (realtime?.environment.temperatureStatus || "").toUpperCase()
+  const hasEnvironmentStress = humidityStatus === "LOW" || lightStatus === "HIGH" || temperatureStatus === "HIGH"
+
+  return hasEnvironmentStress ? "/models/kuwei.glb" : "/models/zhizihua.glb"
+}
+
+function formatValue(value: number | null | undefined, unit: string, digits = 1) {
+  if (value === null || value === undefined) return "--"
+  return `${value.toFixed(digits)}${unit}`
+}
+
+function formatLight(value: number | null | undefined) {
+  if (value === null || value === undefined) return "--"
+  return `${value.toLocaleString()} lux`
+}
+
+function toChineseStatus(status: string | null | undefined) {
+  switch ((status || "").toUpperCase()) {
+    case "NORMAL":
+      return "正常"
+    case "LOW":
+      return "偏低"
+    case "HIGH":
+      return "偏高"
+    default:
+      return "同步中"
+  }
+}
+
+function clampProgress(value: number | null | undefined, min: number, max: number) {
+  if (value === null || value === undefined) return 0.18
+  if (max <= min) return 0
+  const ratio = (value - min) / (max - min)
+  return Math.max(0, Math.min(1, ratio))
+}
+
+function getPlantSubtitle(plant: Plant) {
+  if (plant.species && plant.species.trim()) return plant.species.trim()
+  if (plant.plantName.includes("蝴蝶兰")) return "Phalaenopsis"
+  return "Smart Plant Profile"
+}
+
+function PlantPicker({
+  plants,
+  selectedPlantId,
+  onSelect,
+}: {
+  plants: Plant[]
+  selectedPlantId: number
+  onSelect: (id: number) => void
+}) {
   return (
-    <div className="plant-strip">
-      {plants.map((plant) => (
-        <button className={`plant-pill ${plant.plantId === selectedPlantId ? "active" : ""}`} key={plant.plantId} onClick={() => onSelect(plant.plantId)}>
-          <Sprout size={15} />
-          {plant.plantName}
+    <div className="compact-plant-strip">
+      {plants.map((item) => (
+        <button
+          key={item.plantId}
+          className={`compact-plant-pill ${item.plantId === selectedPlantId ? "active" : ""}`}
+          onClick={() => onSelect(item.plantId)}
+        >
+          <Sprout size={14} />
+          <span>{item.plantName}</span>
         </button>
       ))}
     </div>
   )
 }
 
-function TopBar({ plant, onRefresh, refreshing }: { plant: Plant; onRefresh: () => void; refreshing: boolean }) {
+function DeviceMiniCard({
+  icon: Icon,
+  label,
+  active,
+  pending,
+  disabled,
+  onClick,
+}: {
+  icon: typeof Fan
+  label: string
+  active: boolean
+  pending: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
   return (
-    <header className="top-bar">
-      <div>
-        <p>PlantCloud</p>
-        <h2>{plant.plantName}</h2>
-      </div>
-      <button className="icon-button" onClick={onRefresh} aria-label="刷新">
-        <RefreshCw size={18} className={refreshing ? "spin" : ""} />
-      </button>
-    </header>
+    <button type="button" className={`compact-device-mini ${active ? "active" : ""}`} disabled={disabled} onClick={onClick}>
+      <span className="compact-device-mini-head">
+        <Icon size={16} className={label === "风扇" && active ? "spin" : ""} />
+        <strong>{label}</strong>
+      </span>
+      <span className="compact-device-mini-foot">
+        <em>{pending ? "切换中" : active ? "已开启" : "已关闭"}</em>
+        <i className={`compact-mini-toggle ${active ? "active" : ""}`}>{pending ? <Loader2 size={10} className="spin" /> : null}</i>
+      </span>
+    </button>
   )
 }
 
-function MetricCard({ icon: Icon, label, value, hint }: { icon: typeof Thermometer; label: string; value: string; hint: string }) {
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  status,
+  progress,
+  accentClass,
+}: {
+  icon: typeof Thermometer
+  label: string
+  value: string
+  status: string
+  progress: number
+  accentClass: string
+}) {
+  const ringStyle = { "--progress": `${Math.round(progress * 360)}deg` } as CSSProperties
+
   return (
-    <motion.article className="metric-card" whileTap={{ scale: 0.98 }}>
-      <div className="metric-icon">
-        <Icon size={18} />
+    <article className={`compact-metric-card compact-metric-card-rich ${accentClass}`}>
+      <div className="compact-metric-card-head">
+        <div>
+          <p>{label}</p>
+          <strong>{value}</strong>
+          <span>{status}</span>
+        </div>
+        <div className="compact-progress-ring" style={ringStyle}>
+          <div className="compact-progress-ring-core">
+            <Icon size={18} />
+          </div>
+        </div>
       </div>
-      <p>{label}</p>
-      <strong>{value}</strong>
-      <span>{hint}</span>
-    </motion.article>
+    </article>
   )
 }
 
@@ -49,11 +152,8 @@ export function HomePage({
   selectedPlantId,
   realtime,
   loading,
-  error,
   onSelectPlant,
   onRefresh,
-  onGoDetail,
-  onGoAi,
   onToggleDevice,
   controlLoadingTarget,
 }: {
@@ -62,133 +162,90 @@ export function HomePage({
   selectedPlantId: number
   realtime: HomeRealtimeData | null
   loading: boolean
-  error: string | null
   onSelectPlant: (id: number) => void
   onRefresh: () => void
-  onGoDetail: () => void
-  onGoAi: () => void
   onToggleDevice: (target: "light" | "fan", next: boolean) => void
   controlLoadingTarget: "light" | "fan" | null
 }) {
-  const score = healthScore(realtime)
-  const env = realtime?.environment
-  const deviceOnline = realtime?.device.connected === true
-  const fanState = realtime?.device.fanOn
-  const lightState = realtime?.device.lightOn
-  const fanActive = fanState === true
-  const lightActive = lightState === true
-  const fanUnknown = fanState === null || fanState === undefined
-  const lightUnknown = lightState === null || lightState === undefined
-  const infraredDetected = realtime?.infrared.currentDetected === true || realtime?.device.infraredDetected === true
-  const infraredCount = realtime?.infrared.approachCount ?? 0
-  const infraredStateLabel = infraredDetected ? "DETECTED" : "CLEAR"
-  const infraredStatusText = infraredDetected ? "当前检测到红外活动" : "当前未检测到红外活动"
-  const controlDisabled = !realtime?.device.deviceId || !deviceOnline
+  const modelPath = getModelPath(realtime)
+  const fanOn = realtime?.device.fanOn === true
+  const lightOn = realtime?.device.lightOn === true
+  const controlDisabled = !realtime?.device.deviceId || realtime?.device.connected !== true
+  const subtitle = getPlantSubtitle(plant)
+
+  const temperatureProgress = clampProgress(realtime?.environment.temperature, 0, 40)
+  const humidityProgress = clampProgress(realtime?.environment.humidity, 0, 100)
+  const lightProgress = clampProgress(realtime?.environment.lightLux, 0, 1200)
 
   return (
-    <main className="screen">
-      <TopBar plant={plant} onRefresh={onRefresh} refreshing={loading} />
+    <main className="screen compact-home-screen">
+      <section className="compact-brand-bar">
+        <div className="compact-brand-copy">
+          <span className="compact-brand-kicker">PLANTCLOUD</span>
+          <strong>植物状态中心</strong>
+        </div>
+        <button className="compact-brand-refresh" onClick={onRefresh} aria-label="刷新">
+          <RefreshCw size={18} className={loading ? "spin" : ""} />
+        </button>
+      </section>
+
       <PlantPicker plants={plants} selectedPlantId={selectedPlantId} onSelect={onSelectPlant} />
 
-      <motion.section className="hero-panel" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="hero-copy">
-          <p>实时生命指数</p>
-          <h1>{score}</h1>
-          <span>{error ? "接口连接异常，正在展示最近可用视图" : "环境、设备和告警正在统一采样"}</span>
-        </div>
-        <div className="plant-stage">
-          <div className="halo" />
-          <motion.div className="living-plant mini" animate={{ y: [0, -5, 0] }} transition={{ duration: 4, repeat: Infinity }}>
-            <span className="leaf leaf-a" />
-            <span className="leaf leaf-b" />
-            <span className="leaf leaf-c" />
-            <span className="stem" />
-            <span className="pot" />
-          </motion.div>
+      <section className="compact-env-grid">
+        <MetricCard
+          icon={Thermometer}
+          label="温度"
+          value={formatValue(realtime?.environment.temperature, "°C")}
+          status={toChineseStatus(realtime?.environment.temperatureStatus)}
+          progress={temperatureProgress}
+          accentClass="temperature"
+        />
+        <MetricCard
+          icon={Droplets}
+          label="湿度"
+          value={formatValue(realtime?.environment.humidity, "%", 0)}
+          status={toChineseStatus(realtime?.environment.humidityStatus)}
+          progress={humidityProgress}
+          accentClass="humidity"
+        />
+        <MetricCard
+          icon={SunMedium}
+          label="光照"
+          value={formatLight(realtime?.environment.lightLux)}
+          status={toChineseStatus(realtime?.environment.lightStatus)}
+          progress={lightProgress}
+          accentClass="light"
+        />
+      </section>
+
+      <motion.section className="compact-model-card compact-model-card-tight" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="compact-model-stage">
+          <div className="compact-model-label">
+            <strong>{plant.plantName}</strong>
+            <span>{subtitle}</span>
+          </div>
+          <PlantModelViewer modelPath={modelPath} />
         </div>
       </motion.section>
 
-      <section className="metrics-grid">
-        <MetricCard icon={Thermometer} label="温度" value={formatNumber(env?.temperature, "°C")} hint={env?.temperatureStatus || "舒适区间监测"} />
-        <MetricCard icon={Wind} label="湿度" value={formatNumber(env?.humidity, "%")} hint={env?.humidityStatus || "叶面蒸腾参考"} />
-        <MetricCard icon={Lightbulb} label="光照" value={formatLight(env?.lightLux)} hint={env?.lightStatus || "补光策略依据"} />
-      </section>
-
-      <section className="action-band">
-        <button onClick={onGoDetail}>
-          <Trees size={18} />
-          植物详情
-        </button>
-        <button onClick={onGoAi}>
-          <Bot size={18} />
-          AI 问答
-        </button>
-      </section>
-
-      <section className="status-card">
-        <div>
-          <p>设备联动</p>
-          <h3>{deviceOnline ? "设备在线" : "等待设备同步"}</h3>
-        </div>
-        <div className="device-states">
-          <div className={`device-state-row ${fanActive ? "on" : ""} ${fanUnknown ? "unknown" : ""}`}>
-            <span>
-              <Fan size={15} />
-              风扇
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={fanActive}
-              aria-label="切换风扇"
-              className={`device-switch ${fanActive ? "on" : ""} ${fanUnknown ? "unknown" : ""}`}
-              disabled={controlDisabled || controlLoadingTarget === "fan"}
-              onClick={() => onToggleDevice("fan", !fanActive)}
-            >
-              <span className="device-switch-track">
-                <span className="device-switch-thumb">
-                  {controlLoadingTarget === "fan" || (loading && fanUnknown) ? <Loader2 size={12} className="spin" /> : null}
-                </span>
-              </span>
-            </button>
-          </div>
-          <div className={`device-state-row ${lightActive ? "on" : ""} ${lightUnknown ? "unknown" : ""}`}>
-            <span>
-              <Lightbulb size={15} />
-              补光
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={lightActive}
-              aria-label="切换补光灯"
-              className={`device-switch ${lightActive ? "on" : ""} ${lightUnknown ? "unknown" : ""}`}
-              disabled={controlDisabled || controlLoadingTarget === "light"}
-              onClick={() => onToggleDevice("light", !lightActive)}
-            >
-              <span className="device-switch-track">
-                <span className="device-switch-thumb">
-                  {controlLoadingTarget === "light" || (loading && lightUnknown) ? <Loader2 size={12} className="spin" /> : null}
-                </span>
-              </span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="status-card pir-status-card">
-        <div>
-          <p className="pir-status-title">
-            <UserRound size={15} />
-            <span>PIR STATUS</span>
-          </p>
-          <h3>
-            {infraredStatusText} {" · 今日靠近 "} {infraredCount} {" 次"}
-          </h3>
-        </div>
-        <strong className="pir-state current" aria-label="PIR current status">{infraredStateLabel}</strong>
+      <section className="compact-device-row">
+        <DeviceMiniCard
+          icon={Fan}
+          label="风扇"
+          active={fanOn}
+          pending={controlLoadingTarget === "fan"}
+          disabled={controlDisabled || controlLoadingTarget === "fan" || controlLoadingTarget === "light"}
+          onClick={() => onToggleDevice("fan", !fanOn)}
+        />
+        <DeviceMiniCard
+          icon={Lightbulb}
+          label="灯光"
+          active={lightOn}
+          pending={controlLoadingTarget === "light"}
+          disabled={controlDisabled || controlLoadingTarget === "fan" || controlLoadingTarget === "light"}
+          onClick={() => onToggleDevice("light", !lightOn)}
+        />
       </section>
     </main>
   )
 }
-

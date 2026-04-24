@@ -176,10 +176,6 @@ function parseOnlineState(value: string | null | undefined) {
   return value.trim().toUpperCase() === "ONLINE" ? true : value.trim().toUpperCase() === "OFFLINE" ? false : null
 }
 
-function firstKnownState<T>(...values: Array<T | null | undefined>) {
-  return values.find((value) => value !== null && value !== undefined) ?? null
-}
-
 function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus {
   const devices = overview.devices || []
   const device =
@@ -190,28 +186,13 @@ function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus
       return "fanStatus" in status || "lightStatus" in status || "mqttStatus" in status
     }) ||
     null
-  const fanDevice = devices.find((item) => (item.deviceType || "").toUpperCase() === "FAN") || null
-  const lightDevice = devices.find((item) => (item.deviceType || "").toUpperCase() === "FILL_LIGHT") || null
-  const infraredDevice = devices.find((item) => (item.deviceType || "").toUpperCase() === "PIR_SENSOR") || null
   const status = parseStatusJson(device?.currentStatus)
-  const fanDeviceStatus = parseStatusJson(fanDevice?.currentStatus)
-  const lightDeviceStatus = parseStatusJson(lightDevice?.currentStatus)
-  const infraredDeviceStatus = parseStatusJson(infraredDevice?.currentStatus)
   const mqttStatus = getStringField(status, "mqttStatus", "onlineStatus", "status")
-  const fanStatus =
-    getStringField(fanDeviceStatus, "power", "status", "switch", "value", "fanStatus", "fan_status", "fan") ||
-    getStringField(status, "fanStatus", "fan_status", "fan")
-  const lightStatus =
-    getStringField(lightDeviceStatus, "power", "status", "switch", "value", "lightStatus", "light_status", "light") ||
-    getStringField(status, "lightStatus", "light_status", "light")
-  const infraredStatus = getStringField(infraredDeviceStatus, "detected", "pirStatus", "status", "value")
+  const fanStatus = getStringField(status, "fanStatus", "fan_status", "fan")
+  const lightStatus = getStringField(status, "lightStatus", "light_status", "light")
   const statusUpdatedAt = getStringField(status, "statusUpdatedAt", "commandUpdatedAt", "telemetryUpdatedAt")
   const onlineStatus = device?.onlineStatus || mqttStatus
-  const connected = firstKnownState(
-    parseOnlineState(onlineStatus),
-    parseOnlineState(fanDevice?.onlineStatus),
-    parseOnlineState(lightDevice?.onlineStatus),
-  )
+  const connected = parseOnlineState(onlineStatus)
 
   return {
     deviceId: device?.deviceId ?? null,
@@ -219,15 +200,15 @@ function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus
     deviceName: device?.deviceName ?? null,
     onlineStatus: onlineStatus ?? null,
     connected,
-    fanConnected: firstKnownState(parseOnlineState(fanDevice?.onlineStatus), connected),
+    fanConnected: connected,
     fanStatus,
     fanOn: parseSwitchState(fanStatus),
-    lightConnected: firstKnownState(parseOnlineState(lightDevice?.onlineStatus), connected),
+    lightConnected: connected,
     lightStatus,
     lightOn: parseSwitchState(lightStatus),
-    infraredDeviceId: infraredDevice?.deviceId ?? null,
-    infraredConnected: parseOnlineState(infraredDevice?.onlineStatus),
-    infraredDetected: parseSwitchState(infraredStatus),
+    infraredDeviceId: null,
+    infraredConnected: null,
+    infraredDetected: null,
     statusUpdatedAt,
     rawStatus: device?.currentStatus ?? null,
   }
@@ -342,7 +323,7 @@ export async function controlHomeDevice(plantId: number, deviceId: number | stri
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
       cache: "no-store",
-      body: JSON.stringify({ plantId, deviceId, commandValue: turnOn ? "ON" : "OFF", sourceType: "MANUAL" }),
+      body: JSON.stringify({ plantId, deviceId, commandValue: turnOn ? "ON" : "OFF" }),
     }),
   )
 }

@@ -21,7 +21,7 @@ const REALTIME_CACHE_STORAGE_KEY = "plantcloud_mobile_realtime_cache"
 
 function initialScreen(): Screen {
   if (!hasAuthSession()) return "login"
-  return localStorage.getItem("plantcloud_mobile_seen_intro") ? "home" : "intro"
+  return "home"
 }
 
 function TabBar({ screen, onChange }: { screen: MainScreen; onChange: (screen: MainScreen) => void }) {
@@ -66,7 +66,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [loadingAnalysis, setLoadingAnalysis] = useState(false)
   const [controlLoadingTarget, setControlLoadingTarget] = useState<"light" | "fan" | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [, setError] = useState<string | null>(null)
 
   const plant = useMemo(() => plants.find((item) => item.plantId === selectedPlantId) || plants[0] || fallbackPlants[0], [plants, selectedPlantId])
 
@@ -136,7 +136,7 @@ export default function App() {
 
   const handleLoggedIn = useCallback((_session: LoginResult) => {
     setAuthenticated(true)
-    setScreen(localStorage.getItem("plantcloud_mobile_seen_intro") ? "home" : "intro")
+    setScreen("home")
   }, [])
 
   const selectPlant = (id: number) => {
@@ -151,20 +151,12 @@ export default function App() {
     setControlLoadingTarget(target)
     try {
       await controlHomeDevice(plant.plantId, realtime.device.deviceId, target, next)
-      setRealtime((current) => {
-        if (!current) return current
-        return {
-          ...current,
-          device: {
-            ...current.device,
-            fanOn: target === "fan" ? next : current.device.fanOn,
-            fanStatus: target === "fan" ? (next ? "ON" : "OFF") : current.device.fanStatus,
-            lightOn: target === "light" ? next : current.device.lightOn,
-            lightStatus: target === "light" ? (next ? "ON" : "OFF") : current.device.lightStatus,
-          },
-        }
-      })
       await refresh()
+      ;[800, 1800, 3200].forEach((delay) => {
+        window.setTimeout(() => {
+          void refresh()
+        }, delay)
+      })
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "设备控制失败")
