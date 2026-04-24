@@ -28,7 +28,7 @@ public class MqttMessageHandler {
     private static final Pattern DEVICE_SF1_TOPIC_PATTERN =
             Pattern.compile("^device/([^/]+)/sf1/(alert|event)$");
     private static final Pattern DEVICE_ST1_ALERT_TOPIC_PATTERN =
-            Pattern.compile("^device/(\\d+)/st1/alert$");
+            Pattern.compile("^device/7/st1/alert$");
     private static final Pattern DEVICE_IA1_TELEMETRY_TOPIC_PATTERN =
             Pattern.compile("^device/([^/]+)/ia1/telemetry$");
     private static final Pattern DEVICE_STATUS_TOPIC_PATTERN =
@@ -73,7 +73,9 @@ public class MqttMessageHandler {
             sf1AlertMqttListener.onMessage(topic, payload);
             return;
         }
+        log.error("🔥 BEFORE MATCH topic={}", topic);
         if (DEVICE_ST1_ALERT_TOPIC_PATTERN.matcher(topic).matches()) {
+            log.error("🔥 ST1 MATCHED");
             st1LocationMqttListener.onMessage(topic, payload);
             return;
         }
@@ -100,7 +102,7 @@ public class MqttMessageHandler {
         }
         Matcher st1Matcher = DEVICE_ST1_ALERT_TOPIC_PATTERN.matcher(topic);
         if (st1Matcher.matches()) {
-            return st1Matcher.group(1);
+            return "7";
         }
         Matcher ia1Matcher = DEVICE_IA1_TELEMETRY_TOPIC_PATTERN.matcher(topic);
         if (ia1Matcher.matches()) {

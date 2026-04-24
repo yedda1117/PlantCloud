@@ -34,7 +34,7 @@ app:
     access-token-expire-seconds: 7200
     refresh-token-expire-seconds: 604800
   mqtt:
-    broker-url: tcp://150.158.76.53:1883
+    broker-url: tcp://192.168.100.100:1883
     client-id: plantcloud-backend-local
     username: plant
     password: 123456
