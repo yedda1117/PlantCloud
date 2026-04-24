@@ -6,7 +6,7 @@ import App from "./App"
 import "./styles.css"
 
 void StatusBar.setStyle({ style: Style.Light }).catch(() => undefined)
-void StatusBar.setBackgroundColor({ color: "#eef8ef" }).catch(() => undefined)
+void StatusBar.setBackgroundColor({ color: "#173d2b" }).catch(() => undefined)
 
 CapacitorApp.addListener("backButton", ({ canGoBack }) => {
   if (canGoBack) {

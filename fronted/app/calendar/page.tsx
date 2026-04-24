@@ -490,7 +490,13 @@ export default function CalendarPage() {
 
   return (
     <AuthGuard>
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#d0e8de' }}>
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{
+        background:
+          "radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)",
+      }}
+    >
 
       <main className="flex-1 flex gap-0 overflow-hidden min-h-0">
         <div className="flex-[7] flex flex-col overflow-hidden border-r border-border/50">
@@ -696,10 +702,10 @@ export default function CalendarPage() {
                 <div>
                   <p className="text-xs font-medium mb-2">照片</p>
                   <div className="flex items-center gap-3">
-                    <div className="w-28 h-28 bg-white/60 border border-border rounded-md overflow-hidden flex items-center justify-center">
+                    <div className="w-28 h-28 bg-[linear-gradient(135deg,rgba(236,253,245,0.78),rgba(255,251,235,0.72))] border border-border rounded-md overflow-hidden flex items-center justify-center">
                       {selectedDayRecord?.photoUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={selectedDayRecord.photoUrl} alt="preview" className="w-full h-full object-cover" />
+                        <img src={selectedDayRecord.photoUrl} alt="preview" className="w-full h-full object-contain" />
                       ) : (
                         <div className="text-xs text-muted-foreground">暂无照片</div>
                       )}

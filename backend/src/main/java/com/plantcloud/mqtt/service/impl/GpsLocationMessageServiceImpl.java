@@ -39,7 +39,6 @@ public class GpsLocationMessageServiceImpl implements GpsLocationMessageService 
 
         // 2. 植物绑定校验
         Long targetPlantId = message.getPlantId();
-
         Double longitude = message.getLongitude();
         Double latitude  = message.getLatitude();
 
@@ -61,7 +60,7 @@ public class GpsLocationMessageServiceImpl implements GpsLocationMessageService 
 
         GpsLocationLog locationLog = new GpsLocationLog();
         locationLog.setDeviceId(deviceId);
-        locationLog.setPlantId(targetPlantId);
+        locationLog.setPlantId(device.getPlantId());
         locationLog.setLongitude(longitude);
         locationLog.setLatitude(latitude);
         locationLog.setCreatedAt(eventTime);

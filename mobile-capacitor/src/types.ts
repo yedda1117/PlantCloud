@@ -43,10 +43,15 @@ export type HomeDeviceStatus = {
   deviceName: string | null
   onlineStatus: string | null
   connected: boolean | null
+  fanConnected: boolean | null
   fanStatus: string | null
   fanOn: boolean | null
+  lightConnected: boolean | null
   lightStatus: string | null
   lightOn: boolean | null
+  infraredDeviceId: number | string | null
+  infraredConnected: boolean | null
+  infraredDetected: boolean | null
   statusUpdatedAt: string | null
   rawStatus: string | null
 }
@@ -144,4 +149,37 @@ export type PhotoUploadResult = {
   note: string | null
   hasPhoto: boolean
   aiStatus: string | null
+}
+
+export type DeviceRuntimeStatus = {
+  deviceId: number | string | null
+  deviceCode: string | null
+  deviceName: string | null
+  deviceType: string | null
+  onlineStatus?: string | null
+  workingStatus?: string | null
+  powerOn?: boolean | null
+  lastSeenAt?: string | null
+  rawStatus?: string | null
+}
+
+export type InfraredDeviceStatus = DeviceRuntimeStatus & {
+  detected?: boolean
+  latestEventTitle?: string | null
+  latestDetectedAt?: string | null
+}
+
+export type DevicesStatus = {
+  plantId: number
+  light: DeviceRuntimeStatus | null
+  fan: DeviceRuntimeStatus | null
+  infrared: InfraredDeviceStatus | null
+}
+
+export type LoginResult = {
+  userId: number | string
+  username: string
+  role: string
+  accessToken: string
+  refreshToken?: string
 }

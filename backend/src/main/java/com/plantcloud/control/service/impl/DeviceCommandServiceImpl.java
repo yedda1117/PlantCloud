@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 @Slf4j
@@ -169,6 +170,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
     private void updateDeviceCommandStatus(Device device, ControlTarget target, String action) {
         ObjectNode statusNode = buildCurrentStatusNode(device.getCurrentStatus());
+        LocalDateTime now = LocalDateTime.now();
 
         if (target == ControlTarget.FAN) {
             statusNode.put("fanStatus", action);
@@ -179,6 +181,8 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
         statusNode.put("mqttStatus", device.getOnlineStatus());
         statusNode.put("online", isDeviceOnline(device));
         statusNode.put("stateSource", "COMMAND");
+        statusNode.put("commandUpdatedAt", now.toString());
+        statusNode.put("statusUpdatedAt", now.toString());
 
         device.setCurrentStatus(statusNode.toString());
         deviceMapper.updateById(device);

@@ -155,12 +155,14 @@ function parseSwitchState(value: string | null | undefined) {
   if (!value) return null
   switch (value.trim().toUpperCase()) {
     case "ON":
+    case "TURN_ON":
     case "OPEN":
     case "RUNNING":
     case "TRUE":
     case "1":
       return true
     case "OFF":
+    case "TURN_OFF":
     case "CLOSE":
     case "CLOSED":
     case "STOPPED":

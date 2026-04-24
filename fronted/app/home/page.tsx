@@ -1,16 +1,29 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ChangeEvent } from "react"
 import dynamic from "next/dynamic"
 import { AuthGuard } from "@/components/auth-guard"
 import { PlantModelViewer } from "@/components/PlantModelViewer"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { controlHomeDevice, getHomeRealtime, type HomeControlTarget, type HomeRealtimeData } from "@/lib/home-api"
 import { usePlantSelection } from "@/context/plant-selection"
 import {
   AlertTriangle,
   Fan,
+  ImageUp,
   Lightbulb,
   MapPin,
+  RefreshCw,
+  Sparkles,
   Trees,
 } from "lucide-react"
 
@@ -42,6 +55,27 @@ type GpsState = {
   loading: boolean
   error: boolean
 }
+
+const MODEL_PRESETS = [
+  {
+    id: "bloom",
+    name: "开花款",
+    description: "使用当前默认开花模型进行展示。",
+    modelPath: "/models/zhizihua.glb",
+  },
+  {
+    id: "dry",
+    name: "缺水款",
+    description: "切到偏缺水状态的展示模型。",
+    modelPath: "/models/kuwei.glb",
+  },
+  {
+    id: "tilt",
+    name: "倾斜款",
+    description: "切到倾斜告警状态的展示模型。",
+    modelPath: "/models/qingxie.glb",
+  },
+] as const
 
 function formatNumericValue(value: number | null | undefined, unit: string, digits = 1) {
   if (value === null || value === undefined) return "--"
@@ -176,6 +210,32 @@ function sortActivityLogs(logs: HomeRealtimeData["activityLogs"]) {
   })
 }
 
+function formatDeviceRuntimeStatus(value: string | null | undefined, isOn: boolean | null) {
+  if (isOn === true) return "\u5df2\u5f00\u542f"
+  if (isOn === false) return "\u5df2\u5173\u95ed"
+  if (!value) return "\u540c\u6b65\u4e2d"
+
+  switch (value.trim().toUpperCase()) {
+    case "ON":
+    case "TURN_ON":
+    case "OPEN":
+    case "RUNNING":
+    case "TRUE":
+    case "1":
+      return "\u5df2\u5f00\u542f"
+    case "OFF":
+    case "TURN_OFF":
+    case "CLOSE":
+    case "CLOSED":
+    case "STOPPED":
+    case "FALSE":
+    case "0":
+      return "\u5df2\u5173\u95ed"
+    default:
+      return value
+  }
+}
+
 function VerticalMetricBar({
   label,
   value,
@@ -227,15 +287,19 @@ function ControlLine({
   icon: Icon,
   label,
   isOn,
+  status,
   disabled,
   onToggle,
 }: {
   icon: typeof Fan
   label: string
   isOn: boolean | null
+  status: string | null | undefined
   disabled: boolean
   onToggle: () => void
 }) {
+  const statusLabel = formatDeviceRuntimeStatus(status, isOn)
+
   return (
     <button
       type="button"
@@ -246,16 +310,16 @@ function ControlLine({
       <span className="flex items-center gap-3">
         <Icon className={`h-5 w-5 ${isOn ? "text-emerald-700" : "text-stone-500"} ${label === "风扇" && isOn ? "animate-spin" : ""}`} />
         <span>
-          <span className="block text-sm uppercase tracking-[0.18em] text-stone-500">{label}</span>
-          <span className="mt-1 block text-lg font-light text-stone-800">
-            {isOn === null ? "\u540c\u6b65\u4e2d" : isOn ? "\u5df2\u5f00\u542f" : "\u5df2\u5173\u95ed"}
+            <span className="block text-sm uppercase tracking-[0.18em] text-stone-500">{label}</span>
+            <span className="mt-1 block text-lg font-light text-stone-800">
+              {statusLabel}
+            </span>
           </span>
         </span>
-      </span>
-      <span className={`text-xs uppercase tracking-[0.22em] ${isOn ? "text-emerald-700" : "text-stone-500"} group-hover:text-stone-900`}>
-        {isOn === null ? "--" : isOn ? "Turn Off" : "Turn On"}
-      </span>
-    </button>
+        <span className={`text-xs uppercase tracking-[0.22em] ${isOn ? "text-emerald-700" : "text-stone-500"} group-hover:text-stone-900`}>
+          {statusLabel}
+        </span>
+      </button>
   )
 }
 
@@ -271,6 +335,10 @@ export default function HomePage() {
     error: false,
   })
   const [, setPlantState] = useState<"healthy" | "happy" | "dark" | "thirsty" | "hot" | "cold" | "fallen">("healthy")
+  const [modelDialogOpen, setModelDialogOpen] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<(typeof MODEL_PRESETS)[number]["id"] | null>(null)
+  const [uploadedImageName, setUploadedImageName] = useState("")
+  const [uploadDemoReady, setUploadDemoReady] = useState(false)
 
   const plantApiId = currentPlant.plantId
 
@@ -401,7 +469,7 @@ export default function HomePage() {
   }
 
   const activityLogs = useMemo(() => sortActivityLogs(realtimeData?.activityLogs ?? []), [realtimeData?.activityLogs])
-  const plantModelPath = useMemo(() => {
+  const autoModelPath = useMemo(() => {
     const hasUnresolvedTiltLog = activityLogs.some(isUnresolvedTiltLog)
     if (hasUnresolvedTiltLog) return "/models/qingxie.glb"
 
@@ -412,6 +480,11 @@ export default function HomePage() {
 
     return hasEnvironmentStress ? "/models/kuwei.glb" : "/models/zhizihua.glb"
   }, [activityLogs, realtimeData?.environment.humidityStatus, realtimeData?.environment.lightStatus, realtimeData?.environment.temperatureStatus])
+  const selectedModelPreset = useMemo(
+    () => MODEL_PRESETS.find((preset) => preset.id === selectedModelId) ?? null,
+    [selectedModelId],
+  )
+  const plantModelPath = selectedModelPreset?.modelPath ?? autoModelPath
   const unresolvedCount = (realtimeData?.abnormal.count ?? 0) + (realtimeData?.tilt.count ?? 0)
   const resolvedCount = activityLogs.filter((log) => isResolvedLog(log.status)).length
   const totalAlertCount = Math.max(unresolvedCount + resolvedCount, 1)
@@ -426,6 +499,19 @@ export default function HomePage() {
   const infraredText = realtimeData?.infrared.currentDetected
     ? realtimeData.infrared.latestEventTitle || "检测到有人靠近植物"
     : realtimeData?.infrared.latestEventTitle || "当前未检测到红外活动"
+
+  const handleDemoUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    setUploadedImageName(file?.name || "")
+    setUploadDemoReady(false)
+  }
+
+  const handleFakeGenerate = () => {
+    if (!uploadedImageName) return
+    setSelectedModelId("bloom")
+    setUploadDemoReady(true)
+    window.location.reload()
+  }
 
   function toDMS(value: number | null | undefined, isLat = true) {
     if (value === null || value === undefined) return "--"
@@ -473,7 +559,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="relative mt-[15px] w-[86%] flex-1 rounded-[2.2rem] border border-stone-400/45 px-4 py-9 border border-white/40  bg-white/10 backdrop-blur-md shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+                <div className="relative mt-[15px] w-[86%] flex-1 px-4 py-9">
                   <div className="h-full flex flex-col justify-between">
                     <div className="grid grid-cols-3 place-items-center gap-4 h-full">
                       <VerticalMetricBar
@@ -504,7 +590,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className=" w-[86%] ">
-                  <div className="group rounded-[1.2rem] border border-white/45 bg-[linear-gradient(135deg,rgba(249,255,251,0.86),rgba(233,245,238,0.68))] px-4 py-3 shadow-[0_10px_24px_rgba(70,120,100,0.08)] transition-all duration-300 ease-out hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(70,120,100,0.14)]">
+                  <div className="group rounded-[1.2rem] border border-white/45 px-4 py-3 shadow-[0_10px_24px_rgba(70,120,100,0.08)] transition-all duration-300 ease-out hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(70,120,100,0.14)]">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-2">
                         <Trees className={`h-4 w-4 ${realtimeData?.infrared.currentDetected ? "text-emerald-700" : "text-stone-500"}`} />
@@ -523,7 +609,7 @@ export default function HomePage() {
               </section>
 
               <section className="flex h-full min-h-0 flex-col items-center justify-center">
-                <div className="mb-4 text-center" style={{ marginTop: '10px' }}>
+                <div className="mb-4 -translate-x-6 text-center" style={{ marginTop: '10px' }}>
                   <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Current Plant</p>
                   <div className="relative inline-block">
                     <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
@@ -531,12 +617,29 @@ export default function HomePage() {
                     </h1>
                   </div>
                 </div>
-                <div className="relative flex h-full min-h-0 w-full items-center justify-center">
-                  <div className="pointer-events-none absolute inset-x-[18%] top-[16%] h-28 rounded-full bg-white/45 blur-3xl" />
-                  <div className="pointer-events-none absolute inset-x-[22%] bottom-[12%] h-24 rounded-full bg-emerald-100/35 blur-3xl" />
-                  <div className="relative h-full min-h-0 w-full">
-                    <PlantModelViewer modelPath={plantModelPath} className="rounded-none" minimal />
+                <div className="relative flex h-full min-h-0 w-full items-center justify-center -translate-x-6">
+                  <div className="pointer-events-none absolute inset-x-[14%] top-[11%] h-32 rounded-full bg-white/60 blur-3xl" />
+                  <div className="pointer-events-none absolute inset-x-[16%] bottom-[9%] h-28 rounded-full bg-emerald-200/40 blur-3xl" />
+                  <div className="pointer-events-none absolute bottom-[7%] h-10 w-[58%] rounded-full bg-stone-900/10 blur-2xl" />
+                  <div className="relative flex aspect-square w-full max-w-[660px] items-center justify-center overflow-hidden rounded-[1.8rem] border border-white/18 bg-[linear-gradient(180deg,rgba(248,254,251,0.22)_0%,rgba(230,244,236,0.12)_100%)] shadow-[0_22px_54px_rgba(66,108,94,0.2)]">
+                    <div className="pointer-events-none absolute inset-0 rounded-[1.8rem] border border-white/35 blur-[2px]" />
+                    <div className="pointer-events-none absolute inset-x-[12%] top-[6%] h-12 rounded-full bg-white/70 blur-xl" />
+                    <PlantModelViewer modelPath={plantModelPath} className="rounded-[1.8rem]" minimal />
                   </div>
+                </div>
+                <div className="mt-5 flex w-full max-w-[28rem] flex-col items-center gap-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => setModelDialogOpen(true)}
+                      className="rounded-full bg-emerald-700 px-5 text-white shadow-[0_12px_32px_rgba(16,185,129,0.22)] hover:bg-emerald-800"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      换模型
+                    </Button>
+                    
+                  </div>
+                  
                 </div>
               </section>
 
@@ -613,6 +716,7 @@ export default function HomePage() {
                     icon={Lightbulb}
                     label="补光灯"
                     isOn={lightOn}
+                    status={realtimeData?.device.lightStatus}
                     disabled={controlPending !== null}
                     onToggle={() => void handleDeviceToggle("light", !(lightOn ?? false))}
                   />
@@ -620,6 +724,7 @@ export default function HomePage() {
                     icon={Fan}
                     label="风扇"
                     isOn={fanOn}
+                    status={realtimeData?.device.fanStatus}
                     disabled={controlPending !== null}
                     onToggle={() => void handleDeviceToggle("fan", !(fanOn ?? false))}
                   />
@@ -629,6 +734,62 @@ export default function HomePage() {
           </main>
         </div>
       </div>
+      <Dialog open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
+        <DialogContent className="max-w-xl rounded-[1.75rem] border-white/60 bg-[linear-gradient(180deg,rgba(247,252,249,0.98),rgba(232,244,238,0.96))] p-0 shadow-[0_24px_80px_rgba(40,80,60,0.18)]">
+          <div className="p-6 sm:p-7">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-stone-800">
+                <Sparkles className="h-5 w-5 text-emerald-700" />
+                上传图片生成 3D 模型
+              </DialogTitle>
+              <DialogDescription className="leading-6 text-stone-500">
+                这里是演示交互。可以根据用户上传图片生成3D模型，有开花款、缺水款和倾倒款。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-6 space-y-5">
+              <div className="rounded-[1.4rem] border border-emerald-100 bg-white/70 p-4">
+                <p className="text-sm font-medium text-stone-700">上传参考图</p>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleDemoUpload}
+                    className="h-11 rounded-full border-white/70 bg-white/80"
+                  />
+                  
+                </div>
+                <p className="mt-3 text-sm text-stone-500">
+                  {uploadedImageName
+                    ? `已选择图片：${uploadedImageName}`
+                    : "还没有选择图片，选一张图后可以触发演示按钮。"}
+                </p>
+                {uploadDemoReady ? (
+                  <p className="mt-2 text-sm text-emerald-700">
+                    演示结果已生成，当前已切换到展示模型。
+                  </p>
+                ) : null}
+              </div>
+
+              
+            </div>
+
+            <DialogFooter className="mt-6">
+              
+              <Button
+                type="button"
+                onClick={() => {
+                  setModelDialogOpen(false)
+                  window.location.reload()
+                }}
+                className="rounded-full bg-stone-900 text-white hover:bg-stone-800"
+              >
+                完成
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
       <style jsx global>{`
         .liquidColumn {
           animation: envColumnBreath 3.4s ease-in-out infinite;

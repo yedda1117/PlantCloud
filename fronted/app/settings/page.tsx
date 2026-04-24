@@ -6,15 +6,14 @@ import { AuthGuard } from "@/components/auth-guard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
-import { ApiError } from "@/lib/api-client"
-import { getDevicesStatus, type DevicesStatus } from "@/lib/device-api"
+import { getDevicesStatus, getIntegratedControlDeviceId, type DevicesStatus } from "@/lib/device-api"
 import { DEFAULT_PLANT_ID, getPlantApiId, getPlantOption, plantOptions, SELECTED_PLANT_STORAGE_KEY } from "@/lib/plants"
 import { usePlantSelection } from "@/context/plant-selection"
 import {
@@ -32,6 +31,7 @@ import { formatStrategyAction, formatStrategyCondition, resolveStrategyConfig } 
 import {
   AlertCircle,
   Bell,
+  CircleMinus,
   ChevronRight,
   CheckCircle,
   Clock,
@@ -50,6 +50,7 @@ import {
   Trash2,
   Wifi,
   Wind,
+  X,
   Zap,
 } from "lucide-react"
 
@@ -57,9 +58,11 @@ import {
 
 type PolicyLog = {
   id: string
+  strategyId: string
+  stateKey: string
   time: string
   message: string
-  type: "info" | "success" | "warning"
+  variant: "info" | "success" | "warning" | "status-enabled" | "status-disabled"
 }
 
 type StrategyFormState = {
@@ -70,7 +73,8 @@ type StrategyFormState = {
   timeLimitEnabled: boolean
   startTime: string
   endTime: string
-  actionType: "AUTO_LIGHT" | "AUTO_FAN" | "NOTIFY_USER"
+  actionType: "AUTO_LIGHT" | "AUTO_FAN"
+  actionValue: "ON" | "OFF"
 }
 
 type StrategySaveFeedback = {
@@ -111,7 +115,17 @@ const initialFormState: StrategyFormState = {
   startTime: "18:00",
   endTime: "22:00",
   actionType: "AUTO_LIGHT",
+  actionValue: "ON",
 }
+
+const strategyActionOptions = [
+  { value: "AUTO_LIGHT_ON", label: "开启补光灯", actionType: "AUTO_LIGHT", actionValue: "ON" },
+  { value: "AUTO_LIGHT_OFF", label: "关闭补光灯", actionType: "AUTO_LIGHT", actionValue: "OFF" },
+  { value: "AUTO_FAN_ON", label: "启动风扇", actionType: "AUTO_FAN", actionValue: "ON" },
+  { value: "AUTO_FAN_OFF", label: "关闭风扇", actionType: "AUTO_FAN", actionValue: "OFF" },
+] as const
+
+type StrategyActionSelectValue = (typeof strategyActionOptions)[number]["value"]
 
 // Mock device list: #1-#6 bound, #7-#8 available
 const MOCK_DEVICES = Array.from({ length: 8 }, (_, i) => ({
@@ -173,19 +187,58 @@ function getCurrentUserId() {
 
 // ─── Strategy helpers ─────────────────────────────────────────────────────────
 
+function resolveStrategyActionValue(value: string): Pick<StrategyFormState, "actionType" | "actionValue"> {
+  const option = strategyActionOptions.find((item) => item.value === value)
+  if (!option) {
+    return { actionType: "AUTO_LIGHT", actionValue: "ON" }
+  }
+  return { actionType: option.actionType, actionValue: option.actionValue }
+}
+
+function getStrategyActionSelectValue(actionType: string, actionValue?: string | null): StrategyActionSelectValue {
+  const normalizedActionValue = actionValue?.toUpperCase()
+  if (actionType === "AUTO_LIGHT") {
+    return normalizedActionValue === "OFF" ? "AUTO_LIGHT_OFF" : "AUTO_LIGHT_ON"
+  }
+  if (actionType === "AUTO_FAN") {
+    return normalizedActionValue === "OFF" ? "AUTO_FAN_OFF" : "AUTO_FAN_ON"
+  }
+  return "AUTO_LIGHT_ON"
+}
+
+function getStrategyFormActionSelectValue(form: StrategyFormState): StrategyActionSelectValue {
+  return getStrategyActionSelectValue(form.actionType, form.actionValue)
+}
+
+function buildStrategyFormFromItem(strategy: StrategyItem): StrategyFormState {
+  const config = resolveStrategyConfig(strategy)
+  const action = resolveStrategyActionValue(getStrategyActionSelectValue(strategy.actionType, strategy.actionValue))
+  return {
+    strategyName: strategy.strategyName ?? "",
+    metricType: strategy.metricType === "TEMPERATURE" || strategy.metricType === "HUMIDITY" ? strategy.metricType : "LIGHT",
+    operatorType: strategy.operatorType === "GT" || strategy.operatorType === "EQ" ? strategy.operatorType : "LT",
+    thresholdMin: String(strategy.thresholdMin ?? strategy.thresholdMax ?? ""),
+    timeLimitEnabled: Boolean(config.timeLimitEnabled),
+    startTime: config.startTime ?? "18:00",
+    endTime: config.endTime ?? "22:00",
+    ...action,
+  }
+}
+
+function buildThresholdPayload(form: StrategyFormState) {
+  const threshold = Number(form.thresholdMin)
+  return {
+    thresholdMin: form.operatorType === "LT" ? null : threshold,
+    thresholdMax: form.operatorType === "LT" ? threshold : null,
+  }
+}
+
 function buildCreatePayload(
   form: StrategyFormState,
   plantId: number,
   userId: string | undefined,
-  devicesStatus: DevicesStatus | null,
+  targetDeviceId: string | null,
 ): StrategyUpsertPayload {
-  const targetDeviceId =
-    form.actionType === "AUTO_LIGHT"
-      ? devicesStatus?.light?.deviceId != null ? String(devicesStatus.light.deviceId) : null
-      : form.actionType === "AUTO_FAN"
-        ? devicesStatus?.fan?.deviceId != null ? String(devicesStatus.fan.deviceId) : null
-        : null
-
   return {
     plantId: String(plantId),
     createdBy: userId,
@@ -193,15 +246,46 @@ function buildCreatePayload(
     strategyType: "CONDITION",
     metricType: form.metricType,
     operatorType: form.operatorType,
-    thresholdMin: Number(form.thresholdMin),
+    ...buildThresholdPayload(form),
     actionType: form.actionType,
-    actionValue: form.actionType === "AUTO_LIGHT" ? "ON" : form.actionType === "AUTO_FAN" ? "HIGH" : "INFO",
+    actionValue: form.actionValue,
     targetDeviceId,
     enabled: true,
     priority: 10,
     timeLimitEnabled: form.timeLimitEnabled,
     startTime: form.timeLimitEnabled ? form.startTime : null,
     endTime: form.timeLimitEnabled ? form.endTime : null,
+    configJson: {
+      timeLimitEnabled: form.timeLimitEnabled,
+      ...(form.timeLimitEnabled ? { startTime: form.startTime, endTime: form.endTime } : {}),
+    },
+  }
+}
+
+function buildEditPayload(
+  strategy: StrategyItem,
+  form: StrategyFormState,
+  targetDeviceId: string | null,
+): StrategyUpsertPayload {
+  return {
+    plantId: strategy.plantId,
+    createdBy: strategy.createdBy,
+    strategyName: form.strategyName.trim(),
+    strategyType: "CONDITION",
+    targetDeviceId,
+    metricType: form.metricType,
+    operatorType: form.operatorType,
+    ...buildThresholdPayload(form),
+    cronExpr: null,
+    actionType: form.actionType,
+    actionValue: form.actionValue,
+    enabled: strategy.enabled,
+    priority: strategy.priority ?? 10,
+    timeLimitEnabled: form.timeLimitEnabled,
+    startTime: form.timeLimitEnabled ? form.startTime : null,
+    endTime: form.timeLimitEnabled ? form.endTime : null,
+    notifyTitleTemplate: null,
+    notifyContentTemplate: null,
     configJson: {
       timeLimitEnabled: form.timeLimitEnabled,
       ...(form.timeLimitEnabled ? { startTime: form.startTime, endTime: form.endTime } : {}),
@@ -241,44 +325,26 @@ function buildUpdatePayload(strategy: StrategyItem, enabled: boolean): StrategyU
   }
 }
 
-function validateStrategyForm(form: StrategyFormState, devicesStatus: DevicesStatus | null, userId: string | undefined) {
-  if (!userId) return "当前登录信息缺少 userId，无法满足后端 createdBy 要求，请重新登录后再试"
+function validateStrategyForm(
+  form: StrategyFormState,
+  userId: string | undefined,
+  requireUserId: boolean,
+  targetDeviceId?: string | number | null,
+) {
+  if (requireUserId && !userId) return "当前登录信息缺少 userId，无法满足后端 createdBy 要求，请重新登录后再试"
   if (!form.strategyName.trim()) return "请输入策略名称"
   if (!form.thresholdMin.trim() || Number.isNaN(Number(form.thresholdMin))) return "请输入有效的触发阈值"
   if (form.timeLimitEnabled && (!form.startTime || !form.endTime)) return "请完整填写时间范围"
-  if (form.actionType === "AUTO_LIGHT" && !devicesStatus?.light?.deviceId) return "当前未获取到补光灯设备，暂时无法创建补光策略"
-  if (form.actionType === "AUTO_FAN" && !devicesStatus?.fan?.deviceId) return "当前未获取到风扇设备，暂时无法创建风扇策略"
+  if ((form.actionType === "AUTO_LIGHT" || form.actionType === "AUTO_FAN") && targetDeviceId == null) {
+    return "当前未获取到 E53IA1 一体化控制设备，暂时无法保存自动控制策略"
+  }
   return null
-}
-
-function findPotentialNotifyConflict(strategies: StrategyItem[], form: StrategyFormState) {
-  if (form.actionType !== "NOTIFY_USER") return null
-  return (
-    strategies.find(
-      (s) => s.enabled && s.strategyType === "CONDITION" && s.actionType === "NOTIFY_USER" && s.metricType === form.metricType,
-    ) ?? null
-  )
 }
 
 function buildFriendlyStrategySaveFeedback(
   error: unknown,
-  payload: StrategyUpsertPayload,
-  potentialConflict?: StrategyItem | null,
 ): StrategySaveFeedback {
   const message = error instanceof Error ? error.message : "保存策略失败，请稍后重试。"
-  if (payload.actionType === "NOTIFY_USER") {
-    const isConflict =
-      (error instanceof ApiError && error.status === 409) ||
-      message.includes("冲突") ||
-      message.includes("已启用策略")
-    if (isConflict) {
-      const conflictName = potentialConflict?.strategyName ? `"${potentialConflict.strategyName}"` : "现有启用中的同类通知策略"
-      return {
-        title: "通知用户策略可能冲突",
-        description: `当前"通知用户"策略很可能与 ${conflictName} 冲突，后端已拒绝保存。后端返回：${message}`,
-      }
-    }
-  }
   return { title: "保存策略失败", description: message }
 }
 
@@ -339,25 +405,45 @@ function getStrategyStatusClass(enabled: boolean) {
     : "border-emerald-200/45 bg-white/60 text-emerald-800/65"
 }
 
-function getLogTypeMeta(type: PolicyLog["type"]) {
-  if (type === "warning") {
+function getLogVariantMeta(variant: PolicyLog["variant"]) {
+  const defaultCardClassName = "border-emerald-100/75 bg-emerald-50/72 hover:border-emerald-200/80 hover:bg-emerald-50/90 hover:shadow-[0_14px_30px_rgba(16,185,129,0.12)]"
+  if (variant === "warning") {
     return {
       icon: AlertCircle,
-      className: "border-amber-300/45 bg-white/70 text-amber-700",
+      className: defaultCardClassName,
       iconClassName: "text-amber-500",
+      timeClassName: "text-amber-800/60",
+      timeTextClassName: "text-amber-900/55",
+      textClassName: "text-amber-700/90",
     }
   }
-  if (type === "success") {
+  if (variant === "status-disabled") {
+    return {
+      icon: CircleMinus,
+      className: "border-[#d7ead8]/58 bg-[linear-gradient(135deg,rgba(247,252,245,0.62),rgba(231,245,235,0.44))] shadow-[0_8px_20px_rgba(102,153,113,0.08),inset_0_1px_0_rgba(255,255,255,0.52)] backdrop-blur-[10px] hover:border-[#cce4cd]/72 hover:bg-[linear-gradient(135deg,rgba(248,253,246,0.72),rgba(234,247,238,0.54))] hover:shadow-[0_12px_24px_rgba(102,153,113,0.10),inset_0_1px_0_rgba(255,255,255,0.6)]",
+      iconClassName: "text-[#71967a]/88",
+      timeClassName: "text-[#7da186]/76",
+      timeTextClassName: "text-[#6e9174]/74",
+      textClassName: "text-[#5f7d66]/94",
+    }
+  }
+  if (variant === "success" || variant === "status-enabled") {
     return {
       icon: CheckCircle,
-      className: "border-emerald-300/45 bg-white/72 text-emerald-700",
+      className: defaultCardClassName,
       iconClassName: "text-emerald-500",
+      timeClassName: "text-emerald-800/60",
+      timeTextClassName: "text-emerald-900/55",
+      textClassName: "text-emerald-800/90",
     }
   }
   return {
     icon: Zap,
-    className: "border-cyan-300/45 bg-white/72 text-cyan-700",
+    className: defaultCardClassName,
     iconClassName: "text-cyan-500",
+    timeClassName: "text-cyan-800/60",
+    timeTextClassName: "text-cyan-900/55",
+    textClassName: "text-emerald-950/80",
   }
 }
 
@@ -365,106 +451,143 @@ function getLogTypeMeta(type: PolicyLog["type"]) {
 
 function StrategyDialog({
   open,
+  title,
   form,
   submitting,
   submitError,
-  notifyConflictHint,
   onClose,
   onChange,
   onSubmit,
 }: {
   open: boolean
+  title: string
   form: StrategyFormState
   submitting: boolean
   submitError: string | null
-  notifyConflictHint: string | null
   onClose: () => void
   onChange: (patch: Partial<StrategyFormState>) => void
   onSubmit: () => void
 }) {
+  const fieldClass =
+    "h-11 rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] placeholder:text-emerald-900/50 focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
+  const selectTriggerClass =
+    "h-11 w-full rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
+  const selectContentClass =
+    "overflow-hidden rounded-[1.25rem] border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(248,255,246,0.98),rgba(226,247,234,0.96))] text-emerald-950 shadow-[0_22px_54px_rgba(73,128,98,0.2),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl"
+  const selectItemClass =
+    "rounded-xl px-3 py-2.5 text-emerald-950/82 transition-colors focus:bg-emerald-100/78 focus:text-emerald-950 data-[state=checked]:bg-emerald-100 data-[state=checked]:text-emerald-900 data-[disabled]:text-emerald-900/36 data-[disabled]:opacity-60"
+  const groupClass =
+    "rounded-[1.45rem] border border-emerald-200/90 bg-white/58 p-4 shadow-[0_16px_36px_rgba(16,185,129,0.11)] backdrop-blur-xl"
+  const labelClass = "mb-1.5 block text-xs font-semibold text-emerald-900/74"
+
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-w-lg overflow-hidden border border-emerald-300/20 bg-[linear-gradient(180deg,rgba(11,24,28,0.96),rgba(6,14,18,0.98))] text-white shadow-[0_32px_80px_rgba(0,0,0,0.52),0_0_48px_rgba(16,185,129,0.14)] backdrop-blur-3xl">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.16),transparent_32%)]" />
-        <DialogHeader className="relative">
-          <DialogTitle className="text-xl font-semibold tracking-[0.03em] text-white">新建策略</DialogTitle>
-        </DialogHeader>
-        <div className="relative space-y-4 py-2">
-          {notifyConflictHint ? (
-            <div className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
-              {notifyConflictHint}
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden rounded-[2rem] border border-white/65 bg-[linear-gradient(180deg,rgba(248,255,246,0.99),rgba(218,245,228,0.97))] p-0 text-emerald-950 shadow-[0_30px_90px_rgba(73,128,98,0.28),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-3xl"
+        style={{ display: "flex" }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(236,253,245,0.9),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(187,247,208,0.48),transparent_32%)]" />
+        <DialogHeader className="relative shrink-0 border-b border-emerald-900/16 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/75 bg-white/68 text-emerald-800 shadow-[0_14px_28px_rgba(16,185,129,0.16)]">
+                <Zap className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-semibold tracking-[0.02em] text-emerald-950">{title}</DialogTitle>
+                <p className="mt-1.5 text-sm leading-6 text-emerald-900/70">配置触发条件、时间范围与自动执行动作。</p>
+              </div>
             </div>
-          ) : null}
+            <DialogClose className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-300/75 bg-white/68 text-emerald-800 shadow-[0_12px_24px_rgba(16,185,129,0.16)] transition-all hover:-translate-y-0.5 hover:bg-white/86 hover:text-emerald-950 active:translate-y-0 active:scale-95" aria-label="关闭弹窗">
+              <X className="h-4 w-4" />
+            </DialogClose>
+          </div>
+        </DialogHeader>
+        <div className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
           {submitError ? (
-            <div className="rounded-2xl border border-rose-300/20 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">
+            <div className="rounded-2xl border border-rose-200/70 bg-rose-50/78 px-3 py-2 text-sm text-rose-600">
               {submitError}
             </div>
           ) : null}
-          <div>
-            <label className="text-sm text-white/55">策略名称</label>
+          <div className={groupClass}>
+            <p className="mb-3 text-sm font-semibold text-emerald-950">基础信息</p>
+            <label className={labelClass}>策略名称</label>
             <Input
-              className="mt-1 border-white/10 bg-white/5 text-white placeholder:text-white/28"
+              className={fieldClass}
               placeholder="例如：光照不足自动补光"
               value={form.strategyName}
               onChange={(e) => onChange({ strategyName: e.target.value })}
             />
           </div>
-          <Separator />
-          <p className="text-sm font-medium text-white/85">触发条件</p>
-          <div className="grid grid-cols-3 gap-2">
-            <Select value={form.metricType} onValueChange={(v) => onChange({ metricType: v as StrategyFormState["metricType"] })}>
-              <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="LIGHT">光照强度</SelectItem>
-                <SelectItem value="TEMPERATURE">温度</SelectItem>
-                <SelectItem value="HUMIDITY">湿度</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={form.operatorType} onValueChange={(v) => onChange({ operatorType: v as StrategyFormState["operatorType"] })}>
-              <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="LT">小于</SelectItem>
-                <SelectItem value="GT">大于</SelectItem>
-                <SelectItem value="EQ">等于</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input className="border-white/10 bg-white/5 text-white placeholder:text-white/28" placeholder="阈值" value={form.thresholdMin} onChange={(e) => onChange({ thresholdMin: e.target.value })} />
+          <div className={groupClass}>
+            <p className="mb-3 text-sm font-semibold text-emerald-950">触发条件</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className={labelClass}>指标</label>
+                <Select value={form.metricType} onValueChange={(v) => onChange({ metricType: v as StrategyFormState["metricType"] })}>
+                  <SelectTrigger className={selectTriggerClass}><SelectValue /></SelectTrigger>
+                  <SelectContent className={selectContentClass}>
+                    <SelectItem className={selectItemClass} value="LIGHT">光照强度</SelectItem>
+                    <SelectItem className={selectItemClass} value="TEMPERATURE">温度</SelectItem>
+                    <SelectItem className={selectItemClass} value="HUMIDITY">湿度</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className={labelClass}>判断条件</label>
+                <Select value={form.operatorType} onValueChange={(v) => onChange({ operatorType: v as StrategyFormState["operatorType"] })}>
+                  <SelectTrigger className={selectTriggerClass}><SelectValue /></SelectTrigger>
+                  <SelectContent className={selectContentClass}>
+                    <SelectItem className={selectItemClass} value="LT">小于</SelectItem>
+                    <SelectItem className={selectItemClass} value="GT">大于</SelectItem>
+                    <SelectItem className={selectItemClass} value="EQ">等于</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className={labelClass}>阈值</label>
+                <Input className={fieldClass} placeholder="阈值" value={form.thresholdMin} onChange={(e) => onChange({ thresholdMin: e.target.value })} />
+              </div>
+            </div>
           </div>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 p-3">
+          <div className={groupClass}>
+            <p className="mb-3 text-sm font-semibold text-emerald-950">附加条件</p>
+            <div className="flex items-center justify-between rounded-2xl border border-emerald-200/85 bg-white/62 p-3">
               <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-emerald-300" />
-                <span className="text-sm font-medium text-white/82">限制时间范围</span>
+                <Clock className="h-4 w-4 text-emerald-600" />
+                <span className="text-sm font-medium text-emerald-950/82">限制时间范围</span>
               </div>
               <Switch checked={form.timeLimitEnabled} onCheckedChange={(checked) => onChange({ timeLimitEnabled: checked })} />
             </div>
             {form.timeLimitEnabled ? (
-              <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="mt-3 grid grid-cols-2 gap-3 rounded-2xl border border-emerald-200/85 bg-white/62 p-4">
                 <div>
-                  <label className="mb-1.5 block text-xs text-white/45">开始时间</label>
-                  <Input type="time" className="border-white/10 bg-white/5 font-mono text-white" value={form.startTime} onChange={(e) => onChange({ startTime: e.target.value })} />
+                  <label className={labelClass}>开始时间</label>
+                  <Input type="time" className={`${fieldClass} font-mono`} value={form.startTime} onChange={(e) => onChange({ startTime: e.target.value })} />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs text-white/45">结束时间</label>
-                  <Input type="time" className="border-white/10 bg-white/5 font-mono text-white" value={form.endTime} onChange={(e) => onChange({ endTime: e.target.value })} />
+                  <label className={labelClass}>结束时间</label>
+                  <Input type="time" className={`${fieldClass} font-mono`} value={form.endTime} onChange={(e) => onChange({ endTime: e.target.value })} />
                 </div>
               </div>
             ) : null}
           </div>
-          <Separator />
-          <p className="text-sm font-medium text-white/85">执行动作</p>
-          <Select value={form.actionType} onValueChange={(v) => onChange({ actionType: v as StrategyFormState["actionType"] })}>
-            <SelectTrigger className="border-white/10 bg-white/5 text-white"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="AUTO_LIGHT">开启补光灯</SelectItem>
-              <SelectItem value="AUTO_FAN">启动风扇</SelectItem>
-              <SelectItem value="NOTIFY_USER">通知用户</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className={groupClass}>
+            <p className="mb-3 text-sm font-semibold text-emerald-950">执行动作</p>
+            <Select value={getStrategyFormActionSelectValue(form)} onValueChange={(v) => onChange(resolveStrategyActionValue(v))}>
+              <SelectTrigger className={selectTriggerClass}><SelectValue /></SelectTrigger>
+              <SelectContent className={selectContentClass}>
+                {strategyActionOptions.map((option) => (
+                  <SelectItem className={selectItemClass} key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <DialogFooter className="relative gap-3 border-t border-white/10 pt-5">
-          <Button variant="outline" className="rounded-full border-white/12 bg-white/5 text-white/78 hover:border-white/20 hover:bg-white/10 hover:text-white" onClick={onClose} disabled={submitting}>取消</Button>
-          <Button className="rounded-full border border-emerald-300/20 bg-emerald-400/12 text-emerald-50 shadow-[0_0_22px_rgba(16,185,129,0.18)] hover:bg-emerald-400/20" onClick={onSubmit} disabled={submitting}>{submitting ? "提交中..." : "保存"}</Button>
+        <DialogFooter className="relative shrink-0 border-t border-emerald-900/16 bg-white/46 px-6 py-5">
+          <Button variant="outline" className="h-10 rounded-full border-emerald-300/75 bg-white/74 px-5 text-emerald-900 shadow-[0_8px_18px_rgba(16,185,129,0.08)] hover:border-emerald-400/70 hover:bg-white/92 hover:text-emerald-950" onClick={onClose} disabled={submitting}>取消</Button>
+          <Button className="h-10 rounded-full border border-emerald-400/55 bg-emerald-600 px-6 text-white shadow-[0_14px_30px_rgba(16,185,129,0.26)] hover:bg-emerald-700" onClick={onSubmit} disabled={submitting}>{submitting ? "提交中..." : "保存"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -477,11 +600,13 @@ function StrategyDetailDialog({
   strategy,
   devicesStatus,
   onClose,
+  onEdit,
   onDelete,
 }: {
   strategy: StrategyItem | null
   devicesStatus: DevicesStatus | null
   onClose: () => void
+  onEdit: (strategy: StrategyItem) => void
   onDelete: (strategy: StrategyItem) => void
 }) {
   const open = strategy !== null
@@ -551,6 +676,13 @@ function StrategyDetailDialog({
                 <Button
                   variant="outline"
                   className="rounded-full border-emerald-300/40 bg-white/60 px-5 text-emerald-800 hover:border-emerald-400/55 hover:bg-white/85 hover:text-emerald-950"
+                  onClick={() => onEdit(strategy)}
+                >
+                  编辑策略
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-full border-emerald-300/40 bg-white/60 px-5 text-emerald-800 hover:border-emerald-400/55 hover:bg-white/85 hover:text-emerald-950"
                   onClick={onClose}
                 >
                   关闭
@@ -608,6 +740,18 @@ function EditPlantModal({
   const [error, setError] = useState<string | null>(null)
 
   const patch = (p: Partial<EditPlantFormState>) => setForm((f) => ({ ...f, ...p }))
+  const fieldClass =
+    "h-11 rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] placeholder:text-emerald-900/50 focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
+  const sectionClass =
+    "rounded-[1.45rem] border border-emerald-200/90 bg-white/58 p-4 shadow-[0_16px_36px_rgba(16,185,129,0.11)] backdrop-blur-xl"
+  const labelClass = "mb-1.5 block text-xs font-semibold text-emerald-900/74"
+  const metricCardClass = "rounded-[1.2rem] border border-emerald-200/85 bg-white/62 p-4"
+  const sliderClass =
+    "[&_[data-slot=slider-range]]:bg-emerald-500/80 [&_[data-slot=slider-thumb]]:border-emerald-500 [&_[data-slot=slider-thumb]]:shadow-[0_4px_12px_rgba(16,185,129,0.22)] [&_[data-slot=slider-thumb]]:hover:ring-emerald-200/70 [&_[data-slot=slider-thumb]]:focus-visible:ring-emerald-200/70 [&_[data-slot=slider-track]]:bg-emerald-100/90"
+  const secondaryButtonClass =
+    "h-10 rounded-full border-emerald-300/75 bg-white/74 px-5 text-emerald-900 shadow-[0_8px_18px_rgba(16,185,129,0.08)] hover:border-emerald-400/70 hover:bg-white/92 hover:text-emerald-950"
+  const primaryButtonClass =
+    "h-10 rounded-full border border-emerald-400/55 bg-emerald-600 px-6 text-white shadow-[0_14px_30px_rgba(16,185,129,0.26)] hover:bg-emerald-700"
 
   useEffect(() => {
     if (!open || !plantId) return
@@ -685,94 +829,116 @@ function EditPlantModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Pencil className="h-5 w-5 text-primary" />
-            编辑植物配置
-          </DialogTitle>
-          <p className="text-sm font-semibold text-primary pt-1">{plantName}</p>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden rounded-[2rem] border border-white/65 bg-[linear-gradient(180deg,rgba(248,255,246,0.99),rgba(218,245,228,0.97))] p-0 text-emerald-950 shadow-[0_30px_90px_rgba(73,128,98,0.28),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-3xl"
+        style={{ display: "flex" }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(236,253,245,0.9),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(187,247,208,0.48),transparent_32%)]" />
+        <DialogHeader className="relative shrink-0 border-b border-emerald-900/16 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/75 bg-white/68 text-emerald-800 shadow-[0_14px_28px_rgba(16,185,129,0.16)]">
+                <Pencil className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-semibold tracking-[0.02em] text-emerald-950">编辑植物配置</DialogTitle>
+                <p className="mt-1.5 text-sm leading-6 text-emerald-900/70">调整 {plantName} 的环境阈值与敏感度参数。</p>
+              </div>
+            </div>
+            <DialogClose className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-300/75 bg-white/68 text-emerald-800 shadow-[0_12px_24px_rgba(16,185,129,0.16)] transition-all hover:-translate-y-0.5 hover:bg-white/86 hover:text-emerald-950 active:translate-y-0 active:scale-95" aria-label="关闭弹窗">
+              <X className="h-4 w-4" />
+            </DialogClose>
+          </div>
         </DialogHeader>
 
-        {error ? (
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        ) : null}
+        <div className="relative min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          {error ? (
+            <div className="rounded-2xl border border-rose-200/70 bg-rose-50/78 px-3 py-2 text-sm text-rose-600">
+              {error}
+            </div>
+          ) : null}
 
-        {loading ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">正在加载配置...</div>
-        ) : (
-          <div className="space-y-5 py-2">
-            <div>
-              <p className="mb-3 text-sm font-medium">环境阈值设置</p>
-              <div className="space-y-4">
-                <div className="space-y-2">
+          {loading ? (
+            <div className="rounded-[1.45rem] border border-emerald-200/90 bg-white/58 px-4 py-12 text-center text-sm text-emerald-900/70 shadow-[0_16px_36px_rgba(16,185,129,0.11)]">
+              正在加载配置...
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className={sectionClass}>
+                <p className="mb-3 text-sm font-semibold text-emerald-950">基础信息</p>
+                <div className="rounded-[1.2rem] border border-emerald-200/85 bg-white/62 p-4">
+                  <p className="text-xs font-semibold text-emerald-900/66">植物名称</p>
+                  <p className="mt-2 text-sm font-medium text-emerald-950">{plantName}</p>
+                </div>
+              </div>
+
+              <div className={sectionClass}>
+                <p className="mb-3 text-sm font-semibold text-emerald-950">环境阈值设置</p>
+                <div className="space-y-3">
+                  <div className={`${metricCardClass} space-y-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Thermometer className="h-4 w-4 text-orange-500" />
-                      <span className="text-sm font-medium">温度范围</span>
+                        <span className="text-sm font-medium text-emerald-950/82">温度范围</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
+                      <span className="text-sm text-emerald-900/70">
                       {form.tempRange[0]}°C – {form.tempRange[1]}°C
                     </span>
                   </div>
-                  <Slider value={form.tempRange} min={0} max={50} step={1} onValueChange={(v) => patch({ tempRange: v as [number, number] })} />
+                    <Slider className={sliderClass} value={form.tempRange} min={0} max={50} step={1} onValueChange={(v) => patch({ tempRange: v as [number, number] })} />
                 </div>
-                <Separator />
-                <div className="space-y-2">
+                  <div className={`${metricCardClass} space-y-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Droplets className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm font-medium">湿度范围</span>
+                        <span className="text-sm font-medium text-emerald-950/82">湿度范围</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
+                      <span className="text-sm text-emerald-900/70">
                       {form.humidityRange[0]}% – {form.humidityRange[1]}%
                     </span>
                   </div>
-                  <Slider value={form.humidityRange} min={0} max={100} step={1} onValueChange={(v) => patch({ humidityRange: v as [number, number] })} />
+                    <Slider className={sliderClass} value={form.humidityRange} min={0} max={100} step={1} onValueChange={(v) => patch({ humidityRange: v as [number, number] })} />
                 </div>
-                <Separator />
-                <div className="space-y-2">
+                  <div className={`${metricCardClass} space-y-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Sun className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm font-medium">光照范围</span>
+                        <span className="text-sm font-medium text-emerald-950/82">光照范围</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
+                      <span className="text-sm text-emerald-900/70">
                       {form.lightRange[0].toLocaleString()} – {form.lightRange[1].toLocaleString()} lux
                     </span>
                   </div>
-                  <Slider value={form.lightRange} min={0} max={50000} step={100} onValueChange={(v) => patch({ lightRange: v as [number, number] })} />
+                    <Slider className={sliderClass} value={form.lightRange} min={0} max={50000} step={100} onValueChange={(v) => patch({ lightRange: v as [number, number] })} />
+                  </div>
+                </div>
+              </div>
+
+              <div className={sectionClass}>
+                <p className="mb-3 text-sm font-semibold text-emerald-950">敏感度参数</p>
+                <div className="grid grid-cols-3 gap-3">
+                <div>
+                    <label className={labelClass}>温度敏感度</label>
+                    <Input className={fieldClass} type="number" min={0} max={1} step={0.1} value={form.tempRiseSensitive} onChange={(e) => patch({ tempRiseSensitive: Number(e.target.value) })} />
+                </div>
+                <div>
+                    <label className={labelClass}>湿度敏感度</label>
+                    <Input className={fieldClass} type="number" min={0} max={1} step={0.1} value={form.humidityDropSensitive} onChange={(e) => patch({ humidityDropSensitive: Number(e.target.value) })} />
+                </div>
+                <div>
+                    <label className={labelClass}>光照敏感度</label>
+                    <Input className={fieldClass} type="number" min={0} max={1} step={0.1} value={form.lightRiseSensitive} onChange={(e) => patch({ lightRiseSensitive: Number(e.target.value) })} />
+                  </div>
                 </div>
               </div>
             </div>
+          )}
+        </div>
 
-            <Separator />
-
-            <div>
-              <p className="mb-3 text-sm font-medium">敏感度</p>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">温度敏感度</label>
-                  <Input type="number" min={0} max={1} step={0.1} value={form.tempRiseSensitive} onChange={(e) => patch({ tempRiseSensitive: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">湿度敏感度</label>
-                  <Input type="number" min={0} max={1} step={0.1} value={form.humidityDropSensitive} onChange={(e) => patch({ humidityDropSensitive: Number(e.target.value) })} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">光照敏感度</label>
-                  <Input type="number" min={0} max={1} step={0.1} value={form.lightRiseSensitive} onChange={(e) => patch({ lightRiseSensitive: Number(e.target.value) })} />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={submitting || loading}>取消</Button>
-          <Button onClick={handleSubmit} disabled={submitting || loading}>
+        <DialogFooter className="relative shrink-0 border-t border-emerald-900/16 bg-white/46 px-6 py-5">
+          <Button variant="outline" className={secondaryButtonClass} onClick={handleClose} disabled={submitting || loading}>取消</Button>
+          <Button className={primaryButtonClass} onClick={handleSubmit} disabled={submitting || loading}>
             {submitting ? "提交中..." : "提交"}
           </Button>
         </DialogFooter>
@@ -941,69 +1107,102 @@ function AddPlantModal({
   }
 
   const careLevelColor =
-    form.careLevel === "easy" ? "bg-green-100 text-green-700" :
-    form.careLevel === "medium" ? "bg-yellow-100 text-yellow-700" :
-    "bg-red-100 text-red-700"
+    form.careLevel === "easy" ? "border-emerald-300/75 bg-emerald-50/95 text-emerald-800" :
+    form.careLevel === "medium" ? "border-lime-300/75 bg-lime-50/95 text-lime-800" :
+    "border-rose-300/75 bg-rose-50/95 text-rose-700"
+
+  const fieldClass =
+    "h-11 rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] placeholder:text-emerald-900/50 focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
+  const selectTriggerClass =
+    "h-11 w-full rounded-2xl border-emerald-300/75 bg-white/74 text-emerald-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.82)] focus-visible:border-emerald-500/70 focus-visible:ring-emerald-400/30"
+  const selectContentClass =
+    "overflow-hidden rounded-[1.25rem] border border-emerald-200/85 bg-[linear-gradient(180deg,rgba(248,255,246,0.98),rgba(226,247,234,0.96))] text-emerald-950 shadow-[0_22px_54px_rgba(73,128,98,0.2),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl"
+  const selectItemClass =
+    "rounded-xl px-3 py-2.5 text-emerald-950/82 transition-colors focus:bg-emerald-100/78 focus:text-emerald-950 data-[state=checked]:bg-emerald-100 data-[state=checked]:text-emerald-900 data-[disabled]:text-emerald-900/36 data-[disabled]:opacity-60"
+  const sectionClass =
+    "rounded-[1.45rem] border border-emerald-200/90 bg-white/58 p-4 shadow-[0_16px_36px_rgba(16,185,129,0.11)] backdrop-blur-xl"
+  const labelClass = "mb-1.5 block text-xs font-semibold text-emerald-900/74"
+  const secondaryButtonClass =
+    "h-10 rounded-full border-emerald-300/75 bg-white/74 px-5 text-emerald-900 shadow-[0_8px_18px_rgba(16,185,129,0.08)] hover:border-emerald-400/70 hover:bg-white/92 hover:text-emerald-950"
+  const primaryButtonClass =
+    "h-10 rounded-full border border-emerald-400/55 bg-emerald-600 px-6 text-white shadow-[0_14px_30px_rgba(16,185,129,0.26)] hover:bg-emerald-700"
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Leaf className="h-5 w-5 text-primary" />
-            新增植物
-          </DialogTitle>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[90vh] max-w-2xl flex-col gap-0 overflow-hidden rounded-[2rem] border border-white/65 bg-[linear-gradient(180deg,rgba(248,255,246,0.99),rgba(218,245,228,0.97))] p-0 text-emerald-950 shadow-[0_30px_90px_rgba(73,128,98,0.28),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-3xl"
+        style={{ display: "flex" }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(236,253,245,0.9),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(187,247,208,0.48),transparent_32%)]" />
+        <DialogHeader className="relative shrink-0 border-b border-emerald-900/16 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/75 bg-white/68 text-emerald-800 shadow-[0_14px_28px_rgba(16,185,129,0.16)]">
+                <Leaf className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-xl font-semibold tracking-[0.02em] text-emerald-950">新增植物</DialogTitle>
+                <p className="mt-1.5 text-sm leading-6 text-emerald-900/70">绑定设备并确认 AI 生成的养护参数。</p>
+              </div>
+            </div>
+            <DialogClose className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-300/75 bg-white/68 text-emerald-800 shadow-[0_12px_24px_rgba(16,185,129,0.16)] transition-all hover:-translate-y-0.5 hover:bg-white/86 hover:text-emerald-950 active:translate-y-0 active:scale-95" aria-label="关闭弹窗">
+              <X className="h-4 w-4" />
+            </DialogClose>
+          </div>
           {/* Step indicator */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="mt-5 flex items-center gap-2">
             {([1, 2, 3] as const).map((s) => (
               <div key={s} className="flex items-center gap-1">
                 <div
-                  className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium transition-colors ${
-                    step === s ? "bg-primary text-primary-foreground" :
-                    step > s ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"
+                  className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold shadow-sm transition-all ${
+                    step === s ? "border-emerald-400 bg-emerald-600 text-white shadow-[0_10px_20px_rgba(16,185,129,0.24)]" :
+                    step > s ? "border-emerald-300/85 bg-emerald-100/95 text-emerald-800" : "border-emerald-200/85 bg-white/62 text-emerald-900/52"
                   }`}
                 >
                   {step > s ? "✓" : s}
                 </div>
-                {s < 3 && <div className={`h-px w-8 ${step > s ? "bg-green-500" : "bg-muted"}`} />}
+                {s < 3 && <div className={`h-px w-9 ${step > s ? "bg-emerald-500/80" : "bg-emerald-200/80"}`} />}
               </div>
             ))}
-            <span className="ml-2 text-xs text-muted-foreground">
+            <span className="ml-2 rounded-full border border-emerald-200/85 bg-white/58 px-3 py-1 text-xs font-semibold text-emerald-900/78">
               {step === 1 ? "基础信息" : step === 2 ? "阈值确认" : "确认绑定"}
             </span>
           </div>
         </DialogHeader>
-
-        {error ? (
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        ) : null}
+        <div className="relative min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          {error ? (
+            <div className="mb-4 rounded-2xl border border-rose-200/70 bg-rose-50/78 px-3 py-2 text-sm text-rose-600">
+              {error}
+            </div>
+          ) : null}
 
         {/* ── Step 1 ── */}
         {step === 1 && (
-          <div className="space-y-4 py-2">
+          <div className={`${sectionClass} space-y-4`}>
+            <p className="text-sm font-semibold text-emerald-950">基础信息</p>
             <div>
-              <label className="mb-1 block text-sm font-medium">植物名称</label>
+              <label className={labelClass}>植物名称</label>
               <Input
+                className={fieldClass}
                 placeholder="例如：薄荷、绿萝、多肉..."
                 value={form.plantName}
                 onChange={(e) => patch({ plantName: e.target.value })}
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">绑定设备</label>
+              <label className={labelClass}>绑定设备</label>
               <Select value={form.deviceId} onValueChange={(v) => patch({ deviceId: v })}>
-                <SelectTrigger>
+                <SelectTrigger className={selectTriggerClass}>
                   <SelectValue placeholder="选择设备" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={selectContentClass}>
                   {MOCK_DEVICES.map((d) => (
                     <SelectItem
                       key={d.id}
                       value={d.id}
                       disabled={d.bound}
-                      className={d.bound ? "text-muted-foreground" : ""}
+                      className={`${selectItemClass} ${d.bound ? "text-emerald-900/36" : ""}`}
                     >
                       <span title={d.bound ? "已绑定植物" : "未绑定植物"}>
                         设备 {d.label}
@@ -1019,18 +1218,18 @@ function AddPlantModal({
 
         {/* ── Step 2 ── */}
         {step === 2 && (
-          <div className="space-y-5 py-2">
+          <div className="space-y-4">
             {/* Env thresholds */}
-            <div>
-              <p className="mb-3 text-sm font-medium">环境阈值设置</p>
+            <div className={sectionClass}>
+              <p className="mb-3 text-sm font-semibold text-emerald-950">环境阈值设置</p>
               <div className="space-y-4">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Thermometer className="h-4 w-4 text-orange-500" />
-                      <span className="text-sm font-medium">温度范围</span>
+                      <span className="text-sm font-medium text-emerald-950/82">温度范围</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-sm text-emerald-900/70">
                       {form.tempRange[0]}°C – {form.tempRange[1]}°C
                     </span>
                   </div>
@@ -1042,14 +1241,14 @@ function AddPlantModal({
                     onValueChange={(v) => patch({ tempRange: v as [number, number] })}
                   />
                 </div>
-                <Separator />
+                <Separator className="bg-emerald-100/80" />
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Droplets className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm font-medium">湿度范围</span>
+                      <span className="text-sm font-medium text-emerald-950/82">湿度范围</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-sm text-emerald-900/70">
                       {form.humidityRange[0]}% – {form.humidityRange[1]}%
                     </span>
                   </div>
@@ -1061,14 +1260,14 @@ function AddPlantModal({
                     onValueChange={(v) => patch({ humidityRange: v as [number, number] })}
                   />
                 </div>
-                <Separator />
+                <Separator className="bg-emerald-100/80" />
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Sun className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm font-medium">光照范围</span>
+                      <span className="text-sm font-medium text-emerald-950/82">光照范围</span>
                     </div>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-sm text-emerald-900/70">
                       {form.lightRange[0].toLocaleString()} – {form.lightRange[1].toLocaleString()} lux
                     </span>
                   </div>
@@ -1083,15 +1282,14 @@ function AddPlantModal({
               </div>
             </div>
 
-            <Separator />
-
             {/* Sensitivity */}
-            <div>
-              <p className="mb-3 text-sm font-medium">敏感度</p>
+            <div className={sectionClass}>
+              <p className="mb-3 text-sm font-semibold text-emerald-950">敏感度</p>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">温度敏感度</label>
+                  <label className={labelClass}>温度敏感度</label>
                   <Input
+                    className={fieldClass}
                     type="number"
                     min={0}
                     max={1}
@@ -1101,8 +1299,9 @@ function AddPlantModal({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">湿度敏感度</label>
+                  <label className={labelClass}>湿度敏感度</label>
                   <Input
+                    className={fieldClass}
                     type="number"
                     min={0}
                     max={1}
@@ -1112,8 +1311,9 @@ function AddPlantModal({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">光照敏感度</label>
+                  <label className={labelClass}>光照敏感度</label>
                   <Input
+                    className={fieldClass}
                     type="number"
                     min={0}
                     max={1}
@@ -1125,19 +1325,17 @@ function AddPlantModal({
               </div>
             </div>
 
-            <Separator />
-
             {/* Care level + summary */}
-            <div className="flex items-start gap-4">
+            <div className={`${sectionClass} flex items-start gap-4`}>
               <div className="flex flex-col items-center gap-1">
                 <div
-                  className={`flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold shadow-sm ${careLevelColor}`}
+                  className={`flex h-14 w-14 items-center justify-center rounded-2xl border text-sm font-semibold shadow-sm ${careLevelColor}`}
                 >
                   {form.careLevel}
                 </div>
-                <span className="text-xs text-muted-foreground">养护难度</span>
+                <span className="text-xs text-emerald-900/66">养护难度</span>
               </div>
-              <p className="flex-1 pt-1 text-sm italic text-muted-foreground leading-relaxed">
+              <p className="flex-1 pt-1 text-sm italic leading-relaxed text-emerald-950/70">
                 {form.summary || "暂无总结"}
               </p>
             </div>
@@ -1146,57 +1344,58 @@ function AddPlantModal({
 
         {/* ── Step 3 ── */}
         {step === 3 && (
-          <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">请确认以下绑定信息：</p>
-            <div className="rounded-xl border bg-muted/30 p-4 space-y-2 text-sm">
+          <div className={`${sectionClass} space-y-4`}>
+            <p className="text-sm font-semibold text-emerald-950">确认绑定信息</p>
+            <div className="space-y-2 rounded-[1.2rem] border border-emerald-200/85 bg-white/62 p-4 text-sm text-emerald-950/86">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">植物名称</span>
+                <span className="text-emerald-900/66">植物名称</span>
                 <span className="font-medium">{form.plantName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">绑定设备</span>
+                <span className="text-emerald-900/66">绑定设备</span>
                 <span className="font-medium">设备 #{form.deviceId}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">温度范围</span>
+                <span className="text-emerald-900/66">温度范围</span>
                 <span className="font-medium">{form.tempRange[0]}°C – {form.tempRange[1]}°C</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">湿度范围</span>
+                <span className="text-emerald-900/66">湿度范围</span>
                 <span className="font-medium">{form.humidityRange[0]}% – {form.humidityRange[1]}%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">光照范围</span>
+                <span className="text-emerald-900/66">光照范围</span>
                 <span className="font-medium">{form.lightRange[0].toLocaleString()} – {form.lightRange[1].toLocaleString()} lux</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">养护难度</span>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${careLevelColor}`}>{form.careLevel}</span>
+                <span className="text-emerald-900/66">养护难度</span>
+                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${careLevelColor}`}>{form.careLevel}</span>
               </div>
             </div>
-            <p className="text-xs italic text-muted-foreground">{form.summary}</p>
+            <p className="text-xs italic leading-5 text-emerald-950/66">{form.summary}</p>
           </div>
         )}
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="relative shrink-0 border-t border-emerald-900/16 bg-white/46 px-6 py-5">
           {step > 1 && (
-            <Button variant="outline" onClick={() => setStep((s) => (s - 1) as AddPlantStep)} disabled={submitting || aiLoading}>
+            <Button variant="outline" className={secondaryButtonClass} onClick={() => setStep((s) => (s - 1) as AddPlantStep)} disabled={submitting || aiLoading}>
               上一步
             </Button>
           )}
-          <Button variant="outline" onClick={handleClose} disabled={submitting || aiLoading}>
+          <Button variant="outline" className={secondaryButtonClass} onClick={handleClose} disabled={submitting || aiLoading}>
             取消
           </Button>
           {step === 1 && (
-            <Button onClick={handleStep1Next} disabled={aiLoading}>
+            <Button className={primaryButtonClass} onClick={handleStep1Next} disabled={aiLoading}>
               {aiLoading ? "等待ai提供参考值中..." : "下一步"}
             </Button>
           )}
           {step === 2 && (
-            <Button onClick={handleStep2Next}>下一步</Button>
+            <Button className={primaryButtonClass} onClick={handleStep2Next}>下一步</Button>
           )}
           {step === 3 && (
-            <Button onClick={handleSubmit} disabled={submitting}>
+            <Button className={primaryButtonClass} onClick={handleSubmit} disabled={submitting}>
               {submitting ? "绑定中..." : "绑定新植物"}
             </Button>
           )}
@@ -1220,6 +1419,7 @@ function SettingsPageContent() {
   const [devicesLoading, setDevicesLoading] = useState(false)
   const [strategyDialogOpen, setStrategyDialogOpen] = useState(false)
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyItem | null>(null)
+  const [editingStrategy, setEditingStrategy] = useState<StrategyItem | null>(null)
   const [strategyForm, setStrategyForm] = useState<StrategyFormState>(initialFormState)
   const [strategySubmitError, setStrategySubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -1238,23 +1438,31 @@ function SettingsPageContent() {
   const [removedPlantIds, setRemovedPlantIds] = useState<Set<string>>(new Set())
   const [editingPlant, setEditingPlant] = useState<PlantItem | null>(null)
 
-  const potentialNotifyConflict = findPotentialNotifyConflict(strategies, strategyForm)
-  const notifyConflictHint =
-    potentialNotifyConflict && strategyForm.actionType === "NOTIFY_USER"
-      ? `已存在启用中的同类通知策略"${potentialNotifyConflict.strategyName}"，本次保存可能发生冲突，最终以后端校验结果为准。`
-      : null
-
   const visiblePlants = plants.filter((p) => !removedPlantIds.has(p.id))
   const enabledStrategiesCount = strategies.filter((strategy) => strategy.enabled).length
   const latestLogTime = logs[0]?.time ?? "--:--"
   const syncedDevicesLabel = devicesLoading ? "同步中" : "已同步"
 
-  function getCompactLogMessage(message: string) {
-    const matched = message.match(/^\[([^\]]+)\]/)
-    const strategyName = matched?.[1]?.trim() || "未命名策略"
-    const relatedStrategy = strategies.find((strategy) => strategy.strategyName === strategyName)
-    const statusLabel = relatedStrategy?.enabled === false ? "已停用" : "已开启"
-    return `策略 ${strategyName} ${statusLabel}`
+  function buildPolicyLogSummary(log: StrategyExecutionLogItem, strategyName: string): Pick<PolicyLog, "message" | "variant" | "stateKey"> {
+    const rawMessage = log.resultMessage?.trim() || log.executionResult
+    if (log.triggerSource === "STRATEGY_UPDATE") {
+      if (rawMessage.includes("已停用")) {
+        return { message: rawMessage, variant: "status-disabled", stateKey: "status-disabled" }
+      }
+      if (rawMessage.includes("已启用")) {
+        return { message: rawMessage, variant: "status-enabled", stateKey: "status-enabled" }
+      }
+      const message = rawMessage || `策略 ${strategyName} 已更新`
+      return { message, variant: "info", stateKey: `info:${message}` }
+    }
+    if (log.executionResult === "FAILED" || log.executionResult === "ERROR") {
+      return { message: `策略 ${strategyName} 执行失败`, variant: "warning", stateKey: "warning" }
+    }
+    if (log.executionResult === "SUCCESS" || log.executionResult === "TRIGGERED") {
+      return { message: `策略 ${strategyName} 执行成功`, variant: "success", stateKey: "success" }
+    }
+    const message = rawMessage || `策略 ${strategyName} 已记录`
+    return { message, variant: "info", stateKey: `info:${message}` }
   }
 
   const loadPlants = async () => {
@@ -1337,21 +1545,31 @@ function SettingsPageContent() {
         if (r.status !== "fulfilled") return
         const records = r.value?.records ?? []
         records.forEach((log: StrategyExecutionLogItem) => {
-          const isSuccess = log.executionResult === "SUCCESS"
-          const isFail = log.executionResult === "FAILED" || log.executionResult === "ERROR"
+          const strategyName = strategyList[idx]?.strategyName ?? "策略"
+          const summary = buildPolicyLogSummary(log, strategyName)
           merged.push({
             id: log.id,
+            strategyId: log.strategyId,
+            stateKey: summary.stateKey,
             time: log.executedAt
               ? new Date(log.executedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
               : "--:--",
-            message: `[${strategyList[idx]?.strategyName ?? "策略"}] ${log.resultMessage ?? log.executionResult}`,
-            type: isSuccess ? "success" : isFail ? "warning" : "info",
+            message: summary.message,
+            variant: summary.variant,
           })
         })
       })
       // 按时间倒序
       merged.sort((a, b) => b.time.localeCompare(a.time))
-      setLogs(merged)
+      const deduped = merged.reduce<PolicyLog[]>((acc, current) => {
+        const previous = acc[acc.length - 1]
+        if (previous && previous.strategyId === current.strategyId && previous.stateKey === current.stateKey) {
+          return acc
+        }
+        acc.push(current)
+        return acc
+      }, [])
+      setLogs(deduped)
     } catch (error) {
       setLogsError(error instanceof Error ? error.message : "日志加载失败")
     } finally {
@@ -1373,14 +1591,37 @@ function SettingsPageContent() {
   }, [strategies, strategiesLoading])
 
   const handleToggleStrategy = async (strategy: StrategyItem, nextEnabled: boolean) => {
+    const requestAt = new Date().toISOString()
+    const requestUrl = `/api/strategies/${strategy.id}`
+    console.info("[settings][strategy-toggle] request:start", {
+      strategyId: strategy.id,
+      enabled: nextEnabled,
+      url: requestUrl,
+      requestAt,
+    })
     setTogglingId(strategy.id)
     setStrategies((cur) => cur.map((item) => (item.id === strategy.id ? { ...item, enabled: nextEnabled } : item)))
     try {
       const detail = await getStrategyDetail(strategy.id)
       const payload = buildUpdatePayload(detail, nextEnabled)
       await updateStrategy(strategy.id, payload)
+      console.info("[settings][strategy-toggle] request:success", {
+        strategyId: strategy.id,
+        enabled: nextEnabled,
+        url: requestUrl,
+        requestAt,
+        responseAt: new Date().toISOString(),
+      })
       await loadStrategies()
     } catch (error) {
+      console.error("[settings][strategy-toggle] request:error", {
+        strategyId: strategy.id,
+        enabled: nextEnabled,
+        url: requestUrl,
+        requestAt,
+        responseAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : error,
+      })
       setStrategies((cur) => cur.map((item) => (item.id === strategy.id ? { ...item, enabled: strategy.enabled } : item)))
       toast({ title: "更新策略失败", description: error instanceof Error ? error.message : "请稍后重试", variant: "destructive" })
     } finally {
@@ -1403,29 +1644,54 @@ function SettingsPageContent() {
     }
   }
 
-  const handleCreateStrategyFriendly = async () => {
+  const openCreateStrategyDialog = () => {
+    setEditingStrategy(null)
+    setStrategySubmitError(null)
+    setStrategyForm(initialFormState)
+    setStrategyDialogOpen(true)
+  }
+
+  const openEditStrategyDialog = (strategy: StrategyItem) => {
+    setSelectedStrategy(null)
+    setEditingStrategy(strategy)
+    setStrategySubmitError(null)
+    setStrategyForm(buildStrategyFormFromItem(strategy))
+    setStrategyDialogOpen(true)
+  }
+
+  const handleSaveStrategy = async () => {
     const currentUserId = getCurrentUserId()
     setStrategySubmitError(null)
-    const validationMessage = validateStrategyForm(strategyForm, devicesStatus, currentUserId)
+    const targetDeviceId = await getIntegratedControlDeviceId(currentPlantApiId)
+    const validationMessage = validateStrategyForm(
+      strategyForm,
+      currentUserId,
+      !editingStrategy,
+      targetDeviceId,
+    )
     if (validationMessage) {
       setStrategySubmitError(validationMessage)
       toast({ title: "表单校验失败", description: validationMessage, variant: "destructive" })
       return
     }
-    const payload = buildCreatePayload(strategyForm, currentPlantApiId, currentUserId, devicesStatus)
-    if (payload.actionType === "NOTIFY_USER" && potentialNotifyConflict) {
-      toast({ title: "通知策略可能冲突", description: notifyConflictHint ?? "当前已存在启用中的同类通知策略，保存时可能被后端判定为冲突。" })
-    }
+    const payload = editingStrategy
+      ? buildEditPayload(editingStrategy, strategyForm, targetDeviceId)
+      : buildCreatePayload(strategyForm, currentPlantApiId, currentUserId, targetDeviceId)
     setSubmitting(true)
     try {
-      await createStrategy(payload)
+      if (editingStrategy) {
+        await updateStrategy(editingStrategy.id, payload)
+      } else {
+        await createStrategy(payload)
+      }
       setStrategySubmitError(null)
       setStrategyDialogOpen(false)
+      setEditingStrategy(null)
       setStrategyForm(initialFormState)
       await loadStrategies()
       toast({ title: "策略保存成功", description: "策略已保存并刷新列表。" })
     } catch (error) {
-      const feedback = buildFriendlyStrategySaveFeedback(error, payload, potentialNotifyConflict)
+      const feedback = buildFriendlyStrategySaveFeedback(error)
       setStrategySubmitError(feedback.description)
       toast({ title: feedback.title, description: feedback.description, variant: "destructive" })
     } finally {
@@ -1436,7 +1702,13 @@ function SettingsPageContent() {
   return (
     <AuthGuard>
       {/* 单屏展示：背景铺满视口，内容保持紧凑的上下分组 */}
-      <div className="min-h-screen overflow-hidden bg-[#dff6de] text-emerald-950">
+      <div
+        className="min-h-screen overflow-hidden text-emerald-950"
+        style={{
+          background:
+            "radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)",
+        }}
+      >
         <style jsx>{`
           /* 模块内部滚动：保留滚动能力，但隐藏内部滚动条，避免整页滚动视觉 */
           .settings-scroll {
@@ -1460,7 +1732,7 @@ function SettingsPageContent() {
                   Plant Cloud Control Matrix
                 </div>
                 <div>
-                  <h1 className="text-3xl font-semibold tracking-[0.02em] text-white sm:text-4xl">植物智能控制面板</h1>
+                  <h1 className="bg-gradient-to-r from-emerald-950 via-emerald-800 to-teal-700 bg-clip-text text-3xl font-semibold tracking-[0.02em] text-transparent drop-shadow-[0_2px_12px_rgba(236,253,245,0.58)] sm:text-4xl">植物智能控制面板</h1>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -1486,131 +1758,121 @@ function SettingsPageContent() {
             {/* 避免“三大面板并排”：这里是分散卡片，不是一列只放一个大模块 */}
             <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
               <div className="px-1">
-                <div className="flex items-center gap-2">
-                  <Leaf className="h-5 w-5 text-primary" />
-                  <h2 className="text-base font-semibold">植物绑定管理</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Leaf className="h-5 w-5 text-primary" />
+                    <h2 className="text-base font-semibold">植物绑定管理</h2>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-full border border-emerald-200/70 bg-white/45 text-emerald-700 shadow-[0_10px_24px_rgba(16,185,129,0.16)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50/90 hover:text-emerald-800 hover:shadow-[0_14px_28px_rgba(16,185,129,0.2)] active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void loadPlants()}
+                    disabled={plantsLoading}
+                    aria-label="刷新植物绑定列表"
+                    title="刷新植物绑定列表"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${plantsLoading ? "animate-spin" : ""}`} />
+                  </Button>
                 </div>
 
               </div>
-              <Card className="rounded-[2rem] border border-white/45 bg-white/24 shadow-[0_20px_48px_rgba(109,170,145,0.16)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_58px_rgba(109,170,145,0.22)]">
-                <CardContent className="space-y-3 p-3.5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3">
-                      <p className="text-xs text-muted-foreground">绑定植物数</p>
-                      <p className="mt-1.5 text-xl font-semibold">{visiblePlants.length}</p>
-                    </div>
-                    <div className="rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3">
-                      <p className="text-xs text-muted-foreground">当前植物</p>
-                      <p className="mt-1.5 truncate text-[0.95rem] font-semibold">
-                        {currentPlant.emoji} {currentPlant.name}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button variant="outline" className="h-11 rounded-[1.15rem]" onClick={() => void loadPlants()}>
-                      <RefreshCw className={`mr-2 h-4 w-4 ${plantsLoading ? "animate-spin" : ""}`} />
-                      刷新
-                    </Button>
-                    <Button variant="outline" className="h-11 rounded-[1.15rem]" onClick={() => setAddPlantOpen(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      新增植物
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
               {/* 模块内部滚动：植物列表卡片固定高度，超出内容仅在卡片内部滚动 */}
               <Card className="min-h-0 flex-1 rounded-[2rem] border border-white/45 bg-white/24 shadow-[0_20px_48px_rgba(109,170,145,0.16)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_58px_rgba(109,170,145,0.22)]">
                 <CardContent className="flex h-full min-h-0 flex-col p-3.5">
-                  {plantsLoading ? (
-                    <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                      正在加载植物列表...
-                    </div>
-                  ) : visiblePlants.length === 0 ? (
-                    <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
-                      暂无绑定植物，点击下方按钮添加第一株植物。
-                    </div>
-                  ) : (
-                    <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-                      {visiblePlants.map((plant) => (
-                        <div key={plant.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3.5">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{plant.plantName}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">绑定设备 ID：{plant.deviceId}</p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Badge
-                              className={
-                                plant.status === "ACTIVE"
-                                  ? "bg-green-100 text-green-700"
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    {plantsLoading ? (
+                      <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                        正在加载植物列表...
+                      </div>
+                    ) : visiblePlants.length === 0 ? (
+                      <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+                        暂无绑定植物，点击下方按钮添加第一株植物。
+                      </div>
+                    ) : (
+                      <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                        {visiblePlants.map((plant, index) => (
+                          <div key={plant.id} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-border/60 bg-emerald-50/75 p-3.5">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{plant.plantName}</p>
+                              <p className="mt-1 text-xs text-muted-foreground">绑定设备 ID：{index + 1}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <Badge
+                                className={
+                                  plant.status === "ACTIVE"
+                                    ? "bg-green-100 text-green-700"
+                                    : plant.status === "INACTIVE"
+                                      ? "bg-gray-100 text-gray-500"
+                                      : plant.status === "DELETED"
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-gray-100 text-gray-500"
+                                }
+                              >
+                                {plant.status === "ACTIVE"
+                                  ? "在线"
                                   : plant.status === "INACTIVE"
-                                    ? "bg-gray-100 text-gray-500"
+                                    ? "离线"
                                     : plant.status === "DELETED"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-gray-100 text-gray-500"
-                              }
-                            >
-                              {plant.status === "ACTIVE"
-                                ? "在线"
-                                : plant.status === "INACTIVE"
-                                  ? "离线"
-                                  : plant.status === "DELETED"
-                                    ? "已删除"
-                                    : "未知"}
-                            </Badge>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => plant.id && setEditingPlant(plant)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:text-destructive"
-                              onClick={() => setRemovedPlantIds((prev) => new Set([...prev, plant.id]))}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                                      ? "已删除"
+                                      : "未知"}
+                              </Badge>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => plant.id && setEditingPlant(plant)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-destructive hover:text-destructive"
+                                onClick={() => setRemovedPlantIds((prev) => new Set([...prev, plant.id]))}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-center pt-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-14 rounded-full border border-emerald-200/80 bg-gradient-to-r from-white/72 via-emerald-50/88 to-lime-50/82 text-emerald-700 shadow-[0_12px_26px_rgba(16,185,129,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:from-white/86 hover:via-emerald-100/90 hover:to-lime-100/86 hover:text-emerald-900 hover:shadow-[0_16px_34px_rgba(16,185,129,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] active:translate-y-0 active:scale-[0.97]"
+                      onClick={() => setAddPlantOpen(true)}
+                      aria-label="新增植物"
+                      title="新增植物"
+                    >
+                      <Plus className="h-4.5 w-4.5" />
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </section>
 
             <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
               <div className="px-1">
-                <div className="flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-primary" />
-                  <h2 className="text-base font-semibold">自动化策略管理</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-primary" />
+                    <h2 className="text-base font-semibold">自动化策略管理</h2>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-full border border-emerald-200/70 bg-white/45 text-emerald-700 shadow-[0_10px_24px_rgba(16,185,129,0.16)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50/90 hover:text-emerald-800 hover:shadow-[0_14px_28px_rgba(16,185,129,0.2)] active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void loadStrategies()}
+                    disabled={strategiesLoading}
+                    aria-label="刷新自动化策略"
+                    title="刷新自动化策略"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${strategiesLoading ? "animate-spin" : ""}`} />
+                  </Button>
                 </div>
                 
               </div>
-              <Card className="rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-                <CardContent className="space-y-3 p-3.5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-[1.25rem] border border-border/60 bg-sky-50/75 p-3">
-                      <p className="text-xs text-muted-foreground">已启用</p>
-                      <p className="mt-1.5 text-xl font-semibold">{enabledStrategiesCount}</p>
-                    </div>
-                    <div className="rounded-[1.25rem] border border-border/60 bg-sky-50/75 p-3">
-                      <p className="text-xs text-muted-foreground">总策略数</p>
-                      <p className="mt-1.5 text-xl font-semibold">{strategies.length}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button variant="outline" size="sm" className="h-11 rounded-[1.15rem]" onClick={() => void loadStrategies()} disabled={strategiesLoading}>
-                      <RefreshCw className={`mr-2 h-4 w-4 ${strategiesLoading ? "animate-spin" : ""}`} />
-                      刷新
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-11 rounded-[1.15rem]" onClick={() => setStrategyDialogOpen(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      新建
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
               {/* 模块内部滚动：策略列表卡片固定高度，内部滚动而不是整页滚动 */}
-              <Card className="min-h-0 flex-1 rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+              <Card className="min-h-0 flex-1 rounded-[2rem] border border-white/45 bg-white/24 shadow-[0_20px_48px_rgba(109,170,145,0.16)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_58px_rgba(109,170,145,0.22)]">
                 <CardContent className="flex h-full min-h-0 flex-col p-3.5">
                   {strategiesLoading ? (
                     <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
@@ -1624,7 +1886,7 @@ function SettingsPageContent() {
                   ) : null}
                   {!strategiesLoading && !strategiesError && strategies.length === 0 ? (
                     <div className="rounded-[1.4rem] border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
-                      当前植物还没有策略，点击上方按钮创建第一条自动化策略。
+                      当前植物还没有策略，点击下方按钮创建第一条自动化策略。
                     </div>
                   ) : null}
                   {!strategiesLoading && !strategiesError ? (
@@ -1632,22 +1894,22 @@ function SettingsPageContent() {
                       {strategies.map((strategy) => (
                         <div
                           key={strategy.id}
-                          className={`rounded-[1.25rem] border p-3.5 transition-colors ${strategy.enabled ? "border-border/60 bg-sky-50/75" : "border-border/60 bg-slate-50/72 opacity-80"}`}
+                          className={`rounded-[1.25rem] border p-3.5 shadow-[0_10px_24px_rgba(16,185,129,0.08)] transition-all duration-200 hover:border-emerald-200/80 hover:bg-emerald-50/90 hover:shadow-[0_14px_30px_rgba(16,185,129,0.12)] ${strategy.enabled ? "border-emerald-100/75 bg-emerald-50/72" : "border-emerald-100/60 bg-white/52 opacity-85"}`}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="mb-2 flex items-center gap-2">
-                                <p className="truncate text-sm font-medium">{strategy.strategyName}</p>
-                                <Badge variant="outline" className="text-xs">
+                                <p className="truncate text-sm font-medium text-emerald-950/90">{strategy.strategyName}</p>
+                                <Badge variant="outline" className="border-emerald-200/70 bg-white/45 text-xs text-emerald-700">
                                   {strategy.enabled ? "已启用" : "已停用"}
                                 </Badge>
                               </div>
-                              <p className="text-xs leading-6 text-muted-foreground">
-                                <span className="font-medium text-blue-600">如果</span>{" "}
+                              <p className="text-xs leading-6 text-emerald-950/65">
+                                <span className="font-medium text-teal-700">如果</span>{" "}
                                 {formatStrategyCondition(strategy)}
                               </p>
-                              <p className="text-xs leading-6 text-muted-foreground">
-                                <span className="font-medium text-green-600">则</span>{" "}
+                              <p className="text-xs leading-6 text-emerald-950/65">
+                                <span className="font-medium text-emerald-700">则</span>{" "}
                                 {formatStrategyAction(strategy, { light: devicesStatus?.light, fan: devicesStatus?.fan })}
                               </p>
                             </div>
@@ -1657,6 +1919,14 @@ function SettingsPageContent() {
                                 disabled={togglingId === strategy.id}
                                 onCheckedChange={(checked) => void handleToggleStrategy(strategy, checked)}
                               />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => openEditStrategyDialog(strategy)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -1675,40 +1945,45 @@ function SettingsPageContent() {
                   {devicesLoading ? (
                     <p className="mt-3 text-xs text-muted-foreground">正在同步设备状态，用于补全策略动作中的设备信息...</p>
                   ) : null}
+                  <div className="mt-auto flex justify-center pt-3">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-14 rounded-full border border-emerald-200/80 bg-gradient-to-r from-white/72 via-emerald-50/88 to-lime-50/82 text-emerald-700 shadow-[0_12px_26px_rgba(16,185,129,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:from-white/86 hover:via-emerald-100/90 hover:to-lime-100/86 hover:text-emerald-900 hover:shadow-[0_16px_34px_rgba(16,185,129,0.22),inset_0_1px_0_rgba(255,255,255,0.95)] active:translate-y-0 active:scale-[0.97]"
+                      onClick={openCreateStrategyDialog}
+                      aria-label="新建自动化策略"
+                      title="新建自动化策略"
+                    >
+                      <Plus className="h-4.5 w-4.5" />
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </section>
 
             <section className="flex h-[560px] min-h-0 flex-col gap-1.5 pt-0.5">
               <div className="px-1">
-                <div className="flex items-center gap-2">
-                  <ScrollText className="h-5 w-5 text-primary" />
-                  <h2 className="text-base font-semibold">策略日志</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <ScrollText className="h-5 w-5 text-primary" />
+                    <h2 className="text-base font-semibold">策略日志</h2>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-full border border-emerald-200/70 bg-white/45 text-emerald-700 shadow-[0_10px_24px_rgba(16,185,129,0.16)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-emerald-50/90 hover:text-emerald-800 hover:shadow-[0_14px_28px_rgba(16,185,129,0.2)] active:translate-y-0 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void loadLogs(strategies)}
+                    disabled={logsLoading}
+                    aria-label="刷新策略日志"
+                    title="刷新策略日志"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${logsLoading ? "animate-spin" : ""}`} />
+                  </Button>
                 </div>
                 
               </div>
-              <Card className="rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
-                <CardContent className="space-y-3 p-3.5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-[1.2rem] border border-border/60 bg-amber-50/82 p-3">
-                      <p className="text-xs text-muted-foreground">日志条数</p>
-                      <p className="mt-1.5 text-xl font-semibold">{logs.length}</p>
-                    </div>
-                    <div className="rounded-[1.2rem] border border-border/60 bg-amber-50/82 p-3">
-                      <p className="text-xs text-muted-foreground">设备状态</p>
-                      <p className="mt-1.5 text-[0.95rem] font-semibold">{devicesLoading ? "同步中" : "已同步"}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3">
-                    <Button variant="outline" size="sm" className="h-11 w-full rounded-[1.15rem]" onClick={() => void loadLogs(strategies)} disabled={logsLoading}>
-                      <RefreshCw className={`mr-2 h-4 w-4 ${logsLoading ? "animate-spin" : ""}`} />
-                      刷新
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
               {/* 模块内部滚动：日志列表卡片固定高度，内部滚动显示更多内容 */}
-              <Card className="min-h-0 flex-1 rounded-[1.9rem] border-border/60 bg-white/78 shadow-[0_12px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+              <Card className="min-h-0 flex-1 rounded-[2rem] border border-white/45 bg-white/24 shadow-[0_20px_48px_rgba(109,170,145,0.16)] backdrop-blur-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_28px_58px_rgba(109,170,145,0.22)]">
                 <CardContent className="flex h-full min-h-0 flex-col p-3.5">
                   <div className="settings-scroll min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                     {logsLoading ? (
@@ -1726,22 +2001,27 @@ function SettingsPageContent() {
                         暂无策略执行日志。保存策略后，当实时温度、湿度或光照满足触发条件时会自动写入。
                       </div>
                     ) : null}
-                    {!logsLoading && !logsError ? logs.map((log) => (
-                      <div key={log.id} className="flex items-start gap-3 rounded-[1.25rem] border border-border/60 bg-amber-50/78 p-3">
-                        <div className="mt-0.5 flex shrink-0 items-center gap-1.5">
-                          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="font-mono text-xs text-muted-foreground">{log.time}</span>
+                    {!logsLoading && !logsError ? logs.map((log) => {
+                      const meta = getLogVariantMeta(log.variant)
+                      const StatusIcon = meta.icon
+                      return (
+                        <div
+                          key={log.id}
+                          className={`flex items-start gap-3 rounded-[1.25rem] border p-3.5 shadow-[0_10px_24px_rgba(16,185,129,0.08)] transition-all duration-200 ${meta.className}`}
+                        >
+                          <div className={`mt-0.5 flex shrink-0 items-center gap-1.5 ${meta.timeClassName}`}>
+                            <Clock className="h-3.5 w-3.5" />
+                            <span className={`font-mono text-xs ${meta.timeTextClassName}`}>{log.time}</span>
+                          </div>
+                          <div className="flex flex-1 items-start gap-2">
+                            <StatusIcon className={`mt-0.5 h-4 w-4 shrink-0 ${meta.iconClassName}`} />
+                            <p className={`text-sm leading-6 ${meta.textClassName}`}>
+                              {log.message}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex flex-1 items-start gap-2">
-                          {log.type === "warning" ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" /> : null}
-                          {log.type === "success" ? <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-500" /> : null}
-                          {log.type === "info" ? <Zap className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" /> : null}
-                          <p className={`text-sm leading-6 ${log.type === "warning" ? "text-yellow-700" : log.type === "success" ? "text-green-700" : "text-foreground"}`}>
-                            {getCompactLogMessage(log.message)}
-                          </p>
-                        </div>
-                      </div>
-                    )) : null}
+                      )
+                    }) : null}
                   </div>
                 </CardContent>
               </Card>
@@ -1752,12 +2032,13 @@ function SettingsPageContent() {
 
         <StrategyDialog
           open={strategyDialogOpen}
+          title={editingStrategy ? "编辑策略" : "新建策略"}
           form={strategyForm}
           submitting={submitting}
           submitError={strategySubmitError}
-          notifyConflictHint={notifyConflictHint}
           onClose={() => {
             setStrategyDialogOpen(false)
+            setEditingStrategy(null)
             setStrategySubmitError(null)
             setStrategyForm(initialFormState)
           }}
@@ -1765,13 +2046,14 @@ function SettingsPageContent() {
             setStrategySubmitError(null)
             setStrategyForm((cur) => ({ ...cur, ...patch }))
           }}
-          onSubmit={() => void handleCreateStrategyFriendly()}
+          onSubmit={() => void handleSaveStrategy()}
         />
 
         <StrategyDetailDialog
           strategy={selectedStrategy}
           devicesStatus={devicesStatus}
           onClose={() => setSelectedStrategy(null)}
+          onEdit={openEditStrategyDialog}
           onDelete={(strategy) => void handleDeleteStrategy(strategy)}
         />
 

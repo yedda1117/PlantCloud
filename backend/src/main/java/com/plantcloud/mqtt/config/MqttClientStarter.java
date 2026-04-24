@@ -33,7 +33,8 @@ public class MqttClientStarter {
             log.info("MQTT client started. broker={}, clientId={}",
                     mqttProperties.getBrokerUrl(), mqttProperties.getClientId());
         } catch (MqttException ex) {
-            throw new IllegalStateException("Failed to start MQTT client", ex);
+            log.error("MQTT client startup skipped because broker is unavailable. broker={}, clientId={}",
+                    mqttProperties.getBrokerUrl(), mqttProperties.getClientId(), ex);
         }
     }
 

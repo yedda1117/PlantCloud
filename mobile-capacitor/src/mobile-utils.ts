@@ -91,14 +91,36 @@ export function isStrategyChangeQuestion(message: string) {
 }
 
 export function getCurrentUserId() {
-  const rawUser = window.localStorage.getItem("plantcloud_user")
-  if (!rawUser) return undefined
-  try {
-    const parsed = JSON.parse(rawUser) as { userId?: string | number; id?: string | number }
-    return parsed.userId != null ? String(parsed.userId) : parsed.id != null ? String(parsed.id) : undefined
-  } catch {
-    return undefined
+  const token = window.localStorage.getItem("plantcloud_token")
+  if (token) {
+    try {
+      const payload = token.split(".")[1]
+      if (payload) {
+        const normalized = payload.replace(/-/g, "+").replace(/_/g, "/")
+        const decodedText = window.atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="))
+        const matched = decodedText.match(/"userId"\s*:\s*("?)(-?\d+)\1/)
+        if (matched?.[2]) return matched[2]
+        const decoded = JSON.parse(decodedText) as { userId?: string | number; id?: string | number; sub?: string }
+        if (decoded.userId != null) return String(decoded.userId)
+        if (decoded.id != null) return String(decoded.id)
+        if (decoded.sub) return decoded.sub
+      }
+    } catch {
+      // Fall back to the saved user object below.
+    }
   }
+
+  const rawUser = window.localStorage.getItem("plantcloud_user")
+  if (rawUser) {
+    try {
+      const parsed = JSON.parse(rawUser) as { userId?: string | number; id?: string | number }
+      if (parsed.userId != null) return String(parsed.userId)
+      if (parsed.id != null) return String(parsed.id)
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
 }
 
 export function normalizeProposalActionValue(proposal: StrategyAgentProposal) {
@@ -124,7 +146,7 @@ export function buildMobilePlantContext(plant: Plant, realtime: HomeRealtimeData
   }
 }
 
-export function buildStrategyPayloadFromProposal(proposal: StrategyAgentProposal, plant: Plant, realtime: HomeRealtimeData | null) {
+export function buildStrategyPayloadFromProposal(proposal: StrategyAgentProposal, plant: Plant, realtime: HomeRealtimeData | null, targetDeviceId?: string | null) {
   return {
     plantId: String(plant.plantId),
     createdBy: getCurrentUserId(),
@@ -135,7 +157,7 @@ export function buildStrategyPayloadFromProposal(proposal: StrategyAgentProposal
     thresholdMin: proposal.thresholdMin,
     actionType: proposal.actionType,
     actionValue: normalizeProposalActionValue(proposal),
-    targetDeviceId: proposal.actionType === "NOTIFY_USER" ? null : realtime?.device.deviceId != null ? String(realtime.device.deviceId) : null,
+    targetDeviceId: proposal.actionType === "NOTIFY_USER" ? null : targetDeviceId ?? (realtime?.device.deviceId != null ? String(realtime.device.deviceId) : null),
     enabled: true,
     priority: 10,
     timeLimitEnabled: Boolean(proposal.timeLimitEnabled),
@@ -148,4 +170,3 @@ export function buildStrategyPayloadFromProposal(proposal: StrategyAgentProposal
     },
   }
 }
-

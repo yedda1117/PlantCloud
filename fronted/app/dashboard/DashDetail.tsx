@@ -42,11 +42,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { getDashboardData, type DashboardData } from "@/lib/dashboard-api"
+import {
+  getDashboardData,
+  getPlantTemplateProfile,
+  type DashboardData,
+  type PlantTemplateProfile,
+} from "@/lib/dashboard-api"
 import { getPlantAiAnalysis, type PlantAiAnalysis } from "@/lib/plant-api"
 import type { PlantMeta } from "./page"
 
-const POLL_INTERVAL_MS = 30000
+const POLL_INTERVAL_MS = 5000
 const LIGHT_THRESHOLD = 500
 const AIR_THRESHOLD = 300
 
@@ -136,38 +141,48 @@ function mapStatusBadge(status: string | null | undefined, type: "temperature" |
   }
 }
 
+function isAbnormalStatus(status: string | null | undefined) {
+  const normalized = (status || "").toUpperCase()
+  return normalized === "HIGH" || normalized === "LOW" || normalized === "ERROR"
+}
+
 function getAirQualitySummary(data: DashboardData | null) {
   const latestAirLog = data?.airLogs[0] || null
   const value = latestAirLog?.metricValue ?? null
+  const status = (latestAirLog?.status || "").toUpperCase()
+  const severity = (latestAirLog?.severity || "").toUpperCase()
 
-  if (value === null || value === undefined) {
+  if (!latestAirLog) {
     return {
       value: null,
-      text: "良好",
+      text: "暂无数据",
+      className: "bg-slate-100 text-slate-600 hover:bg-slate-100",
+    }
+  }
+
+  if (status === "UNRESOLVED") {
+    return {
+      value,
+      text: severity === "LOW" || severity === "MEDIUM" ? "关注" : "异常",
+      className:
+        severity === "LOW" || severity === "MEDIUM"
+          ? "bg-amber-100 text-amber-700 hover:bg-amber-100"
+          : "bg-red-100 text-red-700 hover:bg-red-100",
+    }
+  }
+
+  if (status === "RESOLVED") {
+    return {
+      value,
+      text: "正常",
       className: "bg-green-100 text-green-700 hover:bg-green-100",
-    }
-  }
-
-  if (value >= AIR_THRESHOLD) {
-    return {
-      value,
-      text: "异常",
-      className: "bg-red-100 text-red-700 hover:bg-red-100",
-    }
-  }
-
-  if (value >= AIR_THRESHOLD * 0.6) {
-    return {
-      value,
-      text: "关注",
-      className: "bg-amber-100 text-amber-700 hover:bg-amber-100",
     }
   }
 
   return {
     value,
-    text: "良好",
-    className: "bg-green-100 text-green-700 hover:bg-green-100",
+    text: "状态未知",
+    className: "bg-slate-100 text-slate-600 hover:bg-slate-100",
   }
 }
 
@@ -181,6 +196,73 @@ function normalizeRange(value: number | null | undefined, idealMin: number, idea
   const distance = value < idealMin ? idealMin - value : value - idealMax
   const ratio = Math.max(0, 1 - distance / clampMax)
   return Math.round(ratio * 100)
+}
+
+function clampPercent(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function calculateRangeScore(value: number | null | undefined, min: number | null | undefined, max: number | null | undefined) {
+  if (value === null || value === undefined || min === null || min === undefined || max === null || max === undefined || min >= max) {
+    return null
+  }
+
+  if (value >= min && value <= max) {
+    return 100
+  }
+
+  if (value < min) {
+    if (min <= 0) {
+      return 0
+    }
+    return clampPercent((value / min) * 100)
+  }
+
+  if (value <= 0) {
+    return 0
+  }
+
+  return clampPercent((max / value) * 100)
+}
+
+function formatRangeLabel(min: number | null | undefined, max: number | null | undefined, unit: string) {
+  if (min === null || min === undefined || max === null || max === undefined) {
+    return "暂无建议范围"
+  }
+
+  const formatValue = (value: number) => {
+    if (unit === "lux") {
+      return Number(value).toLocaleString()
+    }
+    return Number.isInteger(value) ? String(value) : value.toFixed(1)
+  }
+
+  return `${formatValue(min)} - ${formatValue(max)} ${unit}`
+}
+
+function formatCardRangeText({
+  min,
+  max,
+  unit,
+  loading,
+  error,
+}: {
+  min: number | null | undefined
+  max: number | null | undefined
+  unit: string
+  loading: boolean
+  error: boolean
+}) {
+  if (loading) {
+    return "建议范围：加载中..."
+  }
+
+  if (error) {
+    return "建议范围：获取失败"
+  }
+
+  const rangeLabel = formatRangeLabel(min, max, unit)
+  return rangeLabel === "暂无建议范围" ? "建议范围：暂无数据" : `建议范围：${rangeLabel}`
 }
 
 function mapRiskTypeLabel(value: string) {
@@ -197,8 +279,11 @@ function getRiskLevelMeta(level: string | null | undefined) {
 export default function DashDetail({ plant, onBack }: Props) {
   const [metricTab, setMetricTab] = useState<MetricTab>("temperature")
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
+  const [plantTemplate, setPlantTemplate] = useState<PlantTemplateProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [balanceLoading, setBalanceLoading] = useState(true)
+  const [balanceError, setBalanceError] = useState<string | null>(null)
   const [aiAnalysisData, setAiAnalysisData] = useState<PlantAiAnalysis | null>(null)
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(true)
   const [aiAnalysisError, setAiAnalysisError] = useState<string | null>(null)
@@ -224,7 +309,7 @@ export default function DashDetail({ plant, onBack }: Props) {
         if (cancelled) {
           return
         }
-        setError(loadError instanceof Error ? loadError.message : "环境分析加载失败")
+        setError(loadError instanceof Error ? loadError.message : "数据获取失败")
       } finally {
         if (!cancelled && firstLoad) {
           setLoading(false)
@@ -241,6 +326,40 @@ export default function DashDetail({ plant, onBack }: Props) {
     return () => {
       cancelled = true
       window.clearInterval(timer)
+    }
+  }, [plant.plantId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadPlantTemplate = async () => {
+      const token = window.localStorage.getItem("plantcloud_token") || ""
+      setBalanceLoading(true)
+      setBalanceError(null)
+
+      try {
+        const nextTemplate = await getPlantTemplateProfile(plant.plantId, token)
+        if (cancelled) {
+          return
+        }
+        setPlantTemplate(nextTemplate)
+      } catch (loadError) {
+        if (cancelled) {
+          return
+        }
+        setPlantTemplate(null)
+        setBalanceError(loadError instanceof Error ? loadError.message : "建议范围获取失败")
+      } finally {
+        if (!cancelled) {
+          setBalanceLoading(false)
+        }
+      }
+    }
+
+    void loadPlantTemplate()
+
+    return () => {
+      cancelled = true
     }
   }, [plant.plantId])
 
@@ -362,18 +481,74 @@ export default function DashDetail({ plant, onBack }: Props) {
   }, [dashboardData])
 
   const radarData = useMemo(() => {
-    const airScore =
-      airSummary.value === null || airSummary.value === undefined
-        ? 100
-        : Math.max(0, Math.round((1 - Math.min(airSummary.value, AIR_THRESHOLD) / AIR_THRESHOLD) * 100))
-
-    return [
-      { subject: "温度", value: normalizeRange(current?.temperature ?? null, 18, 30, 12) },
-      { subject: "湿度", value: normalizeRange(current?.humidity ?? null, 40, 80, 30) },
-      { subject: "光照", value: normalizeRange(current?.lightLux ?? null, 300, 30000, 15000) },
-      { subject: "空气质量", value: airScore },
+    const metrics = [
+      {
+        subject: "温度",
+        value: calculateRangeScore(current?.temperature ?? null, plantTemplate?.tempMin ?? null, plantTemplate?.tempMax ?? null),
+        currentValue: current?.temperature ?? null,
+        unit: "°C",
+        rangeText: formatRangeLabel(plantTemplate?.tempMin ?? null, plantTemplate?.tempMax ?? null, "°C"),
+      },
+      {
+        subject: "湿度",
+        value: calculateRangeScore(current?.humidity ?? null, plantTemplate?.humidityMin ?? null, plantTemplate?.humidityMax ?? null),
+        currentValue: current?.humidity ?? null,
+        unit: "% RH",
+        rangeText: formatRangeLabel(plantTemplate?.humidityMin ?? null, plantTemplate?.humidityMax ?? null, "%"),
+      },
+      {
+        subject: "光照",
+        value: calculateRangeScore(current?.lightLux ?? null, plantTemplate?.lightMin ?? null, plantTemplate?.lightMax ?? null),
+        currentValue: current?.lightLux ?? null,
+        unit: "lux",
+        rangeText: formatRangeLabel(plantTemplate?.lightMin ?? null, plantTemplate?.lightMax ?? null, "lux"),
+      },
     ]
-  }, [airSummary.value, current?.humidity, current?.lightLux, current?.temperature])
+
+    return metrics.filter((metric) => metric.value !== null)
+  }, [
+    current?.humidity,
+    current?.lightLux,
+    current?.temperature,
+    plantTemplate?.humidityMax,
+    plantTemplate?.humidityMin,
+    plantTemplate?.lightMax,
+    plantTemplate?.lightMin,
+    plantTemplate?.tempMax,
+    plantTemplate?.tempMin,
+  ])
+
+  const balanceFormulaText = "评分规则：处于建议范围内 = 100；低于下限 = 当前值 / 下限 × 100；高于上限 = 上限 / 当前值 × 100。结果限制在 0 - 100。"
+  const balanceHasRenderableData = radarData.length >= 3
+  const balanceStatusText = balanceLoading
+    ? "正在加载该植物的建议范围..."
+    : balanceError
+      ? "建议范围获取失败，暂时无法计算环境平衡指数。"
+      : !balanceHasRenderableData
+        ? "当前实时值或建议范围不完整，暂时无法生成完整指数。"
+        : "指数按该植物自己的建议范围实时计算。"
+
+  const temperatureRangeText = formatCardRangeText({
+    min: plantTemplate?.tempMin ?? null,
+    max: plantTemplate?.tempMax ?? null,
+    unit: "°C",
+    loading: balanceLoading,
+    error: Boolean(balanceError),
+  })
+  const humidityRangeText = formatCardRangeText({
+    min: plantTemplate?.humidityMin ?? null,
+    max: plantTemplate?.humidityMax ?? null,
+    unit: "%",
+    loading: balanceLoading,
+    error: Boolean(balanceError),
+  })
+  const lightRangeText = formatCardRangeText({
+    min: plantTemplate?.lightMin ?? null,
+    max: plantTemplate?.lightMax ?? null,
+    unit: "lux",
+    loading: balanceLoading,
+    error: Boolean(balanceError),
+  })
 
   const lastUpdatedText = formatTimestamp(current?.collectedAt)
 
@@ -410,19 +585,48 @@ export default function DashDetail({ plant, onBack }: Props) {
   const lightBadge = mapStatusBadge(current?.lightStatus, "light")
   const riskLevelMeta = getRiskLevelMeta(aiAnalysisData?.riskLevel)
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          "radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)",
+      }}
+    >
       <main className="container mx-auto flex flex-col gap-4 px-6 pb-6 pt-4">
-        {/* 返回按钮 */}
-        <motion.button
-          initial={{ opacity: 0, x: -12 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.3, ease: "easeOut" }}
-          onClick={onBack}
-          className="mb-2 w-fit rounded-full border border-border/70 bg-background/85 px-3 py-2 shadow-md backdrop-blur-md transition-colors hover:bg-muted flex items-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4 text-foreground" />
-          <span className="text-sm font-medium text-foreground">返回总览</span>
-        </motion.button>
+        <div className="flex items-start justify-between gap-4">
+          {/* 返回按钮 */}
+          <motion.button
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            onClick={onBack}
+            className="mb-2 w-fit rounded-full border border-border/70 bg-background/85 px-3 py-2 shadow-md backdrop-blur-md transition-colors hover:bg-muted flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4 text-foreground" />
+            <span className="text-sm font-medium text-foreground">返回总览</span>
+          </motion.button>
+
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: "easeOut" }}
+            className="ml-auto flex min-w-0 flex-1 justify-end"
+          >
+            <div className="inline-flex max-w-full items-center gap-3 rounded-[1.25rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,252,0.9))] px-3.5 py-2.5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:px-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[1rem] border border-white/80 bg-white/85 text-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_8px_18px_rgba(15,23,42,0.06)]">
+                {plant.emoji}
+              </div>
+              <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="rounded-full bg-emerald-50/85 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                  当前植物
+                </span>
+                <p className="truncate text-base font-semibold text-foreground sm:text-lg">
+                  {plant.name}
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
 
         {error ? <p className="rounded-xl bg-destructive/5 px-4 py-2 text-xs text-destructive">{error}</p> : null}
 
@@ -446,7 +650,7 @@ export default function DashDetail({ plant, onBack }: Props) {
                 </span>
                 <span className="text-xl text-muted-foreground">°C</span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">建议范围：18°C - 30°C</p>
+              <p className="mt-1 text-xs text-muted-foreground">{temperatureRangeText}</p>
             </CardContent>
           </Card>
 
@@ -469,7 +673,7 @@ export default function DashDetail({ plant, onBack }: Props) {
                 </span>
                 <span className="text-xl text-muted-foreground">% RH</span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">建议范围：40% - 80%</p>
+              <p className="mt-1 text-xs text-muted-foreground">{humidityRangeText}</p>
             </CardContent>
           </Card>
 
@@ -492,7 +696,7 @@ export default function DashDetail({ plant, onBack }: Props) {
                 </span>
                 <span className="text-xl text-muted-foreground">lux</span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">建议范围：300 - 30,000 lux</p>
+              <p className="mt-1 text-xs text-muted-foreground">{lightRangeText}</p>
             </CardContent>
           </Card>
 
@@ -515,7 +719,11 @@ export default function DashDetail({ plant, onBack }: Props) {
                 </span>
                 <span className="text-xl text-muted-foreground">ppm</span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">数据源：烟雾/空气异常告警日志最新值</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {airSummary.value !== null && airSummary.value !== undefined
+                  ? "数据源：后端告警日志最新空气质量记录"
+                  : "数据源：后端告警日志，暂无空气质量记录"}
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -614,17 +822,50 @@ export default function DashDetail({ plant, onBack }: Props) {
           <Card className="lg:col-span-4">
             <CardHeader className="px-4 pb-2 pt-4">
               <CardTitle className="text-sm">环境平衡指数</CardTitle>
+              <p className="text-xs leading-5 text-muted-foreground">{balanceStatusText}</p>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <ResponsiveContainer width="100%" height={260}>
-                <RadarChart data={radarData}>
-                  <PolarGrid stroke="#e5e7eb" />
-                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fill: "#64748b" }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} stroke="#94a3b8" />
-                  <Radar name="环境指数" dataKey="value" stroke="#22c55e" fill="#22c55e" fillOpacity={0.28} />
-                  <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 16px rgba(15, 23, 42, 0.12)" }} />
-                </RadarChart>
-              </ResponsiveContainer>
+              {balanceHasRenderableData ? (
+                <>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <RadarChart data={radarData}>
+                      <PolarGrid stroke="#e5e7eb" />
+                      <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fill: "#64748b" }} />
+                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} stroke="#94a3b8" />
+                      <Radar name="环境指数" dataKey="value" stroke="#22c55e" fill="#22c55e" fillOpacity={0.28} />
+                      <Tooltip
+                        contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 16px rgba(15, 23, 42, 0.12)" }}
+                        formatter={(value, _name, item) => {
+                          const payload = item?.payload as {
+                            currentValue: number | null
+                            unit: string
+                            rangeText: string
+                          } | undefined
+
+                          const numericValue = typeof value === "number" ? value : Number(value)
+                          const currentValueText =
+                            payload?.currentValue === null || payload?.currentValue === undefined
+                              ? "暂无实时值"
+                              : payload.unit === "lux"
+                                ? `${Number(payload.currentValue).toLocaleString()} ${payload.unit}`
+                                : `${Number(payload.currentValue).toFixed(1)} ${payload.unit}`
+
+                          return [
+                            `${numericValue} 分｜当前：${currentValueText}｜建议：${payload?.rangeText || "暂无建议范围"}`,
+                            "环境指数",
+                          ]
+                        }}
+                      />
+                    </RadarChart>
+                  </ResponsiveContainer>
+
+                  <p className="mt-3 text-xs leading-5 text-muted-foreground">{balanceFormulaText}</p>
+                </>
+              ) : (
+                <div className="flex h-[260px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-6 text-center text-sm text-slate-500">
+                  {balanceStatusText}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -34,6 +34,21 @@ export type CurrentEnvironment = {
   collectedAt: string | null
 }
 
+export type PlantTemplateProfile = {
+  id: number
+  plantName: string | null
+  species: string | null
+  tempMin: number | null
+  tempMax: number | null
+  humidityMin: number | null
+  humidityMax: number | null
+  lightMin: number | null
+  lightMax: number | null
+  tempRiseSensitive: number | null
+  humidityDropSensitive: number | null
+  lightRiseSensitive: number | null
+}
+
 type AlertLogItem = {
   id: number
   plantId: number | null
@@ -45,6 +60,7 @@ type AlertLogItem = {
   metricValue: number | null
   thresholdValue: number | null
   status: string | null
+  resolvedAt: string | null
   createdAt: string | null
 }
 
@@ -131,14 +147,14 @@ export async function getDashboardData(plantId: number, token: string): Promise<
       headers,
     }),
     fetch(
-      `${BACKEND_BASE_URL}/visualization/history?start_time=${encodeURIComponent(monthRange.start)}&end_time=${encodeURIComponent(monthRange.end)}&granularity=day&metrics=temperature,humidity,light`,
+      `${BACKEND_BASE_URL}/visualization/history?start_time=${encodeURIComponent(monthRange.start)}&end_time=${encodeURIComponent(monthRange.end)}&granularity=day&metrics=temperature,humidity,light&plantId=${encodeURIComponent(String(plantId))}`,
       {
         cache: "no-store",
         headers,
       },
     ),
     fetch(
-      `${BACKEND_BASE_URL}/visualization/history?start_time=${encodeURIComponent(dayRange.start)}&end_time=${encodeURIComponent(dayRange.end)}&granularity=hour&metrics=temperature,humidity,light`,
+      `${BACKEND_BASE_URL}/visualization/history?start_time=${encodeURIComponent(dayRange.start)}&end_time=${encodeURIComponent(dayRange.end)}&granularity=hour&metrics=temperature,humidity,light&plantId=${encodeURIComponent(String(plantId))}`,
       {
         cache: "no-store",
         headers,
@@ -159,8 +175,7 @@ export async function getDashboardData(plantId: number, token: string): Promise<
 
   const records = alertLogs.records || []
   const selectedPlantLogs = records.filter((item) => item.plantId === plantId)
-  const effectiveLogs = selectedPlantLogs.length > 0 ? selectedPlantLogs : records
-  const airLogs = effectiveLogs.filter((item) => {
+  const airLogs = selectedPlantLogs.filter((item) => {
     const alertType = (item.alertType || "").toUpperCase()
     return alertType === "SMOKE_ABNORMAL" || alertType === "AIR_ABNORMAL"
   })
@@ -170,7 +185,7 @@ export async function getDashboardData(plantId: number, token: string): Promise<
     monthHistory,
     dayHistory,
     airLogs,
-    activityLogs: effectiveLogs,
+    activityLogs: selectedPlantLogs,
   }
 }
 
@@ -181,4 +196,13 @@ export async function getCurrentEnvironment(plantId: number, token: string): Pro
   })
 
   return parseResponse<CurrentEnvironment>(response)
+}
+
+export async function getPlantTemplateProfile(plantId: number, token: string): Promise<PlantTemplateProfile> {
+  const response = await fetch(`${BACKEND_BASE_URL}/plant-config/templates/${plantId}`, {
+    cache: "no-store",
+    headers: buildHeaders(token),
+  })
+
+  return parseResponse<PlantTemplateProfile>(response)
 }
