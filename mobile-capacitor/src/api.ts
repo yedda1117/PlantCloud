@@ -54,6 +54,7 @@ type DeviceStatusOverview = {
   devices: DeviceStatusItem[]
 }
 
+
 function stringifyLongIdFields(responseText: string) {
   return LONG_ID_FIELDS.reduce((text, field) => {
     const pattern = new RegExp(`("${field}"\\s*:\\s*)(-?\\d{16,})`, "g")

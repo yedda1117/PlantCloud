@@ -1,16 +1,29 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ChangeEvent } from "react"
 import dynamic from "next/dynamic"
 import { AuthGuard } from "@/components/auth-guard"
 import { PlantModelViewer } from "@/components/PlantModelViewer"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { controlHomeDevice, getHomeRealtime, type HomeControlTarget, type HomeRealtimeData } from "@/lib/home-api"
 import { usePlantSelection } from "@/context/plant-selection"
 import {
   AlertTriangle,
   Fan,
+  ImageUp,
   Lightbulb,
   MapPin,
+  RefreshCw,
+  Sparkles,
   Trees,
 } from "lucide-react"
 
@@ -42,6 +55,27 @@ type GpsState = {
   loading: boolean
   error: boolean
 }
+
+const MODEL_PRESETS = [
+  {
+    id: "bloom",
+    name: "开花款",
+    description: "使用当前默认开花模型进行展示。",
+    modelPath: "/models/zhizihua.glb",
+  },
+  {
+    id: "dry",
+    name: "缺水款",
+    description: "切到偏缺水状态的展示模型。",
+    modelPath: "/models/kuwei.glb",
+  },
+  {
+    id: "tilt",
+    name: "倾斜款",
+    description: "切到倾斜告警状态的展示模型。",
+    modelPath: "/models/qingxie.glb",
+  },
+] as const
 
 function formatNumericValue(value: number | null | undefined, unit: string, digits = 1) {
   if (value === null || value === undefined) return "--"
@@ -301,6 +335,10 @@ export default function HomePage() {
     error: false,
   })
   const [, setPlantState] = useState<"healthy" | "happy" | "dark" | "thirsty" | "hot" | "cold" | "fallen">("healthy")
+  const [modelDialogOpen, setModelDialogOpen] = useState(false)
+  const [selectedModelId, setSelectedModelId] = useState<(typeof MODEL_PRESETS)[number]["id"] | null>(null)
+  const [uploadedImageName, setUploadedImageName] = useState("")
+  const [uploadDemoReady, setUploadDemoReady] = useState(false)
 
   const plantApiId = currentPlant.plantId
 
@@ -431,7 +469,7 @@ export default function HomePage() {
   }
 
   const activityLogs = useMemo(() => sortActivityLogs(realtimeData?.activityLogs ?? []), [realtimeData?.activityLogs])
-  const plantModelPath = useMemo(() => {
+  const autoModelPath = useMemo(() => {
     const hasUnresolvedTiltLog = activityLogs.some(isUnresolvedTiltLog)
     if (hasUnresolvedTiltLog) return "/models/qingxie.glb"
 
@@ -442,6 +480,11 @@ export default function HomePage() {
 
     return hasEnvironmentStress ? "/models/kuwei.glb" : "/models/zhizihua.glb"
   }, [activityLogs, realtimeData?.environment.humidityStatus, realtimeData?.environment.lightStatus, realtimeData?.environment.temperatureStatus])
+  const selectedModelPreset = useMemo(
+    () => MODEL_PRESETS.find((preset) => preset.id === selectedModelId) ?? null,
+    [selectedModelId],
+  )
+  const plantModelPath = selectedModelPreset?.modelPath ?? autoModelPath
   const unresolvedCount = (realtimeData?.abnormal.count ?? 0) + (realtimeData?.tilt.count ?? 0)
   const resolvedCount = activityLogs.filter((log) => isResolvedLog(log.status)).length
   const totalAlertCount = Math.max(unresolvedCount + resolvedCount, 1)
@@ -456,6 +499,18 @@ export default function HomePage() {
   const infraredText = realtimeData?.infrared.currentDetected
     ? realtimeData.infrared.latestEventTitle || "检测到有人靠近植物"
     : realtimeData?.infrared.latestEventTitle || "当前未检测到红外活动"
+
+  const handleDemoUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    setUploadedImageName(file?.name || "")
+    setUploadDemoReady(false)
+  }
+
+  const handleFakeGenerate = () => {
+    if (!uploadedImageName) return
+    setSelectedModelId("bloom")
+    setUploadDemoReady(true)
+  }
 
   function toDMS(value: number | null | undefined, isLat = true) {
     if (value === null || value === undefined) return "--"
@@ -568,6 +623,34 @@ export default function HomePage() {
                     <PlantModelViewer modelPath={plantModelPath} className="rounded-none" minimal />
                   </div>
                 </div>
+                <div className="mt-5 flex w-full max-w-[28rem] flex-col items-center gap-3">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => setModelDialogOpen(true)}
+                      className="rounded-full bg-emerald-700 px-5 text-white shadow-[0_12px_32px_rgba(16,185,129,0.22)] hover:bg-emerald-800"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      换模型
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedModelId(null)
+                        setUploadDemoReady(false)
+                      }}
+                      className="rounded-full border-white/60 bg-white/30 px-5 text-stone-700 backdrop-blur-md hover:bg-white/55"
+                    >
+                      恢复自动联动
+                    </Button>
+                  </div>
+                  <p className="text-center text-sm text-stone-500">
+                    {selectedModelPreset
+                      ? `当前展示：${selectedModelPreset.name}${uploadDemoReady && uploadedImageName ? `，来源图片：${uploadedImageName}` : ""}`
+                      : "当前展示：自动联动模型"}
+                  </p>
+                </div>
               </section>
 
               <section className="flex h-full min-h-0 flex-col justify-center gap-6 overflow-hidden">
@@ -661,6 +744,96 @@ export default function HomePage() {
           </main>
         </div>
       </div>
+      <Dialog open={modelDialogOpen} onOpenChange={setModelDialogOpen}>
+        <DialogContent className="max-w-xl rounded-[1.75rem] border-white/60 bg-[linear-gradient(180deg,rgba(247,252,249,0.98),rgba(232,244,238,0.96))] p-0 shadow-[0_24px_80px_rgba(40,80,60,0.18)]">
+          <div className="p-6 sm:p-7">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-stone-800">
+                <Sparkles className="h-5 w-5 text-emerald-700" />
+                上传图片生成 3D 模型
+              </DialogTitle>
+              <DialogDescription className="leading-6 text-stone-500">
+                这里是演示交互。上传和生成按钮只做前端展示，不会真的调用生成服务。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-6 space-y-5">
+              <div className="rounded-[1.4rem] border border-emerald-100 bg-white/70 p-4">
+                <p className="text-sm font-medium text-stone-700">上传参考图</p>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleDemoUpload}
+                    className="h-11 rounded-full border-white/70 bg-white/80"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleFakeGenerate}
+                    disabled={!uploadedImageName}
+                    className="h-11 rounded-full bg-emerald-700 px-5 text-white hover:bg-emerald-800"
+                  >
+                    <ImageUp className="h-4 w-4" />
+                    生成 3D 图
+                  </Button>
+                </div>
+                <p className="mt-3 text-sm text-stone-500">
+                  {uploadedImageName
+                    ? `已选择图片：${uploadedImageName}`
+                    : "还没有选择图片，选一张图后可以触发演示按钮。"}
+                </p>
+                {uploadDemoReady ? (
+                  <p className="mt-2 text-sm text-emerald-700">
+                    演示结果已生成，当前已切换到展示模型。这里没有接真实 3D 生成逻辑。
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="rounded-[1.4rem] border border-white/60 bg-white/55 p-4">
+                <p className="text-sm font-medium text-stone-700">快速切换现成模型</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  {MODEL_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedModelId(preset.id)
+                        setUploadDemoReady(false)
+                      }}
+                      className={`rounded-[1.2rem] border px-4 py-4 text-left transition-all ${
+                        selectedModelId === preset.id
+                          ? "border-emerald-400 bg-emerald-50 shadow-[0_10px_24px_rgba(16,185,129,0.16)]"
+                          : "border-white/70 bg-white/70 hover:-translate-y-[1px] hover:bg-white"
+                      }`}
+                    >
+                      <p className="text-sm font-medium text-stone-800">{preset.name}</p>
+                      <p className="mt-2 text-xs leading-5 text-stone-500">{preset.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSelectedModelId(null)
+                  setUploadDemoReady(false)
+                  setModelDialogOpen(false)
+                }}
+                className="rounded-full border-stone-200 bg-white/70"
+              >
+                恢复自动联动
+              </Button>
+              <Button type="button" onClick={() => setModelDialogOpen(false)} className="rounded-full bg-stone-900 text-white hover:bg-stone-800">
+                完成
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
       <style jsx global>{`
         .liquidColumn {
           animation: envColumnBreath 3.4s ease-in-out infinite;
