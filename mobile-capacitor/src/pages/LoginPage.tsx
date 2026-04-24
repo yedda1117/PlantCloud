@@ -154,10 +154,9 @@ export function LoginPage({ onLoggedIn, onRegister }: LoginPageProps) {
             <span className="auth-logo-leaf auth-logo-leaf-top" />
             <span className="auth-logo-base" />
           </div>
-          <div>
-            <p>PlantCloud</p>
-            <h1>智慧植物云平台</h1>
-            <span>Smart Growth Console</span>
+          <div className="auth-brand-copy">
+            <h1>PlantCloud</h1>
+            <span>智慧植物云平台</span>
           </div>
         </div>
 
@@ -204,14 +203,6 @@ export function LoginPage({ onLoggedIn, onRegister }: LoginPageProps) {
             登录 PlantCloud
           </button>
         </form>
-
-        <div className={`auth-inline-status ${statusClass}`}>
-          {statusType === "success" ? <CheckCircle2 size={16} /> : statusType === "error" ? <XCircle size={16} /> : <ShieldCheck size={16} />}
-          <span>
-            <strong>{status}</strong>
-            <em>{message}</em>
-          </span>
-        </div>
 
         <div className="auth-actions-row">
           <button type="button" onClick={() => setFaceOpen(true)}>

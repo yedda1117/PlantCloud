@@ -115,12 +115,12 @@ button {
 }
 
 .auth-product-hero {
-  min-height: 142px;
+  min-height: 164px;
   display: grid;
   place-items: center;
-  gap: 4px;
+  gap: 10px;
   margin: -6px -6px 0;
-  padding: 10px 0 4px;
+  padding: 14px 0 8px;
   border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(236, 253, 245, 0.54), rgba(255, 255, 255, 0)),
@@ -134,8 +134,8 @@ button {
 
 .auth-orbit-logo {
   position: relative;
-  width: 112px;
-  height: 92px;
+  width: 124px;
+  height: 102px;
   animation: auth-logo-float 4.8s ease-in-out infinite;
 }
 
@@ -259,27 +259,34 @@ button {
   height: 15px;
 }
 
-.auth-product-hero p {
-  margin: -1px 0 0;
-  color: #047857;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0;
-  text-transform: uppercase;
+.auth-brand-copy {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
 }
 
 .auth-product-hero h1 {
-  margin: 2px 0 0;
-  color: #0f172a;
-  font-size: 22px;
-  line-height: 1.12;
+  margin: 0;
+  background:
+    linear-gradient(180deg, #14532d 0%, #166534 24%, #064e3b 58%, #022c22 100%);
+  color: transparent;
+  font-size: 47px;
+  line-height: 0.9;
+  font-weight: 1100;
+  letter-spacing: 0.3px;
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow:
+    0 2px 0 rgba(220, 252, 231, 0.42),
+    0 14px 30px rgba(6, 78, 59, 0.18);
 }
 
 .auth-product-hero span {
   display: block;
-  margin-top: 3px;
+  margin-top: 0;
   color: rgba(71, 85, 105, 0.78);
-  font-size: 11px;
+  font-size: 14px;
+  line-height: 1.35;
 }
 
 .auth-signal-grid {
@@ -1435,7 +1442,7 @@ button {
   min-height: calc(100vh - 112px - var(--safe-top) - var(--safe-bottom));
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.46);
@@ -1535,11 +1542,13 @@ button {
 
 .ai-floating-brand {
   position: relative;
-  min-height: 218px;
+  min-height: 0;
   margin: 12px 12px 0;
-  display: grid;
-  place-items: start center;
-  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 18px 20px;
   overflow: hidden;
   border-radius: 8px;
   background:
@@ -1552,6 +1561,7 @@ button {
   position: relative;
   width: 132px;
   height: 124px;
+  margin-top: 2px;
   animation: float-brand 4.8s ease-in-out infinite;
 }
 
@@ -1643,22 +1653,19 @@ button {
 }
 
 .ai-floating-brand p {
-  position: absolute;
-  bottom: 38px;
   margin: 0;
   color: #0f172a;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
+  line-height: 1.2;
 }
 
 .ai-floating-brand > span:last-child {
-  position: absolute;
-  bottom: 13px;
-  max-width: 76%;
+  max-width: 300px;
   color: #64748b;
   text-align: center;
   font-size: 11px;
-  line-height: 1.35;
+  line-height: 1.5;
 }
 
 @keyframes float-brand {
@@ -1930,11 +1937,12 @@ button {
 }
 
 .web-chat-mobile .mobile-chat-panel {
-  height: calc(100vh - 112px - var(--safe-top) - var(--safe-bottom));
+  min-height: calc(100vh - 112px - var(--safe-top) - var(--safe-bottom));
+  height: auto;
 }
 
 .web-chat-mobile .web-chat-list {
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .web-chat-list .chat-bubble > div {

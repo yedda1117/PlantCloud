@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { ImpactStyle } from "@capacitor/haptics"
 import { AnimatePresence, motion } from "framer-motion"
 import { CalendarDays, Home, Leaf, MessageCircle } from "lucide-react"
-import { getHomeRealtime, getPlantAiAnalysis, getPlants, hasAuthSession } from "./api"
+import { controlHomeDevice, getHomeRealtime, getPlantAiAnalysis, getPlants, hasAuthSession } from "./api"
 import { AiPage } from "./pages/AiPage"
 import { CalendarPage } from "./pages/CalendarPage"
 import { DetailPage } from "./pages/DetailPage"
@@ -138,6 +138,11 @@ export default function App() {
     await refresh()
   }
 
+  const handleLoggedIn = (_session: LoginResult) => {
+    setAuthenticated(true)
+    setScreen("home")
+  }
+
   return (
     <div className="app-shell">
       <AnimatePresence mode="wait">
@@ -174,7 +179,7 @@ export default function App() {
                 onGoAi={() => setScreen("ai")}
               />
             ) : null}
-            {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} /> : null}
+            {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} onToggle={toggleDevice} /> : null}
             {screen === "calendar" ? <CalendarPage plant={plant} /> : null}
             {screen === "ai" ? <AiPage plant={plant} realtime={realtime} /> : null}
             <TabBar screen={screen} onChange={setScreen} />
