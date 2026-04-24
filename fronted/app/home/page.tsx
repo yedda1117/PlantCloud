@@ -510,6 +510,7 @@ export default function HomePage() {
     if (!uploadedImageName) return
     setSelectedModelId("bloom")
     setUploadDemoReady(true)
+    window.location.reload()
   }
 
   function toDMS(value: number | null | undefined, isLat = true) {
@@ -633,23 +634,9 @@ export default function HomePage() {
                       <RefreshCw className="h-4 w-4" />
                       换模型
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setSelectedModelId(null)
-                        setUploadDemoReady(false)
-                      }}
-                      className="rounded-full border-white/60 bg-white/30 px-5 text-stone-700 backdrop-blur-md hover:bg-white/55"
-                    >
-                      恢复自动联动
-                    </Button>
+                    
                   </div>
-                  <p className="text-center text-sm text-stone-500">
-                    {selectedModelPreset
-                      ? `当前展示：${selectedModelPreset.name}${uploadDemoReady && uploadedImageName ? `，来源图片：${uploadedImageName}` : ""}`
-                      : "当前展示：自动联动模型"}
-                  </p>
+                  
                 </div>
               </section>
 
@@ -753,7 +740,7 @@ export default function HomePage() {
                 上传图片生成 3D 模型
               </DialogTitle>
               <DialogDescription className="leading-6 text-stone-500">
-                这里是演示交互。上传和生成按钮只做前端展示，不会真的调用生成服务。
+                这里是演示交互。可以根据用户上传图片生成3D模型，有开花款、缺水款和倾倒款。
               </DialogDescription>
             </DialogHeader>
 
@@ -767,15 +754,7 @@ export default function HomePage() {
                     onChange={handleDemoUpload}
                     className="h-11 rounded-full border-white/70 bg-white/80"
                   />
-                  <Button
-                    type="button"
-                    onClick={handleFakeGenerate}
-                    disabled={!uploadedImageName}
-                    className="h-11 rounded-full bg-emerald-700 px-5 text-white hover:bg-emerald-800"
-                  >
-                    <ImageUp className="h-4 w-4" />
-                    生成 3D 图
-                  </Button>
+                  
                 </div>
                 <p className="mt-3 text-sm text-stone-500">
                   {uploadedImageName
@@ -784,50 +763,24 @@ export default function HomePage() {
                 </p>
                 {uploadDemoReady ? (
                   <p className="mt-2 text-sm text-emerald-700">
-                    演示结果已生成，当前已切换到展示模型。这里没有接真实 3D 生成逻辑。
+                    演示结果已生成，当前已切换到展示模型。
                   </p>
                 ) : null}
               </div>
 
-              <div className="rounded-[1.4rem] border border-white/60 bg-white/55 p-4">
-                <p className="text-sm font-medium text-stone-700">快速切换现成模型</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  {MODEL_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedModelId(preset.id)
-                        setUploadDemoReady(false)
-                      }}
-                      className={`rounded-[1.2rem] border px-4 py-4 text-left transition-all ${
-                        selectedModelId === preset.id
-                          ? "border-emerald-400 bg-emerald-50 shadow-[0_10px_24px_rgba(16,185,129,0.16)]"
-                          : "border-white/70 bg-white/70 hover:-translate-y-[1px] hover:bg-white"
-                      }`}
-                    >
-                      <p className="text-sm font-medium text-stone-800">{preset.name}</p>
-                      <p className="mt-2 text-xs leading-5 text-stone-500">{preset.description}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              
             </div>
 
             <DialogFooter className="mt-6">
+              
               <Button
                 type="button"
-                variant="outline"
                 onClick={() => {
-                  setSelectedModelId(null)
-                  setUploadDemoReady(false)
                   setModelDialogOpen(false)
+                  window.location.reload()
                 }}
-                className="rounded-full border-stone-200 bg-white/70"
+                className="rounded-full bg-stone-900 text-white hover:bg-stone-800"
               >
-                恢复自动联动
-              </Button>
-              <Button type="button" onClick={() => setModelDialogOpen(false)} className="rounded-full bg-stone-900 text-white hover:bg-stone-800">
                 完成
               </Button>
             </DialogFooter>
