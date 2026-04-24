@@ -413,7 +413,13 @@ export default function DashDetail({ plant, onBack }: Props) {
   const aiWarningText = aiAnalysisData?.riskWarnings?.join("；") || ""
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          "radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)",
+      }}
+    >
       <main className="container mx-auto flex flex-col gap-4 px-6 pb-6 pt-4">
         {/* 返回按钮 */}
         <motion.button

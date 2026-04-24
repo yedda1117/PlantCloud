@@ -503,7 +503,7 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <div className="relative mt-[15px] w-[86%] flex-1 rounded-[2.2rem] border border-stone-400/45 px-4 py-9 border border-white/40  bg-white/10 backdrop-blur-md shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+                <div className="relative mt-[15px] w-[86%] flex-1 px-4 py-9">
                   <div className="h-full flex flex-col justify-between">
                     <div className="grid grid-cols-3 place-items-center gap-4 h-full">
                       <VerticalMetricBar
@@ -534,7 +534,7 @@ export default function HomePage() {
                   </div>
                 </div>
                 <div className=" w-[86%] ">
-                  <div className="group rounded-[1.2rem] border border-white/45 bg-[linear-gradient(135deg,rgba(249,255,251,0.86),rgba(233,245,238,0.68))] px-4 py-3 shadow-[0_10px_24px_rgba(70,120,100,0.08)] transition-all duration-300 ease-out hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(70,120,100,0.14)]">
+                  <div className="group rounded-[1.2rem] border border-white/45 px-4 py-3 shadow-[0_10px_24px_rgba(70,120,100,0.08)] transition-all duration-300 ease-out hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(70,120,100,0.14)]">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-2">
                         <Trees className={`h-4 w-4 ${realtimeData?.infrared.currentDetected ? "text-emerald-700" : "text-stone-500"}`} />
@@ -553,7 +553,7 @@ export default function HomePage() {
               </section>
 
               <section className="flex h-full min-h-0 flex-col items-center justify-center">
-                <div className="mb-4 text-center" style={{ marginTop: '10px' }}>
+                <div className="mb-4 -translate-x-6 text-center" style={{ marginTop: '10px' }}>
                   <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Current Plant</p>
                   <div className="relative inline-block">
                     <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
@@ -561,11 +561,14 @@ export default function HomePage() {
                     </h1>
                   </div>
                 </div>
-                <div className="relative flex h-full min-h-0 w-full items-center justify-center">
-                  <div className="pointer-events-none absolute inset-x-[18%] top-[16%] h-28 rounded-full bg-white/45 blur-3xl" />
-                  <div className="pointer-events-none absolute inset-x-[22%] bottom-[12%] h-24 rounded-full bg-emerald-100/35 blur-3xl" />
-                  <div className="relative h-full min-h-0 w-full">
-                    <PlantModelViewer modelPath={plantModelPath} className="rounded-none" minimal />
+                <div className="relative flex h-full min-h-0 w-full items-center justify-center -translate-x-6">
+                  <div className="pointer-events-none absolute inset-x-[14%] top-[11%] h-32 rounded-full bg-white/60 blur-3xl" />
+                  <div className="pointer-events-none absolute inset-x-[16%] bottom-[9%] h-28 rounded-full bg-emerald-200/40 blur-3xl" />
+                  <div className="pointer-events-none absolute bottom-[7%] h-10 w-[58%] rounded-full bg-stone-900/10 blur-2xl" />
+                  <div className="relative flex aspect-square w-full max-w-[660px] items-center justify-center overflow-hidden rounded-[1.8rem] border border-white/18 bg-[linear-gradient(180deg,rgba(248,254,251,0.22)_0%,rgba(230,244,236,0.12)_100%)] shadow-[0_22px_54px_rgba(66,108,94,0.2)]">
+                    <div className="pointer-events-none absolute inset-0 rounded-[1.8rem] border border-white/35 blur-[2px]" />
+                    <div className="pointer-events-none absolute inset-x-[12%] top-[6%] h-12 rounded-full bg-white/70 blur-xl" />
+                    <PlantModelViewer modelPath={plantModelPath} className="rounded-[1.8rem]" minimal />
                   </div>
                 </div>
               </section>

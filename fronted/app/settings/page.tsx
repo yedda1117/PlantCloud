@@ -1656,7 +1656,13 @@ function SettingsPageContent() {
   return (
     <AuthGuard>
       {/* 单屏展示：背景铺满视口，内容保持紧凑的上下分组 */}
-      <div className="min-h-screen overflow-hidden bg-[#dff6de] text-emerald-950">
+      <div
+        className="min-h-screen overflow-hidden text-emerald-950"
+        style={{
+          background:
+            "radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)",
+        }}
+      >
         <style jsx>{`
           /* 模块内部滚动：保留滚动能力，但隐藏内部滚动条，避免整页滚动视觉 */
           .settings-scroll {

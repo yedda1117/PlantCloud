@@ -489,7 +489,13 @@ export default function CalendarPage() {
 
   return (
     <AuthGuard>
-    <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#d0e8de' }}>
+    <div
+      className="h-screen flex flex-col overflow-hidden"
+      style={{
+        background:
+          "radial-gradient(circle at top, rgba(208,232,222,0.55), transparent 38%), linear-gradient(135deg, #d0e8de 0%, #eaf6f0 100%)",
+      }}
+    >
 
       <main className="flex-1 flex gap-0 overflow-hidden min-h-0">
         <div className="flex-[7] flex flex-col overflow-hidden border-r border-border/50">
