@@ -271,11 +271,6 @@ export default function App() {
     }
   }
 
-  const handleLoggedIn = (_session: LoginResult) => {
-    setAuthenticated(true)
-    setScreen("home")
-  }
-
   return (
     <div className="app-shell">
       <AnimatePresence mode="wait">
@@ -305,16 +300,13 @@ export default function App() {
                 selectedPlantId={selectedPlantId}
                 realtime={realtime}
                 loading={loading}
-                error={error}
                 onSelectPlant={selectPlant}
                 onRefresh={refresh}
-                onGoDetail={() => setScreen("detail")}
-                onGoAi={() => setScreen("ai")}
                 onToggleDevice={toggleDevice}
                 controlLoadingTarget={controlLoadingTarget}
               />
             ) : null}
-            {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} onToggle={toggleDevice} /> : null}
+            {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} /> : null}
             {screen === "calendar" ? <CalendarPage plant={plant} /> : null}
             {screen === "ai" ? <AiPage plant={plant} realtime={realtime} /> : null}
             <TabBar screen={screen} onChange={setScreen} />
