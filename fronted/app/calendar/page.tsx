@@ -551,8 +551,8 @@ export default function CalendarPage() {
                           ) : null}
                         </div>
 
-                        <div className="mb-3 overflow-hidden border border-black/5 bg-white/50 shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
-                          <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="h-48 w-full object-cover" />
+                        <div className="mb-3 overflow-hidden border border-black/5 bg-[linear-gradient(135deg,rgba(236,253,245,0.78),rgba(255,251,235,0.72))] shadow-[0_8px_18px_rgba(15,23,42,0.08)]">
+                          <img src={item.photoUrl} alt={`${month + 1}月${item.day}日植物记录`} className="block max-h-[28rem] w-full object-contain" />
                         </div>
 
                         <p className="line-clamp-2 text-sm leading-5 text-zinc-700">
@@ -697,10 +697,10 @@ export default function CalendarPage() {
                 <div>
                   <p className="text-xs font-medium mb-2">照片</p>
                   <div className="flex items-center gap-3">
-                    <div className="w-28 h-28 bg-white/60 border border-border rounded-md overflow-hidden flex items-center justify-center">
+                    <div className="w-28 h-28 bg-[linear-gradient(135deg,rgba(236,253,245,0.78),rgba(255,251,235,0.72))] border border-border rounded-md overflow-hidden flex items-center justify-center">
                       {selectedDayRecord?.photoUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={selectedDayRecord.photoUrl} alt="preview" className="w-full h-full object-cover" />
+                        <img src={selectedDayRecord.photoUrl} alt="preview" className="w-full h-full object-contain" />
                       ) : (
                         <div className="text-xs text-muted-foreground">暂无照片</div>
                       )}

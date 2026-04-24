@@ -27,6 +27,11 @@ body,
 #root {
   min-height: 100%;
   margin: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 button,
@@ -40,6 +45,9 @@ button {
 
 .app-shell {
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   background:
     linear-gradient(150deg, rgba(234, 249, 237, 0.95), rgba(248, 251, 243, 0.98) 47%, rgba(220, 241, 232, 0.92)),
     radial-gradient(circle at 20% 12%, rgba(101, 176, 124, 0.18), transparent 32%);
@@ -47,6 +55,9 @@ button {
 
 .content-shell {
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .voice-assistant {
@@ -2832,7 +2843,6 @@ button {
   color: #46558f;
 }
 
-.note-photo,
 .note-photo-placeholder {
   width: 100%;
   aspect-ratio: 16 / 10;
@@ -2841,7 +2851,16 @@ button {
 }
 
 .note-photo {
-  object-fit: cover;
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 420px;
+  margin-top: 12px;
+  border-radius: 8px;
+  object-fit: contain;
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.78), rgba(255, 251, 235, 0.72)),
+    #f8fbf5;
   box-shadow: 0 12px 24px rgba(37, 76, 53, 0.1);
 }
 
@@ -3026,8 +3045,12 @@ button {
 
 .photo-upload-box img {
   width: 100%;
-  height: 180px;
-  object-fit: cover;
+  height: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.78), rgba(255, 251, 235, 0.72)),
+    #f8fbf5;
 }
 
 .sheet-actions {
@@ -3109,7 +3132,13 @@ button {
 .compact-home-screen {
   display: grid;
   gap: 14px;
+  min-width: 0;
   overflow-x: clip;
+}
+
+.compact-home-screen > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .compact-brand-bar {
@@ -3180,6 +3209,9 @@ button {
 .compact-plant-strip {
   display: flex;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
   padding-bottom: 2px;
   scrollbar-width: none;
@@ -3667,14 +3699,9 @@ button {
   background: rgba(52, 199, 89, 0.24);
 }
 
-@media (max-width: 420px) {
+@media (max-width: 480px) {
   .compact-brand-bar {
     padding: 11px 14px;
-  }
-
-  .compact-env-grid,
-  .compact-device-row {
-    grid-template-columns: 1fr;
   }
 
   .compact-metric-card-rich {
@@ -3682,11 +3709,18 @@ button {
   }
 
   .compact-metric-card-head {
-    gap: 0;
+    gap: 6px;
   }
 
   .compact-progress-ring {
-    display: none;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .compact-progress-ring-core {
+    width: 26px;
+    height: 26px;
   }
 
   .compact-model-stage {
@@ -3694,8 +3728,28 @@ button {
   }
 
   .compact-model-label {
-    left: 12px;
+    top: 12px;
+    left: auto;
     right: 12px;
-    justify-items: start;
+    width: auto;
+    max-width: min(44vw, 168px);
+    padding: 8px 10px;
+    justify-items: end;
+    text-align: right;
+  }
+
+  .compact-model-label strong {
+    font-size: 13px;
+  }
+
+  .compact-model-label span {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+  }
+
+  .compact-model-voice-anchor {
+    top: 12px;
+    left: 12px;
+    max-width: min(48vw, 176px);
   }
 }
