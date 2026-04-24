@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { Bot, Fan, Lightbulb, RefreshCw, Sprout, Thermometer, Trees, UserRound, Wind } from "lucide-react"
+import { Bot, Fan, Lightbulb, Loader2, RefreshCw, Sprout, Thermometer, Trees, UserRound, Wind } from "lucide-react"
 import type { HomeRealtimeData, Plant } from "../types"
 import { formatLight, formatNumber, healthScore } from "../mobile-utils"
 
@@ -43,29 +43,6 @@ function MetricCard({ icon: Icon, label, value, hint }: { icon: typeof Thermomet
   )
 }
 
-function formatDeviceRuntimeStatus(value: string | null | undefined) {
-  if (!value) return "未知"
-  switch (value.trim().toUpperCase()) {
-    case "ON":
-    case "TURN_ON":
-    case "OPEN":
-    case "RUNNING":
-    case "TRUE":
-    case "1":
-      return "已开启"
-    case "OFF":
-    case "TURN_OFF":
-    case "CLOSE":
-    case "CLOSED":
-    case "STOPPED":
-    case "FALSE":
-    case "0":
-      return "已关闭"
-    default:
-      return value
-  }
-}
-
 export function HomePage({
   plant,
   plants,
@@ -77,6 +54,8 @@ export function HomePage({
   onRefresh,
   onGoDetail,
   onGoAi,
+  onToggleDevice,
+  controlLoadingTarget,
 }: {
   plant: Plant
   plants: Plant[]
@@ -88,18 +67,19 @@ export function HomePage({
   onRefresh: () => void
   onGoDetail: () => void
   onGoAi: () => void
+  onToggleDevice: (target: "light" | "fan", next: boolean) => void
+  controlLoadingTarget: "light" | "fan" | null
 }) {
   const score = healthScore(realtime)
   const env = realtime?.environment
   const deviceOnline = realtime?.device.connected === true
   const fanActive = realtime?.device.fanOn === true
   const lightActive = realtime?.device.lightOn === true
-  const fanStateLabel = formatDeviceRuntimeStatus(realtime?.device.fanStatus)
-  const lightStateLabel = formatDeviceRuntimeStatus(realtime?.device.lightStatus)
   const infraredDetected = realtime?.infrared.currentDetected === true || realtime?.device.infraredDetected === true
   const infraredCount = realtime?.infrared.approachCount ?? 0
   const infraredStateLabel = infraredDetected ? "DETECTED" : "CLEAR"
   const infraredStatusText = infraredDetected ? "当前检测到红外活动" : "当前未检测到红外活动"
+  const controlDisabled = !realtime?.device.deviceId || !deviceOnline
 
   return (
     <main className="screen">
@@ -147,16 +127,48 @@ export function HomePage({
           <h3>{deviceOnline ? "设备在线" : "等待设备同步"}</h3>
         </div>
         <div className="device-states">
-          <span className={fanActive ? "on" : ""}>
-            <Fan size={15} />
-            风扇
-            <b>{fanStateLabel}</b>
-          </span>
-          <span className={lightActive ? "on" : ""}>
-            <Lightbulb size={15} />
-            补光
-            <b>{lightStateLabel}</b>
-          </span>
+          <div className={`device-state-row ${fanActive ? "on" : ""}`}>
+            <span>
+              <Fan size={15} />
+              风扇
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={fanActive}
+              aria-label="切换风扇"
+              className={`device-switch ${fanActive ? "on" : ""}`}
+              disabled={controlDisabled || controlLoadingTarget === "fan"}
+              onClick={() => onToggleDevice("fan", !fanActive)}
+            >
+              <span className="device-switch-track">
+                <span className="device-switch-thumb">
+                  {controlLoadingTarget === "fan" ? <Loader2 size={12} className="spin" /> : null}
+                </span>
+              </span>
+            </button>
+          </div>
+          <div className={`device-state-row ${lightActive ? "on" : ""}`}>
+            <span>
+              <Lightbulb size={15} />
+              补光
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={lightActive}
+              aria-label="切换补光灯"
+              className={`device-switch ${lightActive ? "on" : ""}`}
+              disabled={controlDisabled || controlLoadingTarget === "light"}
+              onClick={() => onToggleDevice("light", !lightActive)}
+            >
+              <span className="device-switch-track">
+                <span className="device-switch-thumb">
+                  {controlLoadingTarget === "light" ? <Loader2 size={12} className="spin" /> : null}
+                </span>
+              </span>
+            </button>
+          </div>
         </div>
       </section>
 

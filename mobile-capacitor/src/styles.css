@@ -1055,6 +1055,13 @@ button {
   gap: 8px;
 }
 
+.device-state-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .device-states span {
   display: inline-flex;
   align-items: center;
@@ -1063,14 +1070,51 @@ button {
   font-size: 13px;
 }
 
-.device-states span.on {
+.device-state-row.on span {
   color: var(--green-700);
 }
 
-.device-states b {
-  color: inherit;
-  font-size: inherit;
-  font-weight: inherit;
+.device-switch {
+  padding: 0;
+  background: transparent;
+  flex: 0 0 auto;
+}
+
+.device-switch-track {
+  width: 52px;
+  height: 30px;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(20, 37, 27, 0.12);
+  transition: background 0.2s ease;
+}
+
+.device-switch.on .device-switch-track {
+  background: #bfe8c8;
+}
+
+.device-switch-thumb {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--green-700);
+  box-shadow: 0 3px 10px rgba(20, 37, 27, 0.16);
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+}
+
+.device-switch.on .device-switch-thumb {
+  transform: translateX(22px);
+}
+
+.device-switch:disabled {
+  opacity: 0.54;
 }
 
 .pir-status-card {

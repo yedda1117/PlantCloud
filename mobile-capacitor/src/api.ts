@@ -198,11 +198,11 @@ function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus
   const infraredDeviceStatus = parseStatusJson(infraredDevice?.currentStatus)
   const mqttStatus = getStringField(status, "mqttStatus", "onlineStatus", "status")
   const fanStatus =
-    getStringField(fanDeviceStatus, "power", "status", "switch", "value", "fanStatus", "fan_status", "fan") ||
-    getStringField(status, "fanStatus", "fan_status", "fan")
+    getStringField(status, "fanStatus", "fan_status", "fan") ||
+    getStringField(fanDeviceStatus, "power", "status", "switch", "value", "fanStatus", "fan_status", "fan")
   const lightStatus =
-    getStringField(lightDeviceStatus, "power", "status", "switch", "value", "lightStatus", "light_status", "light") ||
-    getStringField(status, "lightStatus", "light_status", "light")
+    getStringField(status, "lightStatus", "light_status", "light") ||
+    getStringField(lightDeviceStatus, "power", "status", "switch", "value", "lightStatus", "light_status", "light")
   const infraredStatus = getStringField(infraredDeviceStatus, "detected", "pirStatus", "status", "value")
   const statusUpdatedAt = getStringField(status, "statusUpdatedAt", "commandUpdatedAt", "telemetryUpdatedAt")
   const onlineStatus = device?.onlineStatus || mqttStatus
@@ -341,7 +341,7 @@ export async function controlHomeDevice(plantId: number, deviceId: number | stri
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
       cache: "no-store",
-      body: JSON.stringify({ plantId, deviceId, commandValue: turnOn ? "ON" : "OFF" }),
+      body: JSON.stringify({ plantId, deviceId, commandValue: turnOn ? "ON" : "OFF", sourceType: "MANUAL" }),
     }),
   )
 }

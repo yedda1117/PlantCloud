@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { ImpactStyle } from "@capacitor/haptics"
 import { AnimatePresence, motion } from "framer-motion"
 import { CalendarDays, Home, Leaf, MessageCircle } from "lucide-react"
-import { getHomeRealtime, getPlantAiAnalysis, getPlants, hasAuthSession } from "./api"
+import { controlHomeDevice, getHomeRealtime, getPlantAiAnalysis, getPlants, hasAuthSession } from "./api"
 import { AiPage } from "./pages/AiPage"
 import { CalendarPage } from "./pages/CalendarPage"
 import { DetailPage } from "./pages/DetailPage"
@@ -15,6 +15,67 @@ import { fallbackPlants, impact } from "./mobile-utils"
 
 type MainScreen = "home" | "detail" | "calendar" | "ai"
 type Screen = "login" | "register" | "intro" | MainScreen
+type DeviceOverrideEntry = {
+  fanOn?: boolean
+  lightOn?: boolean
+  updatedAt: string
+}
+
+type DeviceOverride = Partial<Record<number, DeviceOverrideEntry>>
+type RealtimeCache = Partial<Record<number, HomeRealtimeData>>
+
+const DEVICE_OVERRIDE_STORAGE_KEY = "plantcloud_mobile_device_overrides"
+const REALTIME_CACHE_STORAGE_KEY = "plantcloud_mobile_realtime_cache"
+
+function loadDeviceOverrides(): DeviceOverride {
+  try {
+    const raw = localStorage.getItem(DEVICE_OVERRIDE_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? (parsed as DeviceOverride) : {}
+  } catch {
+    return {}
+  }
+}
+
+function loadRealtimeCache(): RealtimeCache {
+  try {
+    const raw = localStorage.getItem(REALTIME_CACHE_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? (parsed as RealtimeCache) : {}
+  } catch {
+    return {}
+  }
+}
+
+function parseTimestamp(value: string | null | undefined) {
+  if (!value) return null
+  const time = Date.parse(value)
+  return Number.isNaN(time) ? null : time
+}
+
+function mergeRealtimeWithOverride(data: HomeRealtimeData, override?: DeviceOverrideEntry) {
+  if (!override) return data
+
+  const overrideTime = parseTimestamp(override.updatedAt)
+  const backendTime = parseTimestamp(data.device.statusUpdatedAt)
+  if (overrideTime === null || (backendTime !== null && backendTime >= overrideTime)) {
+    return data
+  }
+
+  return {
+    ...data,
+    device: {
+      ...data.device,
+      fanOn: override.fanOn ?? data.device.fanOn,
+      fanStatus: override.fanOn !== undefined ? (override.fanOn ? "ON" : "OFF") : data.device.fanStatus,
+      lightOn: override.lightOn ?? data.device.lightOn,
+      lightStatus: override.lightOn !== undefined ? (override.lightOn ? "ON" : "OFF") : data.device.lightStatus,
+      statusUpdatedAt: override.updatedAt,
+    },
+  }
+}
 
 function initialScreen(): Screen {
   if (!hasAuthSession()) return "login"
@@ -57,11 +118,18 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(hasAuthSession)
   const [plants, setPlants] = useState<Plant[]>(fallbackPlants)
   const [selectedPlantId, setSelectedPlantId] = useState(() => Number(localStorage.getItem("plantcloud_selected_mobile_plant") || import.meta.env.VITE_DEFAULT_PLANT_ID || 1))
-  const [realtime, setRealtime] = useState<HomeRealtimeData | null>(null)
+  const [realtimeCache, setRealtimeCache] = useState<RealtimeCache>(() => loadRealtimeCache())
+  const [realtime, setRealtime] = useState<HomeRealtimeData | null>(() => {
+    const initialPlantId = Number(localStorage.getItem("plantcloud_selected_mobile_plant") || import.meta.env.VITE_DEFAULT_PLANT_ID || 1)
+    const cached = loadRealtimeCache()[initialPlantId]
+    return cached ?? null
+  })
   const [analysis, setAnalysis] = useState<PlantAiAnalysis | null>(null)
   const [analysisLoadedPlantId, setAnalysisLoadedPlantId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadingAnalysis, setLoadingAnalysis] = useState(false)
+  const [controlLoadingTarget, setControlLoadingTarget] = useState<"light" | "fan" | null>(null)
+  const [deviceOverrides, setDeviceOverrides] = useState<DeviceOverride>(() => loadDeviceOverrides())
   const [error, setError] = useState<string | null>(null)
 
   const plant = useMemo(() => plants.find((item) => item.plantId === selectedPlantId) || plants[0] || fallbackPlants[0], [plants, selectedPlantId])
@@ -71,14 +139,19 @@ export default function App() {
     setLoading(true)
     try {
       const data = await getHomeRealtime(plant.plantId)
-      setRealtime(data)
+      const mergedData = mergeRealtimeWithOverride(data, deviceOverrides[plant.plantId])
+      setRealtime(mergedData)
+      setRealtimeCache((current) => ({
+        ...current,
+        [plant.plantId]: mergedData,
+      }))
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "实时数据加载失败")
     } finally {
       setLoading(false)
     }
-  }, [authenticated, plant.plantId])
+  }, [authenticated, deviceOverrides, plant.plantId])
 
   const refreshAnalysis = useCallback(async () => {
     if (!authenticated) return
@@ -108,6 +181,21 @@ export default function App() {
   }, [authenticated])
 
   useEffect(() => {
+    localStorage.setItem(DEVICE_OVERRIDE_STORAGE_KEY, JSON.stringify(deviceOverrides))
+  }, [deviceOverrides])
+
+  useEffect(() => {
+    localStorage.setItem(REALTIME_CACHE_STORAGE_KEY, JSON.stringify(realtimeCache))
+  }, [realtimeCache])
+
+  useEffect(() => {
+    const cached = realtimeCache[plant.plantId]
+    if (cached) {
+      setRealtime(mergeRealtimeWithOverride(cached, deviceOverrides[plant.plantId]))
+    }
+  }, [deviceOverrides, plant.plantId, realtimeCache])
+
+  useEffect(() => {
     if (!authenticated) return undefined
     void refresh()
     const timer = window.setInterval(() => void refresh(), 8000)
@@ -125,6 +213,11 @@ export default function App() {
     }
   }, [analysis, analysisLoadedPlantId, loadingAnalysis, plant.plantId, refreshAnalysis, screen])
 
+  const handleLoggedIn = useCallback((_session: LoginResult) => {
+    setAuthenticated(true)
+    setScreen(localStorage.getItem("plantcloud_mobile_seen_intro") ? "home" : "intro")
+  }, [])
+
   const selectPlant = (id: number) => {
     impact()
     setSelectedPlantId(id)
@@ -134,8 +227,48 @@ export default function App() {
   const toggleDevice = async (target: "light" | "fan", next: boolean) => {
     if (!realtime?.device.deviceId) return
     impact(ImpactStyle.Medium)
-    await controlHomeDevice(plant.plantId, realtime.device.deviceId, target, next)
-    await refresh()
+    setControlLoadingTarget(target)
+    try {
+      await controlHomeDevice(plant.plantId, realtime.device.deviceId, target, next)
+      const updatedAt = new Date().toISOString()
+      setDeviceOverrides((current) => ({
+        ...current,
+        [plant.plantId]: {
+          ...current[plant.plantId],
+          updatedAt,
+          fanOn: target === "fan" ? next : current[plant.plantId]?.fanOn,
+          lightOn: target === "light" ? next : current[plant.plantId]?.lightOn,
+        },
+      }))
+      let nextRealtimeSnapshot: HomeRealtimeData | null = null
+      setRealtime((current) => {
+        if (!current) return current
+        nextRealtimeSnapshot = {
+          ...current,
+          device: {
+            ...current.device,
+            fanOn: target === "fan" ? next : current.device.fanOn,
+            fanStatus: target === "fan" ? (next ? "ON" : "OFF") : current.device.fanStatus,
+            lightOn: target === "light" ? next : current.device.lightOn,
+            lightStatus: target === "light" ? (next ? "ON" : "OFF") : current.device.lightStatus,
+            statusUpdatedAt: updatedAt,
+          },
+        }
+        return nextRealtimeSnapshot
+      })
+      if (nextRealtimeSnapshot) {
+        setRealtimeCache((cache) => ({
+          ...cache,
+          [plant.plantId]: nextRealtimeSnapshot as HomeRealtimeData,
+        }))
+      }
+      await refresh()
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "设备控制失败")
+    } finally {
+      setControlLoadingTarget(null)
+    }
   }
 
   return (
@@ -172,6 +305,8 @@ export default function App() {
                 onRefresh={refresh}
                 onGoDetail={() => setScreen("detail")}
                 onGoAi={() => setScreen("ai")}
+                onToggleDevice={toggleDevice}
+                controlLoadingTarget={controlLoadingTarget}
               />
             ) : null}
             {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} /> : null}
