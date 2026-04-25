@@ -7,6 +7,7 @@ import com.plantcloud.device.entity.Device;
 import com.plantcloud.device.mapper.DeviceMapper;
 import com.plantcloud.mqtt.listener.SmokeGasAlertMessage;
 import com.plantcloud.mqtt.service.SmokeGasAlertMessageService;
+import com.plantcloud.strategy.service.StrategyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -36,6 +38,7 @@ public class SmokeGasAlertMessageServiceImpl implements SmokeGasAlertMessageServ
 
     private final AlertLogMapper alertLogMapper;
     private final DeviceMapper deviceMapper;
+    private final StrategyService strategyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -53,18 +56,21 @@ public class SmokeGasAlertMessageServiceImpl implements SmokeGasAlertMessageServ
         log.info("Evaluating SF1 smoke/gas state. deviceId={}, plantId={}, abnormal={}, hasUnresolved={}, metricValue={}, eventTime={}",
                 device.getId(), device.getPlantId(), abnormal, latestUnresolvedAlert != null, metricValue, eventTime);
 
+        Long plantId = device.getPlantId();
         if (abnormal) {
             upsertAbnormalAlert(device, message, rawPayload, eventTime, metricValue, latestUnresolvedAlert);
+            strategyService.evaluateStrategiesForPlant(plantId, "SMOKE_ALERT", Map.of());
             return;
         }
 
         if (latestUnresolvedAlert != null) {
             resolveAlert(latestUnresolvedAlert, rawPayload, eventTime, metricValue);
+            strategyService.evaluateStrategiesForPlant(plantId, "SMOKE_ALERT", Map.of());
             return;
         }
 
         log.info("SF1 smoke/gas state is normal and no unresolved alert exists. deviceId={}, plantId={}",
-                device.getId(), device.getPlantId());
+                device.getId(), plantId);
     }
 
     private void upsertAbnormalAlert(Device device,

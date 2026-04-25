@@ -45,7 +45,7 @@ app:
     instance-seg-model: ${SMARTJAVAAI_INSTANCE_SEG_MODEL:SEG_YOLOV8N_PYTORCH}
     model-path: ${SMARTJAVAAI_MODEL_PATH:}
     threshold: ${SMARTJAVAAI_THRESHOLD:0.35}
-    background-color: "${SMARTJAVAAI_BACKGROUND_COLOR:#EEF8E8}"
+    background-color: "${SMARTJAVAAI_BACKGROUND_COLOR:#FFFFFFB3}"
     face:
       enabled: ${SMARTJAVAAI_FACE_ENABLED:true}
       detect-model: ${SMARTJAVAAI_FACE_DETECT_MODEL:RETINA_FACE}

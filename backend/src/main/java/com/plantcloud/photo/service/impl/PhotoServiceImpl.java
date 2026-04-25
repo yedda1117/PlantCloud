@@ -9,11 +9,9 @@ import com.plantcloud.plant.entity.Plant;
 import com.plantcloud.plant.mapper.PlantMapper;
 import com.plantcloud.system.exception.BizException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -23,7 +21,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -34,9 +31,7 @@ public class PhotoServiceImpl implements PhotoService {
     private final SmartAiClient smartAiClient;
     private final PlantMapper plantMapper;
     private final PhotoPersistenceService photoPersistenceService;
-
-    @Value("${app.upload.dir:uploads}")
-    private String uploadDir;
+    private final PhotoPathResolver photoPathResolver;
 
     @Override
     public PhotoLogVO upload(Long plantId,
@@ -64,14 +59,14 @@ public class PhotoServiceImpl implements PhotoService {
             }
 
             SmartAiClient.SegmentResult segmentResult = smartAiClient.segment(sourceImage);
-            String originalUrl = toPublicUrl(originalPath);
+            String originalUrl = photoPathResolver.toStoredRelativeUrl(originalPath);
             String processedUrl = null;
             String aiStatus = "FAILED";
 
             if (segmentResult.isSuccess() && segmentResult.getImage() != null) {
                 Path processedPath = photoDir.resolve(id + "-processed.png");
                 ImageIO.write(segmentResult.getImage(), "png", processedPath.toFile());
-                processedUrl = toPublicUrl(processedPath);
+                processedUrl = photoPathResolver.toStoredRelativeUrl(processedPath);
                 aiStatus = "DONE";
             }
 
@@ -108,7 +103,10 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     private Path getPhotoDir(Long plantId, LocalDate date) {
-        return Path.of(uploadDir, "photos", String.valueOf(plantId), date.format(DateTimeFormatter.BASIC_ISO_DATE))
+        return photoPathResolver.getUploadRoot()
+                .resolve("calendar")
+                .resolve("plant-" + plantId)
+                .resolve(date.toString())
                 .toAbsolutePath()
                 .normalize();
     }
@@ -122,18 +120,6 @@ public class PhotoServiceImpl implements PhotoService {
             case "jpg", "jpeg", "png", "webp", "bmp" -> extension;
             default -> "png";
         };
-    }
-
-    private String toPublicUrl(Path path) {
-        Path uploadRoot = Path.of(uploadDir).toAbsolutePath().normalize();
-        String relativePath = uploadRoot.relativize(path.toAbsolutePath().normalize())
-                .toString()
-                .replace('\\', '/');
-
-        return ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/uploads/")
-                .path(relativePath)
-                .toUriString();
     }
 
     private Plant requirePlant(Long plantId) {
@@ -150,9 +136,10 @@ public class PhotoServiceImpl implements PhotoService {
                 .id(plantLog.getId())
                 .plantId(plantLog.getPlantId())
                 .date(plantLog.getLogDate() == null ? null : plantLog.getLogDate().toString())
-                .originPhotoUrl(plantLog.getOriginPhotoUrl())
-                .photoUrl(plantLog.getPhotoUrl())
-                .thumbnailUrl(StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl())
+                .originPhotoUrl(photoPathResolver.normalizeForResponse(plantLog.getOriginPhotoUrl()))
+                .photoUrl(photoPathResolver.normalizeForResponse(plantLog.getPhotoUrl()))
+                .thumbnailUrl(photoPathResolver.normalizeForResponse(
+                        StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl()))
                 .milestone(plantLog.getMilestone())
                 .note(plantLog.getNote())
                 .hasPhoto(hasPhoto)

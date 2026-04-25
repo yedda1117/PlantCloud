@@ -24,7 +24,7 @@ import {
   MapPin,
   RefreshCw,
   Sparkles,
-  Trees,
+  Trees
 } from "lucide-react"
 
 const GpsMap = dynamic(() => import("@/components/gps-map"), {
@@ -589,23 +589,30 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-                <div className=" w-[86%] ">
-                  <div className="group rounded-[1.2rem] border border-white/45 px-4 py-3 shadow-[0_10px_24px_rgba(70,120,100,0.08)] transition-all duration-300 ease-out hover:-translate-y-[2px] hover:shadow-[0_14px_28px_rgba(70,120,100,0.14)]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <Trees className={`h-4 w-4 ${realtimeData?.infrared.currentDetected ? "text-emerald-700" : "text-stone-500"}`} />
-                        <p className="text-xs uppercase tracking-[0.2em] text-stone-600">PIR Status</p>
-                      </div>
-                      <p className={`flex items-center gap-1.5 text-sm uppercase tracking-[0.2em] ${realtimeData?.infrared.currentDetected ? "text-emerald-700 pirPulseText" : "text-stone-600"}`}>
-                        {realtimeData?.infrared.currentDetected ? <span className="pirPulseDot h-2 w-2 rounded-full bg-emerald-500" /> : null}
-                        {realtimeData?.infrared.currentDetected ? "Detected" : "Clear"}
-                      </p>
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-stone-700">
-                      {infraredText} · 今日靠近 {realtimeData?.infrared.approachCount ?? 0} 次
-                    </p>
-                  </div>
-                </div>
+                <div className="w-[86%]">
+  <div className="group rounded-[1.2rem]">
+    <div className="flex items-center justify-between gap-3">
+      {/* 左侧：显示累计次数 */}
+      <div className="flex min-w-0 items-center gap-2">
+        <p className="text-xs uppercase tracking-[0.2em] text-stone-600">
+          今日照看 {realtimeData?.infrared.approachCount ?? 0} 次
+        </p>
+      </div>
+
+      {/* 右侧：显示当前状态 */}
+      <div className={`flex items-center gap-1.5 text-sm uppercase tracking-[0.2em] font-medium ${realtimeData?.infrared.currentDetected ? "text-emerald-700 pirPulseText" : "text-stone-500"}`}>
+        {realtimeData?.infrared.currentDetected ? (
+          <>
+            <span className="pirPulseDot h-2 w-2 rounded-full bg-emerald-500" />
+            <span>Detected</span>
+          </>
+        ) : (
+          <span>Clear</span>
+        )}
+      </div>
+    </div>
+  </div>
+</div>
               </section>
 
               <section className="flex h-full min-h-0 flex-col items-center justify-center">
@@ -613,7 +620,7 @@ export default function HomePage() {
                   <p className="text-xs font-light uppercase tracking-[0.36em] text-stone-500">Current Plant</p>
                   <div className="relative inline-block">
                     <h1 className="mt-3 text-4xl font-light tracking-[0.08em] text-stone-800">
-                      {currentPlant.emoji} {currentPlant.name}
+                      {currentPlant.name}
                     </h1>
                   </div>
                 </div>
@@ -624,22 +631,16 @@ export default function HomePage() {
                   <div className="relative flex aspect-square w-full max-w-[660px] items-center justify-center overflow-hidden rounded-[1.8rem] border border-white/18 bg-[linear-gradient(180deg,rgba(248,254,251,0.22)_0%,rgba(230,244,236,0.12)_100%)] shadow-[0_22px_54px_rgba(66,108,94,0.2)]">
                     <div className="pointer-events-none absolute inset-0 rounded-[1.8rem] border border-white/35 blur-[2px]" />
                     <div className="pointer-events-none absolute inset-x-[12%] top-[6%] h-12 rounded-full bg-white/70 blur-xl" />
-                    <PlantModelViewer modelPath={plantModelPath} className="rounded-[1.8rem]" minimal />
-                  </div>
-                </div>
-                <div className="mt-5 flex w-full max-w-[28rem] flex-col items-center gap-3">
-                  <div className="flex flex-wrap items-center justify-center gap-2">
                     <Button
                       type="button"
                       onClick={() => setModelDialogOpen(true)}
-                      className="rounded-full bg-emerald-700 px-5 text-white shadow-[0_12px_32px_rgba(16,185,129,0.22)] hover:bg-emerald-800"
+                      className="absolute right-4 top-4 z-20 rounded-full border border-white/65 bg-emerald-200/55 px-5 text-emerald-900 backdrop-blur-md shadow-[0_10px_28px_rgba(80,140,115,0.2)] hover:bg-emerald-200/75"
                     >
                       <RefreshCw className="h-4 w-4" />
-                      换模型
+                      更换模型
                     </Button>
-                    
+                    <PlantModelViewer modelPath={plantModelPath} className="rounded-[1.8rem]" minimal />
                   </div>
-                  
                 </div>
               </section>
 
@@ -743,7 +744,7 @@ export default function HomePage() {
                 上传图片生成 3D 模型
               </DialogTitle>
               <DialogDescription className="leading-6 text-stone-500">
-                这里是演示交互。可以根据用户上传图片生成3D模型，有开花款、缺水款和倾倒款。
+                可以根据您上传的图片生成3D模型,我们会自动将其设计为正常、异常及倾斜状态。
               </DialogDescription>
             </DialogHeader>
 

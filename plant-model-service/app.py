@@ -68,8 +68,8 @@ def validate_input(data: dict):
         if field not in data:
             return False, f"缺少字段: {field}"
 
-    if data["plant_type"] not in ["phalaenopsis", "succulent"]:
-        return False, "plant_type 只能是 phalaenopsis 或 succulent"
+    if data["plant_type"] not in ["phalaenopsis", "succulent", "gardenia"]:
+        return False, "plant_type 只能是 phalaenopsis、succulent 或 gardenia"
 
     numeric_fields = [
         "temp",

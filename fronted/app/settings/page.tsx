@@ -27,6 +27,8 @@ import {
   type StrategyItem,
   type StrategyUpsertPayload,
 } from "@/lib/strategy-api"
+import { listAlerts, SMOKE_GAS_METRIC_NAME } from "@/lib/alert-api"
+import { controlHomeDevice } from "@/lib/home-api"
 import { formatStrategyAction, formatStrategyCondition, resolveStrategyConfig } from "@/lib/strategy-format"
 import {
   AlertCircle,
@@ -67,7 +69,7 @@ type PolicyLog = {
 
 type StrategyFormState = {
   strategyName: string
-  metricType: "LIGHT" | "TEMPERATURE" | "HUMIDITY"
+  metricType: "LIGHT" | "TEMPERATURE" | "HUMIDITY" | "SMOKE"
   operatorType: "LT" | "GT" | "EQ"
   thresholdMin: string
   timeLimitEnabled: boolean
@@ -215,7 +217,10 @@ function buildStrategyFormFromItem(strategy: StrategyItem): StrategyFormState {
   const action = resolveStrategyActionValue(getStrategyActionSelectValue(strategy.actionType, strategy.actionValue))
   return {
     strategyName: strategy.strategyName ?? "",
-    metricType: strategy.metricType === "TEMPERATURE" || strategy.metricType === "HUMIDITY" ? strategy.metricType : "LIGHT",
+    metricType:
+      strategy.metricType === "TEMPERATURE" || strategy.metricType === "HUMIDITY" || strategy.metricType === "SMOKE"
+        ? strategy.metricType
+        : "LIGHT",
     operatorType: strategy.operatorType === "GT" || strategy.operatorType === "EQ" ? strategy.operatorType : "LT",
     thresholdMin: String(strategy.thresholdMin ?? strategy.thresholdMax ?? ""),
     timeLimitEnabled: Boolean(config.timeLimitEnabled),
@@ -531,6 +536,7 @@ function StrategyDialog({
                     <SelectItem className={selectItemClass} value="LIGHT">光照强度</SelectItem>
                     <SelectItem className={selectItemClass} value="TEMPERATURE">温度</SelectItem>
                     <SelectItem className={selectItemClass} value="HUMIDITY">湿度</SelectItem>
+                    <SelectItem className={selectItemClass} value="SMOKE">烟雾浓度</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1443,6 +1449,160 @@ function SettingsPageContent() {
   const latestLogTime = logs[0]?.time ?? "--:--"
   const syncedDevicesLabel = devicesLoading ? "同步中" : "已同步"
 
+  const compareMetric = (operatorType: string, currentValue: number, thresholdValue: number) => {
+    switch (operatorType) {
+      case "LT":
+        return currentValue < thresholdValue
+      case "GT":
+        return currentValue > thresholdValue
+      case "EQ":
+        return currentValue === thresholdValue
+      default:
+        return false
+    }
+  }
+
+  const triggerStrategyAction = async (strategy: StrategyItem) => {
+    console.info("[SMOKE_STRATEGY] action:start", {
+      strategyId: strategy.id,
+      actionType: strategy.actionType,
+      actionValue: strategy.actionValue,
+      targetDeviceId: strategy.targetDeviceId ?? null,
+      plantId: currentPlantApiId,
+    })
+    if (strategy.actionType !== "AUTO_LIGHT" && strategy.actionType !== "AUTO_FAN") {
+      console.info("[SMOKE_STRATEGY] action:skip-device-control", {
+        strategyId: strategy.id,
+        actionType: strategy.actionType,
+      })
+      toast({ title: "烟雾策略命中", description: "已命中阈值，当前动作为通知类，无需设备控制。" })
+      return
+    }
+    const token = typeof window !== "undefined" ? window.localStorage.getItem("plantcloud_token") : null
+    if (!token) {
+      console.warn("[SMOKE_STRATEGY] action:missing-token", { strategyId: strategy.id })
+      throw new Error("登录态已失效，请重新登录后再执行策略")
+    }
+    const resolvedDeviceId = strategy.targetDeviceId ?? (await getIntegratedControlDeviceId(currentPlantApiId))
+    if (!resolvedDeviceId) {
+      console.warn("[SMOKE_STRATEGY] action:missing-device", {
+        strategyId: strategy.id,
+        targetDeviceId: strategy.targetDeviceId ?? null,
+      })
+      throw new Error("未找到可执行控制的目标设备")
+    }
+    const target = strategy.actionType === "AUTO_LIGHT" ? "light" : "fan"
+    const turnOn = (strategy.actionValue ?? "ON").toUpperCase() !== "OFF"
+    console.info("[SMOKE_STRATEGY] action:control-request", {
+      strategyId: strategy.id,
+      target,
+      turnOn,
+      resolvedDeviceId,
+      plantId: currentPlantApiId,
+    })
+    await controlHomeDevice(currentPlantApiId, resolvedDeviceId, target, turnOn, token)
+    console.info("[SMOKE_STRATEGY] action:control-success", {
+      strategyId: strategy.id,
+      target,
+      turnOn,
+      resolvedDeviceId,
+    })
+    toast({
+      title: "烟雾策略已触发",
+      description: strategy.actionType === "AUTO_LIGHT" ? "已执行补光灯控制动作。" : "已执行风扇控制动作。",
+    })
+  }
+
+  const evaluateSmokeStrategy = async (strategy: StrategyItem) => {
+    if (!strategy.enabled || strategy.metricType !== "SMOKE") {
+      console.info("[SMOKE_STRATEGY] evaluate:skip", {
+        strategyId: strategy.id,
+        enabled: strategy.enabled,
+        metricType: strategy.metricType,
+      })
+      return
+    }
+    try {
+      const { requestUrl: alertsUrl, alerts } = await listAlerts({ status: "UNRESOLVED" })
+      console.info("[SMOKE_STRATEGY] evaluate:fetch-alerts", {
+        strategyId: strategy.id,
+        url: alertsUrl,
+        plantId: currentPlantApiId,
+      })
+      const plantAlerts = alerts.filter(
+        (a) => a.plantId != null && Number(a.plantId) === Number(currentPlantApiId),
+      )
+      console.info("[SMOKE_STRATEGY] evaluate:alerts-loaded", {
+        strategyId: strategy.id,
+        total: plantAlerts.length,
+        sample: plantAlerts.slice(0, 5).map((a) => ({
+          id: a.id,
+          alertType: a.alertType,
+          metricName: a.metricName,
+          metricValue: a.metricValue,
+          createdAt: a.createdAt,
+        })),
+      })
+      let detectedSmokeMetric: number | null = null
+      let matchedAlertId: number | string | null = null
+      for (const alert of plantAlerts) {
+        if (alert.metricName !== SMOKE_GAS_METRIC_NAME) continue
+        const value = Number(alert.metricValue)
+        if (Number.isNaN(value)) continue
+        detectedSmokeMetric = value
+        matchedAlertId = alert.id
+        break
+      }
+      if (detectedSmokeMetric == null) {
+        console.info("[SMOKE_STRATEGY] evaluate:no-smoke-gas-ppm", {
+          strategyId: strategy.id,
+          metricName: SMOKE_GAS_METRIC_NAME,
+        })
+        return
+      }
+      const thresholdRaw = strategy.operatorType === "LT" ? strategy.thresholdMax ?? strategy.thresholdMin : strategy.thresholdMin ?? strategy.thresholdMax
+      const thresholdValue = Number(thresholdRaw)
+      if (Number.isNaN(thresholdValue)) {
+        console.warn("[SMOKE_STRATEGY] evaluate:invalid-threshold", {
+          strategyId: strategy.id,
+          operatorType: strategy.operatorType,
+          thresholdMin: strategy.thresholdMin,
+          thresholdMax: strategy.thresholdMax,
+          resolvedThreshold: thresholdRaw,
+        })
+        toast({ title: "烟雾策略未执行", description: "策略阈值无效，请编辑后重试。", variant: "destructive" })
+        return
+      }
+      const matched = compareMetric(strategy.operatorType, detectedSmokeMetric, thresholdValue)
+      console.info("[SMOKE_STRATEGY] evaluate:compare-result", {
+        strategyId: strategy.id,
+        matchedAlertId,
+        metricValue: detectedSmokeMetric,
+        operatorType: strategy.operatorType,
+        thresholdValue,
+        matched,
+      })
+      if (!matched) return
+      await triggerStrategyAction(strategy)
+    } catch (error: unknown) {
+      const message = error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : JSON.stringify(error)
+      console.error("[SMOKE_STRATEGY] evaluate:error", {
+        strategyId: strategy.id,
+        message,
+        rawError: error,
+      })
+      toast({
+        title: "烟雾策略执行失败",
+        description: message && message !== "{}" ? message : "获取日志或执行动作失败",
+        variant: "destructive",
+      })
+    }
+  }
+
   function buildPolicyLogSummary(log: StrategyExecutionLogItem, strategyName: string): Pick<PolicyLog, "message" | "variant" | "stateKey"> {
     const rawMessage = log.resultMessage?.trim() || log.executionResult
     if (log.triggerSource === "STRATEGY_UPDATE") {
@@ -1605,6 +1765,19 @@ function SettingsPageContent() {
       const detail = await getStrategyDetail(strategy.id)
       const payload = buildUpdatePayload(detail, nextEnabled)
       await updateStrategy(strategy.id, payload)
+      if (nextEnabled) {
+        console.info("[SMOKE_STRATEGY] evaluate:on-toggle-enabled", {
+          strategyId: strategy.id,
+          metricType: payload.metricType ?? detail.metricType,
+          operatorType: payload.operatorType ?? detail.operatorType,
+        })
+        await evaluateSmokeStrategy({
+          ...detail,
+          ...payload,
+          id: strategy.id,
+          enabled: true,
+        } as StrategyItem)
+      }
       console.info("[settings][strategy-toggle] request:success", {
         strategyId: strategy.id,
         enabled: nextEnabled,

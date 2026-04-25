@@ -38,6 +38,8 @@ export type PlantAiAnalysis = {
   riskType?: string[]
 }
 
+const PREDICTION_PLANT_IDS = [1, 2, 6]
+
 function buildHeaders(token: string): HeadersInit {
   return token
     ? {
@@ -76,7 +78,7 @@ export async function analyzePlantPrediction(plantId: number, token: string) {
 }
 
 export function normalizePlantAiResult(result: PlantRiskAnalysis | PlantPredictionAnalysis, plantId: number): PlantAiAnalysis {
-  if (plantId === 1 || plantId === 2) {
+  if (PREDICTION_PLANT_IDS.includes(plantId)) {
     const predictionResult = result as PlantPredictionAnalysis
     return {
       summary: predictionResult.summary?.trim() || "",
@@ -97,7 +99,7 @@ export function normalizePlantAiResult(result: PlantRiskAnalysis | PlantPredicti
 }
 
 export async function getPlantAiAnalysis(plantId: number, token: string): Promise<PlantAiAnalysis> {
-  const response = plantId === 1 || plantId === 2
+  const response = PREDICTION_PLANT_IDS.includes(plantId)
     ? await analyzePlantPrediction(plantId, token)
     : await analyzePlantRisk(plantId, token)
 

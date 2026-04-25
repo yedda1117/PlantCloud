@@ -16,6 +16,7 @@ import com.plantcloud.monitoring.mapper.TemperatureDataMapper;
 import com.plantcloud.photo.entity.MilestoneEnum;
 import com.plantcloud.photo.entity.PlantLog;
 import com.plantcloud.photo.mapper.PlantLogMapper;
+import com.plantcloud.photo.service.impl.PhotoPathResolver;
 import com.plantcloud.plant.entity.Plant;
 import com.plantcloud.plant.mapper.PlantMapper;
 import com.plantcloud.system.exception.BizException;
@@ -39,6 +40,7 @@ public class CalendarServiceImpl implements CalendarService {
     private final TemperatureDataMapper temperatureDataMapper;
     private final HumidityDataMapper humidityDataMapper;
     private final LightDataMapper lightDataMapper;
+    private final PhotoPathResolver photoPathResolver;
 
     @Override
     public List<CalendarSummaryVO> getMonthView(Long plantId, Integer year, Integer month) {
@@ -165,12 +167,12 @@ public class CalendarServiceImpl implements CalendarService {
 
     private CalendarSummaryVO toCalendarSummaryVO(PlantLog plantLog) {
         boolean hasPhoto = StringUtils.hasText(plantLog.getPhotoUrl()) || StringUtils.hasText(plantLog.getOriginPhotoUrl());
+        String thumbnailUrl = photoPathResolver.normalizeForResponse(
+                StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl());
         return CalendarSummaryVO.builder()
                 .date(plantLog.getLogDate())
                 .hasPhoto(hasPhoto)
-                .thumbnailUrl(hasPhoto
-                        ? (StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl())
-                        : null)
+                .thumbnailUrl(hasPhoto ? thumbnailUrl : null)
                 .milestone(plantLog.getMilestone())
                 .build();
     }
@@ -184,8 +186,8 @@ public class CalendarServiceImpl implements CalendarService {
         return CalendarDayDetailVO.builder()
                 .plantId(plantId)
                 .date(date)
-                .photoUrl(plantLog == null ? null : plantLog.getPhotoUrl())
-                .originPhotoUrl(plantLog == null ? null : plantLog.getOriginPhotoUrl())
+                .photoUrl(plantLog == null ? null : photoPathResolver.normalizeForResponse(plantLog.getPhotoUrl()))
+                .originPhotoUrl(plantLog == null ? null : photoPathResolver.normalizeForResponse(plantLog.getOriginPhotoUrl()))
                 .note(plantLog == null ? null : plantLog.getNote())
                 .milestone(plantLog == null ? null : plantLog.getMilestone())
                 .temperature(summary.temperature())

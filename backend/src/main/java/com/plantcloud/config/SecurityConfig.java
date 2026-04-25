@@ -1,6 +1,7 @@
 package com.plantcloud.config;
 
 import com.plantcloud.security.jwt.JwtAuthenticationFilter;
+import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -33,6 +34,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/auth/**",
@@ -69,8 +71,16 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(List.of(
+                "http://localhost",
                 "http://localhost:*",
+                "https://localhost",
+                "https://localhost:*",
                 "http://127.0.0.1:*",
+                "http://127.0.0.1",
+                "https://127.0.0.1",
+                "https://127.0.0.1:*",
+                "capacitor://localhost",
+                "ionic://localhost",
                 "http://172.16.*.*:*",
                 "http://172.17.*.*:*",
                 "http://172.18.*.*:*",

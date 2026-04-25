@@ -4,11 +4,14 @@ import type { VoiceAssistantState } from "../hooks/useVoiceAssistant"
 export function VoiceAssistantOrb({
   state,
   liveTranscript,
+  lastHeard,
 }: {
   state: VoiceAssistantState
   liveTranscript: string
+  lastHeard: string
 }) {
-  const title = state === "processing" || state === "speaking" || Boolean(liveTranscript) ? "我在听哦" : "要和我聊聊吗？"
+  const visibleTranscript = liveTranscript || lastHeard
+  const title = state === "processing" || state === "speaking" || Boolean(visibleTranscript) ? "我在听哦" : "要和我聊聊吗？"
 
   return (
     <div className={`voice-assistant voice-assistant-${state}`} aria-live="polite">
@@ -26,7 +29,7 @@ export function VoiceAssistantOrb({
       </motion.div>
       <div className="voice-assistant-copy">
         <strong>{title}</strong>
-        {liveTranscript ? <span>{liveTranscript}</span> : null}
+        {visibleTranscript ? <span>{visibleTranscript}</span> : null}
       </div>
     </div>
   )
