@@ -31,8 +31,6 @@ export type PhotoUploadResult = {
   aiStatus: string | null
 }
 
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
-
 type ApiResult<T> = {
   code?: number
   message?: string
@@ -79,14 +77,15 @@ function resolveCalendarAssetUrl(value: string | null | undefined) {
   }
 
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed
+    const url = new URL(trimmed)
+    return `/api/assets?path=${encodeURIComponent(`${url.pathname}${url.search}`)}`
   }
 
   if (trimmed.startsWith("/")) {
-    return `${BACKEND_BASE_URL}${trimmed}`
+    return `/api/assets?path=${encodeURIComponent(trimmed)}`
   }
 
-  return trimmed
+  return `/api/assets?path=${encodeURIComponent(`/${trimmed}`)}`
 }
 
 function normalizeCalendarSummary(record: CalendarSummary): CalendarSummary {

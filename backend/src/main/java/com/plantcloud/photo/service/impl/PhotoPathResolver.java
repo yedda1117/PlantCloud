@@ -5,9 +5,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
+import java.util.stream.Stream;
 
 @Component
 public class PhotoPathResolver {
@@ -63,8 +68,34 @@ public class PhotoPathResolver {
         return normalizePathString(trimmed);
     }
 
+    public String resolveForPlantLog(String storedValue, Long plantId, LocalDate date) {
+        String normalized = normalizeForResponse(storedValue);
+        if (!StringUtils.hasText(normalized)) {
+            return normalized;
+        }
+
+        if (resourceExists(normalized)) {
+            return normalized;
+        }
+
+        if (plantId == null || date == null) {
+            return null;
+        }
+
+        String fallback = findExistingPhotoForDate(storedValue, plantId, date);
+        return StringUtils.hasText(fallback) ? fallback : null;
+    }
+
     public Path getUploadRoot() {
         return Path.of(uploadDir).toAbsolutePath().normalize();
+    }
+
+    public Path getPhotoDirectory(Long plantId, LocalDate date) {
+        return getUploadRoot()
+                .resolve("photos")
+                .resolve(String.valueOf(plantId))
+                .toAbsolutePath()
+                .normalize();
     }
 
     private String normalizeLocalPath(Path path) {
@@ -95,6 +126,51 @@ public class PhotoPathResolver {
         }
 
         return normalized.startsWith("/") ? normalized : null;
+    }
+
+    private boolean resourceExists(String normalizedPath) {
+        if (!StringUtils.hasText(normalizedPath) || !normalizedPath.startsWith("/uploads/")) {
+            return false;
+        }
+        String relative = normalizedPath.substring("/uploads/".length()).replace('/', java.io.File.separatorChar);
+        return Files.exists(getUploadRoot().resolve(relative));
+    }
+
+    private String findExistingPhotoForDate(String storedValue, Long plantId, LocalDate date) {
+        Path photoDirectory = getPhotoDirectory(plantId, date);
+        if (!Files.isDirectory(photoDirectory)) {
+            return null;
+        }
+
+        String preferredSuffix = detectPreferredSuffix(storedValue);
+        try (Stream<Path> files = Files.list(photoDirectory)) {
+            List<Path> candidates = files
+                    .filter(Files::isRegularFile)
+                    .filter(path -> preferredSuffix == null || path.getFileName().toString().contains(preferredSuffix))
+                    .sorted(Comparator.comparing(Path::getFileName).reversed())
+                    .toList();
+
+            if (!candidates.isEmpty()) {
+                return toStoredRelativeUrl(candidates.get(0));
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    private String detectPreferredSuffix(String storedValue) {
+        if (!StringUtils.hasText(storedValue)) {
+            return null;
+        }
+        String normalized = storedValue.replace('\\', '/').toLowerCase(Locale.ROOT);
+        if (normalized.contains("-processed.")) {
+            return "-processed.";
+        }
+        if (normalized.contains("-original.")) {
+            return "-original.";
+        }
+        return null;
     }
 
     private boolean looksLikeLocalPath(String value) {
