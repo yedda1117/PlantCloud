@@ -229,7 +229,7 @@ export function HomePage({
       <motion.section className="compact-model-card compact-model-card-tight" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <div className="compact-model-stage">
           <div className="compact-model-voice-anchor">
-            <VoiceAssistantOrb state={voiceAssistant.state} liveTranscript={voiceAssistant.liveTranscript} />
+            <VoiceAssistantOrb state={voiceAssistant.state} liveTranscript={voiceAssistant.liveTranscript} lastHeard={voiceAssistant.lastHeard} />
           </div>
           <div className="compact-model-label">
             <strong>{plant.plantName}</strong>
