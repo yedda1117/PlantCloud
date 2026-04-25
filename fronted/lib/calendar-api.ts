@@ -31,6 +31,8 @@ export type PhotoUploadResult = {
   aiStatus: string | null
 }
 
+const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
+
 type ApiResult<T> = {
   code?: number
   message?: string
@@ -66,12 +68,59 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return (payload?.data ?? payload) as T
 }
 
+function resolveCalendarAssetUrl(value: string | null | undefined) {
+  if (!value) {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed
+  }
+
+  if (trimmed.startsWith("/")) {
+    return `${BACKEND_BASE_URL}${trimmed}`
+  }
+
+  return trimmed
+}
+
+function normalizeCalendarSummary(record: CalendarSummary): CalendarSummary {
+  return {
+    ...record,
+    thumbnailUrl: resolveCalendarAssetUrl(record.thumbnailUrl),
+  }
+}
+
+function normalizeCalendarDayDetail(detail: CalendarDayDetail): CalendarDayDetail {
+  return {
+    ...detail,
+    photoUrl: resolveCalendarAssetUrl(detail.photoUrl),
+    originPhotoUrl: resolveCalendarAssetUrl(detail.originPhotoUrl),
+  }
+}
+
+function normalizePhotoUploadResult(result: PhotoUploadResult): PhotoUploadResult {
+  return {
+    ...result,
+    photoUrl: resolveCalendarAssetUrl(result.photoUrl),
+    originPhotoUrl: resolveCalendarAssetUrl(result.originPhotoUrl),
+    thumbnailUrl: resolveCalendarAssetUrl(result.thumbnailUrl),
+  }
+}
+
 export function getCalendarSummary(plantId: number, year: number, month: number) {
   return request<CalendarSummary[]>(`/api/calendar?plant_id=${plantId}&year=${year}&month=${month}`)
+    .then((records) => records.map(normalizeCalendarSummary))
 }
 
 export function getCalendarDayDetail(plantId: number, date: string) {
   return request<CalendarDayDetail>(`/api/calendar/${date}?plant_id=${plantId}`)
+    .then(normalizeCalendarDayDetail)
 }
 
 export function updateCalendarDayLog(
@@ -85,14 +134,14 @@ export function updateCalendarDayLog(
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
-  })
+  }).then(normalizeCalendarDayDetail)
 }
 
 export function uploadPlantPhoto(formData: FormData) {
   return request<PhotoUploadResult>("/api/photos/upload", {
     method: "POST",
     body: formData,
-  })
+  }).then(normalizePhotoUploadResult)
 }
 
 export function deletePlantPhoto(plantId: number, date: string) {

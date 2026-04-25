@@ -20,6 +20,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 @Component
 public class SmartAiClient {
@@ -71,7 +72,7 @@ public class SmartAiClient {
             BufferedImage processedImage = applySolidBackground(
                     sourceImage,
                     detection.getInstanceSegInfo().getMask(),
-                    Color.decode(backgroundColor)
+                    parseBackgroundColor(backgroundColor)
             );
 
             return SegmentResult.success(
@@ -121,6 +122,27 @@ public class SmartAiClient {
                         .comparingInt((DetectionInfo info) -> rectangleArea(info.getDetectionRectangle()))
                         .thenComparingDouble(DetectionInfo::getScore))
                 .orElse(null);
+    }
+
+    private Color parseBackgroundColor(String colorValue) {
+        if (colorValue == null || colorValue.isBlank()) {
+            return new Color(255, 255, 255, 179);
+        }
+
+        String normalized = colorValue.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("#")) {
+            normalized = normalized.substring(1);
+        }
+
+        if (normalized.length() == 8) {
+            int red = Integer.parseInt(normalized.substring(0, 2), 16);
+            int green = Integer.parseInt(normalized.substring(2, 4), 16);
+            int blue = Integer.parseInt(normalized.substring(4, 6), 16);
+            int alpha = Integer.parseInt(normalized.substring(6, 8), 16);
+            return new Color(red, green, blue, alpha);
+        }
+
+        return Color.decode(colorValue);
     }
 
     private int rectangleArea(cn.smartjavaai.common.entity.DetectionRectangle rectangle) {

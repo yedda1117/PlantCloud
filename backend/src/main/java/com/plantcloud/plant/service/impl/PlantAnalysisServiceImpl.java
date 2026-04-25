@@ -163,6 +163,9 @@ public class PlantAnalysisServiceImpl implements PlantAnalysisService {
         if (Long.valueOf(2L).equals(plantId)) {
             return "succulent";
         }
+        if (Long.valueOf(6L).equals(plantId)) {
+            return "gardenia";
+        }
         throw new BizException(ResultCode.BAD_REQUEST.getCode(), "预测模型植物类型不支持");
     }
 

@@ -35,7 +35,7 @@ app:
     refresh-token-expire-seconds: 604800
   mqtt:
     broker-url: tcp://150.158.76.53:1883
-    client-id: plantcloud-backend-local
+    client-id: plantcloud-backend
     username: plant
     password: 123456
   minio:
@@ -50,7 +50,7 @@ app:
     instance-seg-model: SEG_YOLOV8N_PYTORCH
     model-path:
     threshold: 0.35
-    background-color: "#EEF8E8"
+    background-color: "#FFFFFFB3"
     face:
       enabled: true
       detect-model: RETINA_FACE

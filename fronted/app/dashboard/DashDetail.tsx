@@ -584,9 +584,6 @@ export default function DashDetail({ plant, onBack }: Props) {
   const humidityBadge = mapStatusBadge(current?.humidityStatus, "humidity")
   const lightBadge = mapStatusBadge(current?.lightStatus, "light")
   const riskLevelMeta = getRiskLevelMeta(aiAnalysisData?.riskLevel)
-  const aiAdviceText = aiAnalysisData?.advice?.join("；") || ""
-  const aiWarningText = aiAnalysisData?.riskWarnings?.join("；") || ""
-
   return (
     <div
       className="min-h-screen"
@@ -1019,14 +1016,34 @@ export default function DashDetail({ plant, onBack }: Props) {
 
                   <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
                     <p className="text-xs font-semibold tracking-wide text-emerald-700">养护建议</p>
-                    <p className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground">
-                      {aiAdviceText || "暂无建议"}
-                    </p>
+                    {aiAnalysisData.advice.length ? (
+                      <div className="mt-2 space-y-2 text-sm leading-6 text-foreground">
+                        {aiAnalysisData.advice.map((item) => (
+                          <p key={item} className="flex items-start gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                            <span>{item}</span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-foreground">暂无建议</p>
+                    )}
                   </div>
 
                   <div className="rounded-2xl border border-amber-100 bg-amber-50/80 p-4">
                     <p className="text-xs font-semibold tracking-wide text-amber-700">风险提醒</p>
-                    <p className="mt-2 text-sm leading-6 text-foreground">{aiWarningText || "暂无提醒"}</p>
+                    {aiAnalysisData.riskWarnings.length ? (
+                      <div className="mt-2 space-y-2 text-sm leading-6 text-foreground">
+                        {aiAnalysisData.riskWarnings.map((item) => (
+                          <p key={item} className="flex items-start gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                            <span>{item}</span>
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm leading-6 text-foreground">暂无提醒</p>
+                    )}
                   </div>
                 </div>
               )}
