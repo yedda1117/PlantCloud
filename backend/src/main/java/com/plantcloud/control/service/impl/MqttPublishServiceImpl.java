@@ -36,38 +36,44 @@ public class MqttPublishServiceImpl implements MqttPublishService {
     public PublishResult publish(String topic, String payload) {
         try {
             publishWithPooledClient(topic, payload);
-            
-            log.info("Successfully published MQTT message. topic={}, payload={}", 
+
+            log.info("Successfully published MQTT message. topic={}, payload={}",
                     topic, truncatePayload(payload));
-            
+
             return PublishResult.builder()
                     .success(true)
                     .build();
-                    
-        } catch (MqttException ex) {
-            log.warn("MQTT publish failed with pooled client, will retry with new client. topic={}, payload={}, reasonCode={}, error={}",
-                    topic, truncatePayload(payload), ex.getReasonCode(), ex.getMessage(), ex);
 
-            try {
-                // Fallback to dedicated client if pooled client fails
-                publishWithDedicatedClient(topic, payload);
+        } catch (Exception ex) {
+            log.warn("MQTT publish failed with pooled client, will retry with new client. topic={}, payload={}, error={}",
+                    topic, truncatePayload(payload), ex.getMessage(), ex);
+            return publishWithFallbackClient(topic, payload, ex);
+        }
+    }
 
-                log.info("Successfully published MQTT message after fallback. topic={}, payload={}",
-                        topic, truncatePayload(payload));
+    private PublishResult publishWithFallbackClient(String topic, String payload, Exception pooledEx) {
+        try {
+            // Fallback to dedicated client if pooled client fails
+            publishWithDedicatedClient(topic, payload);
 
-                return PublishResult.builder()
-                        .success(true)
-                        .build();
-            } catch (MqttException retryEx) {
-                String errorMessage = describeMqttException(retryEx);
-                log.error("Failed to publish MQTT message after fallback. topic={}, payload={}, reasonCode={}, error={}",
-                        topic, truncatePayload(payload), retryEx.getReasonCode(), retryEx.getMessage(), retryEx);
+            log.info("Successfully published MQTT message after fallback. topic={}, payload={}",
+                    topic, truncatePayload(payload));
 
-                return PublishResult.builder()
-                        .success(false)
-                        .errorMessage(errorMessage)
-                        .build();
+            return PublishResult.builder()
+                    .success(true)
+                    .build();
+        } catch (MqttException retryEx) {
+            String errorMessage = describeMqttException(retryEx);
+            if (pooledEx != null && StringUtils.hasText(pooledEx.getMessage())) {
+                errorMessage = "pooled=" + pooledEx.getMessage() + "; fallback=" + errorMessage;
             }
+            log.error("Failed to publish MQTT message after fallback. topic={}, payload={}, reasonCode={}, error={}",
+                    topic, truncatePayload(payload), retryEx.getReasonCode(), retryEx.getMessage(), retryEx);
+
+            return PublishResult.builder()
+                    .success(false)
+                    .errorMessage(errorMessage)
+                    .build();
         }
     }
 

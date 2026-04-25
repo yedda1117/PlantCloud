@@ -5,6 +5,7 @@ const metricLabels: Record<string, string> = {
   LIGHT: "光照强度",
   TEMPERATURE: "温度",
   HUMIDITY: "湿度",
+  SMOKE: "烟雾浓度",
   NONE: "条件",
 }
 
@@ -12,6 +13,7 @@ const metricUnits: Record<string, string> = {
   LIGHT: "lux",
   TEMPERATURE: "°C",
   HUMIDITY: "%",
+  SMOKE: "ppm",
 }
 
 const operatorLabels: Record<string, string> = {

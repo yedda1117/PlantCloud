@@ -3,6 +3,7 @@ package com.plantcloud.strategy.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.plantcloud.alert.service.AlertService;
 import com.plantcloud.common.enums.ResultCode;
 import com.plantcloud.control.dto.DeviceControlRequest;
 import com.plantcloud.control.service.DeviceCommandService;
@@ -94,6 +95,7 @@ public class StrategyServiceImpl implements StrategyService {
     private final TemperatureDataMapper temperatureDataMapper;
     private final HumidityDataMapper humidityDataMapper;
     private final LightDataMapper lightDataMapper;
+    private final AlertService alertService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -368,6 +370,7 @@ public class StrategyServiceImpl implements StrategyService {
                         .last("limit 1"));
                 yield data == null ? null : data.getLightLux();
             }
+            case "SMOKE" -> alertService.findFirstUnresolvedSmokeGasPpmForPlant(strategy.getPlantId()).orElse(null);
             default -> null;
         };
     }

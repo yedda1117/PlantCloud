@@ -18,14 +18,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class AlertServiceImpl implements AlertService {
 
+    private static final String SMOKE_GAS_METRIC_NAME = "smoke_gas_ppm";
     private static final long MAX_PAGE_SIZE = 100L;
     private static final Map<String, String> LOCALIZED_TITLES = Map.ofEntries(
             Map.entry("Smoke or gas fluctuation", "\u70df\u96fe/\u6c14\u4f53\u6ce2\u52a8\u63d0\u9192"),
@@ -61,15 +64,34 @@ public class AlertServiceImpl implements AlertService {
     @Override
     public List<AlertVO> listAlerts(String status) {
         String normalizedStatus = normalizeQueryStatus(status);
-        return alertLogMapper.selectList(buildBaseQuery(normalizedStatus, null, null, null))
+        return alertLogMapper.selectList(buildBaseQuery(normalizedStatus, null, null, null, null))
                 .stream()
                 .map(this::toAlertVO)
                 .toList();
     }
 
     @Override
+    public Optional<BigDecimal> findFirstUnresolvedSmokeGasPpmForPlant(Long plantId) {
+        if (plantId == null) {
+            return Optional.empty();
+        }
+        List<AlertLog> rows = alertLogMapper.selectList(
+                new LambdaQueryWrapper<AlertLog>()
+                        .eq(AlertLog::getPlantId, plantId)
+                        .eq(AlertLog::getStatus, AlertStatusEnum.UNRESOLVED.getCode())
+                        .orderByDesc(AlertLog::getCreatedAt));
+        for (AlertLog row : rows) {
+            if (SMOKE_GAS_METRIC_NAME.equals(row.getMetricName()) && row.getMetricValue() != null) {
+                return Optional.of(row.getMetricValue());
+            }
+        }
+        return Optional.empty();
+    }
+
+    @Override
     public PageResult<AlertLogVO> getAlertLogs(String alertType,
                                                String status,
+                                               Long deviceId,
                                                LocalDateTime startTime,
                                                LocalDateTime endTime,
                                                Long current,
@@ -79,10 +101,20 @@ public class AlertServiceImpl implements AlertService {
         String normalizedAlertType = normalizeAlertType(alertType);
         long currentPage = current == null ? 1L : current;
         long size = pageSize == null ? 10L : Math.min(pageSize, MAX_PAGE_SIZE);
+        LambdaQueryWrapper<AlertLog> query = buildBaseQuery(normalizedStatus, normalizedAlertType, deviceId, startTime, endTime);
+
+        if (currentPage == 1L && size == 1L) {
+            List<AlertLog> latestOnly = alertLogMapper.selectList(query.last("limit 1"));
+            return PageResult.<AlertLogVO>builder()
+                    .current(1L)
+                    .pageSize(1L)
+                    .total((long) latestOnly.size())
+                    .records(latestOnly.stream().map(this::toAlertLogVO).toList())
+                    .build();
+        }
 
         Page<AlertLog> page = new Page<>(currentPage, size);
-        Page<AlertLog> result = alertLogMapper.selectPage(page,
-                buildBaseQuery(normalizedStatus, normalizedAlertType, startTime, endTime));
+        Page<AlertLog> result = alertLogMapper.selectPage(page, query);
 
         return PageResult.<AlertLogVO>builder()
                 .current(result.getCurrent())
@@ -137,6 +169,7 @@ public class AlertServiceImpl implements AlertService {
 
     private LambdaQueryWrapper<AlertLog> buildBaseQuery(String status,
                                                         String alertType,
+                                                        Long deviceId,
                                                         LocalDateTime startTime,
                                                         LocalDateTime endTime) {
         LambdaQueryWrapper<AlertLog> queryWrapper = new LambdaQueryWrapper<>();
@@ -145,6 +178,9 @@ public class AlertServiceImpl implements AlertService {
         }
         if (StringUtils.hasText(alertType)) {
             queryWrapper.eq(AlertLog::getAlertType, alertType);
+        }
+        if (deviceId != null) {
+            queryWrapper.eq(AlertLog::getDeviceId, deviceId);
         }
         if (startTime != null) {
             queryWrapper.ge(AlertLog::getCreatedAt, startTime);
