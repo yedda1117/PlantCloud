@@ -1,6 +1,8 @@
 import type { CSSProperties } from "react"
 import { motion } from "framer-motion"
 import { Droplets, Fan, Lightbulb, Loader2, RefreshCw, Sprout, SunMedium, Thermometer } from "lucide-react"
+import { VoiceAssistantOrb } from "../components/VoiceAssistantOrb"
+import type { VoiceAssistantState } from "../hooks/useVoiceAssistant"
 import { PlantModelViewer } from "../components/PlantModelViewer"
 import type { AlertItem, HomeRealtimeData, Plant } from "../types"
 
@@ -156,6 +158,7 @@ export function HomePage({
   onRefresh,
   onToggleDevice,
   controlLoadingTarget,
+  voiceAssistant,
 }: {
   plant: Plant
   plants: Plant[]
@@ -166,6 +169,11 @@ export function HomePage({
   onRefresh: () => void
   onToggleDevice: (target: "light" | "fan", next: boolean) => void
   controlLoadingTarget: "light" | "fan" | null
+  voiceAssistant: {
+    state: VoiceAssistantState
+    lastHeard: string
+    liveTranscript: string
+  }
 }) {
   const modelPath = getModelPath(realtime)
   const fanOn = realtime?.device.fanOn === true
@@ -220,6 +228,9 @@ export function HomePage({
 
       <motion.section className="compact-model-card compact-model-card-tight" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         <div className="compact-model-stage">
+          <div className="compact-model-voice-anchor">
+            <VoiceAssistantOrb state={voiceAssistant.state} liveTranscript={voiceAssistant.liveTranscript} />
+          </div>
           <div className="compact-model-label">
             <strong>{plant.plantName}</strong>
             <span>{subtitle}</span>

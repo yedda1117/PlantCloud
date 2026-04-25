@@ -3,6 +3,8 @@ import { ImpactStyle } from "@capacitor/haptics"
 import { AnimatePresence, motion } from "framer-motion"
 import { CalendarDays, Home, Leaf, MessageCircle } from "lucide-react"
 import { controlHomeDevice, getHomeRealtime, getPlantAiAnalysis, getPlants, hasAuthSession } from "./api"
+import { VoiceReplyPopup } from "./components/VoiceReplyPopup"
+import { useVoiceAssistant } from "./hooks/useVoiceAssistant"
 import { AiPage } from "./pages/AiPage"
 import { CalendarPage } from "./pages/CalendarPage"
 import { DetailPage } from "./pages/DetailPage"
@@ -134,6 +136,13 @@ export default function App() {
     }
   }, [analysis, analysisLoadedPlantId, loadingAnalysis, plant.plantId, refreshAnalysis, screen])
 
+  const voiceAssistant = useVoiceAssistant({
+    enabled: authenticated && screen !== "login" && screen !== "register" && screen !== "intro",
+    plant,
+    realtime,
+    onRefresh: refresh,
+  })
+
   const handleLoggedIn = useCallback((_session: LoginResult) => {
     setAuthenticated(true)
     setScreen("home")
@@ -198,12 +207,14 @@ export default function App() {
                 onRefresh={refresh}
                 onToggleDevice={toggleDevice}
                 controlLoadingTarget={controlLoadingTarget}
+                voiceAssistant={voiceAssistant}
               />
             ) : null}
             {screen === "detail" ? <DetailPage plant={plant} realtime={realtime} analysis={analysis} loadingAnalysis={loadingAnalysis} onAnalyze={refreshAnalysis} /> : null}
             {screen === "calendar" ? <CalendarPage plant={plant} /> : null}
             {screen === "ai" ? <AiPage plant={plant} realtime={realtime} /> : null}
             <TabBar screen={screen} onChange={setScreen} />
+            <VoiceReplyPopup open={voiceAssistant.popupOpen} text={voiceAssistant.popupText} speaking={voiceAssistant.popupSpeaking} error={voiceAssistant.popupError} onClose={voiceAssistant.closePopup} />
           </motion.div>
         )}
       </AnimatePresence>
