@@ -126,6 +126,54 @@ function getMilestoneStyle(milestoneId?: string) {
   }
 }
 
+function getFallbackPhotoUrl(milestoneId?: string) {
+  const fileName = (() => {
+    switch (milestoneId) {
+      case "flower":
+        return "/开花.png"
+      case "sprout":
+        return "/萌芽.png"
+      case "repot":
+        return "/换盆.png"
+      default:
+        return "/日常.png"
+    }
+  })()
+
+  return `/api/assets?path=${encodeURIComponent(fileName)}`
+}
+
+function toStaticAssetUrl(fileName: string) {
+  return `/api/assets?path=${encodeURIComponent(`/${fileName}`)}`
+}
+
+function getStaticPhotoUrl(note?: string | null, milestoneId?: string) {
+  const normalizedNote = (note ?? "").trim()
+
+  if (normalizedNote.includes("俯视") || normalizedNote.includes("上面拍")) {
+    return toStaticAssetUrl("栀子花俯视图.png")
+  }
+
+  if (normalizedNote.includes("开花")) {
+    return toStaticAssetUrl("栀子花开花.png")
+  }
+
+  if (normalizedNote.includes("萌芽")) {
+    return toStaticAssetUrl("栀子花萌芽.png")
+  }
+
+  switch (milestoneId) {
+    case "flower":
+      return toStaticAssetUrl("栀子花开花.png")
+    case "sprout":
+      return toStaticAssetUrl("栀子花萌芽.png")
+    case "repot":
+      return toStaticAssetUrl("换盆.png")
+    default:
+      return toStaticAssetUrl("zhizihua.jpg")
+  }
+}
+
 function formatDate(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
@@ -705,7 +753,11 @@ export default function CalendarPage() {
                     <div className="w-28 h-28 bg-[linear-gradient(135deg,rgba(236,253,245,0.78),rgba(255,251,235,0.72))] border border-border rounded-md overflow-hidden flex items-center justify-center">
                       {selectedDayRecord?.photoUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={selectedDayRecord.photoUrl} alt="preview" className="w-full h-full object-contain" />
+                        <img
+                          src={selectedDayRecord.photoUrl}
+                          alt="preview"
+                          className="w-full h-full object-contain"
+                        />
                       ) : (
                         <div className="text-xs text-muted-foreground">暂无照片</div>
                       )}

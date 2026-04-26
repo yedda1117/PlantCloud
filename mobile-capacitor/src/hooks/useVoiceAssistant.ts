@@ -1,4 +1,7 @@
+import { Capacitor } from "@capacitor/core"
+import { SpeechRecognition } from "@capacitor-community/speech-recognition"
 import { useEffect, useRef, useState } from "react"
+import type { PluginListenerHandle } from "@capacitor/core"
 import { askPlantAi } from "../api"
 import { buildMobilePlantContext } from "../mobile-utils"
 import type { HomeRealtimeData, Plant } from "../types"
@@ -14,6 +17,15 @@ type UseVoiceAssistantOptions = {
 
 const WAKE_PHRASES = ["hi", "hi plant", "嗨", "嘿"]
 const FOLLOW_UP_WINDOW_MS = 8000
+const RESTART_DELAY_MS = 320
+
+function isNativeApp() {
+  return Capacitor.getPlatform() !== "web"
+}
+
+function canUseSpeechSynthesis() {
+  return typeof window !== "undefined" && "speechSynthesis" in window
+}
 
 function normalizeSpeech(text: string) {
   return text
@@ -51,9 +63,9 @@ function buildStatusReply(plant: Plant, realtime: HomeRealtimeData | null) {
     return `${plant.plantName} 的实时数据还没有加载完成，你可以稍后再问我一次。`
   }
 
-  const temperature = realtime.environment.temperature == null ? "暂无" : `${realtime.environment.temperature.toFixed(1)}度`
-  const humidity = realtime.environment.humidity == null ? "暂无" : `${Math.round(realtime.environment.humidity)}%`
-  const light = realtime.environment.lightLux == null ? "暂无" : `${Math.round(realtime.environment.lightLux)}lux`
+  const temperature = realtime.environment.temperature == null ? "暂时没有数据" : `${realtime.environment.temperature.toFixed(1)} 度`
+  const humidity = realtime.environment.humidity == null ? "暂时没有数据" : `${Math.round(realtime.environment.humidity)}%`
+  const light = realtime.environment.lightLux == null ? "暂时没有数据" : `${Math.round(realtime.environment.lightLux)} lux`
   const dangerCount = realtime.abnormal.count + realtime.tilt.count
   const warningLine = dangerCount > 0 ? `目前有 ${dangerCount} 条需要关注的异常提醒。` : "目前没有新的异常提醒。"
 
@@ -79,13 +91,17 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
   const shouldListenRef = useRef(false)
   const speakingRef = useRef(false)
   const permissionCheckedRef = useRef(false)
+  const nativeAvailableRef = useRef(false)
   const followUpUntilRef = useRef(0)
   const plantRef = useRef(plant)
   const realtimeRef = useRef(realtime)
   const onRefreshRef = useRef(onRefresh)
   const historyRef = useRef<Array<{ role: "user" | "assistant"; content: string }>>([])
-  const revealTimerRef = useRef<number | null>(null)
-  const closeTimerRef = useRef<number | null>(null)
+  const nativePartialRef = useRef("")
+  const nativeStartingRef = useRef(false)
+  const listenerHandlesRef = useRef<PluginListenerHandle[]>([])
+  const nativeFinalizeTimerRef = useRef<number | null>(null)
+  const transcriptClearTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     plantRef.current = plant
@@ -99,50 +115,86 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
 
   useEffect(() => {
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognitionCtor || !("speechSynthesis" in window)) {
-      if (enabled) {
-        setState("unsupported")
-        setHint("当前设备不支持语音识别")
+
+    function clearSpeechOutput() {
+      if (canUseSpeechSynthesis()) {
+        window.speechSynthesis.cancel()
       }
-      return
+      speakingRef.current = false
+      setPopupSpeaking(false)
     }
 
-    function clearTimers() {
-      if (revealTimerRef.current) {
-        window.clearInterval(revealTimerRef.current)
-        revealTimerRef.current = null
-      }
-      if (closeTimerRef.current) {
-        window.clearTimeout(closeTimerRef.current)
-        closeTimerRef.current = null
+    function clearNativeFinalizeTimer() {
+      if (nativeFinalizeTimerRef.current) {
+        window.clearTimeout(nativeFinalizeTimerRef.current)
+        nativeFinalizeTimerRef.current = null
       }
     }
 
-    function stopRecognition() {
-      const recognition = recognitionRef.current
-      if (!recognition) return
-      recognition.onstart = null
-      recognition.onend = null
-      recognition.onresult = null
-      recognition.onerror = null
-      recognition.abort()
-      recognitionRef.current = null
+    function clearTranscriptSoon(delay = 3200) {
+      if (transcriptClearTimerRef.current) {
+        window.clearTimeout(transcriptClearTimerRef.current)
+      }
+      transcriptClearTimerRef.current = window.setTimeout(() => {
+        transcriptClearTimerRef.current = null
+        setLiveTranscript("")
+        setLastHeard("")
+      }, delay)
+    }
+
+    async function removeNativeListeners() {
+      clearNativeFinalizeTimer()
+      await Promise.all(listenerHandlesRef.current.map((handle) => handle.remove().catch(() => undefined)))
+      listenerHandlesRef.current = []
+      await SpeechRecognition.removeAllListeners().catch(() => undefined)
+    }
+
+    async function stopRecognition() {
+      const webRecognition = recognitionRef.current
+      if (webRecognition) {
+        webRecognition.onstart = null
+        webRecognition.onend = null
+        webRecognition.onresult = null
+        webRecognition.onerror = null
+        webRecognition.abort()
+        recognitionRef.current = null
+      }
+
+      if (isNativeApp() && nativeAvailableRef.current) {
+        await SpeechRecognition.stop().catch(() => undefined)
+      }
+    }
+
+    function scheduleRestart() {
+      if (!shouldListenRef.current || speakingRef.current || document.visibilityState !== "visible") return
+      window.setTimeout(() => {
+        void startRecognition()
+      }, RESTART_DELAY_MS)
     }
 
     function resetPopupSoon() {
-      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current)
-      closeTimerRef.current = window.setTimeout(() => {
-        setPopupOpen(false)
-        setPopupText("")
-        setPopupSpeaking(false)
-        setPopupError(false)
+      window.setTimeout(() => {
+        if (!speakingRef.current) {
+          setPopupOpen(false)
+          setPopupText("")
+          setPopupSpeaking(false)
+          setPopupError(false)
+        }
       }, 2600)
     }
 
-    function speak(text: string) {
-      window.speechSynthesis.cancel()
-      stopRecognition()
-      clearTimers()
+    function finishSpeaking() {
+      speakingRef.current = false
+      setPopupSpeaking(false)
+      setState("idle")
+      setHint("有什么想问我的吗")
+      resetPopupSoon()
+      scheduleRestart()
+    }
+
+    async function speak(text: string) {
+      await stopRecognition()
+      clearSpeechOutput()
       speakingRef.current = true
       setState("speaking")
       setHint("有什么想问我的吗")
@@ -151,38 +203,32 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
       setPopupError(false)
       setPopupText(text)
 
+      if (!canUseSpeechSynthesis()) {
+        finishSpeaking()
+        return
+      }
+
       const utterance = new SpeechSynthesisUtterance(text)
       utterance.lang = "zh-CN"
       utterance.rate = 0.9
       utterance.pitch = 1
       utterance.onend = () => {
-        clearTimers()
         setPopupText(text)
-        speakingRef.current = false
-        setPopupSpeaking(false)
-        setState("idle")
-        setHint("有什么想问我的吗")
-        resetPopupSoon()
-        if (shouldListenRef.current) {
-          window.setTimeout(() => {
-            void startRecognition()
-          }, 260)
-        }
+        finishSpeaking()
       }
       utterance.onerror = () => {
-        speakingRef.current = false
-        setPopupSpeaking(false)
         setState("error")
         setHint("语音播报失败，请重试")
+        speakingRef.current = false
+        setPopupSpeaking(false)
         resetPopupSoon()
+        scheduleRestart()
       }
       window.speechSynthesis.speak(utterance)
     }
 
     function showErrorPopup(text: string) {
-      window.speechSynthesis.cancel()
-      clearTimers()
-      speakingRef.current = false
+      clearSpeechOutput()
       setState("error")
       setHint("AI 接口请求失败")
       setPopupOpen(true)
@@ -194,7 +240,6 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
     }
 
     function showInfoPopup(text: string) {
-      clearTimers()
       setPopupOpen(true)
       setPopupSpeaking(false)
       setPopupError(false)
@@ -208,7 +253,7 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
 
       if (intent === "refresh") {
         await onRefreshRef.current?.()
-        speak("我已经帮你刷新实时数据了，你可以继续问我植物状态。")
+        await speak("我已经帮你刷新实时数据了，你可以继续问我植物状态。")
         return
       }
 
@@ -219,10 +264,10 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
         const result = await askPlantAi(commandText, context.contextText, history)
         const answer = result.answer?.trim() || buildStatusReply(plantRef.current, realtimeRef.current)
         historyRef.current = [...historyRef.current.slice(-8), { role: "assistant", content: answer }]
-        speak(answer)
+        await speak(answer)
       } catch (error) {
         if (intent === "status") {
-          speak(buildStatusReply(plantRef.current, realtimeRef.current))
+          await speak(buildStatusReply(plantRef.current, realtimeRef.current))
           return
         }
         showErrorPopup(error instanceof Error ? error.message : "AI 服务暂时不可用，请稍后再试。")
@@ -233,7 +278,8 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
       const normalized = normalizeSpeech(rawText)
       if (!normalized) return
       setLastHeard(rawText)
-      setLiveTranscript("")
+      setLiveTranscript(rawText)
+      clearTranscriptSoon()
 
       const stripped = stripWakePhrase(normalized)
       if (stripped !== null) {
@@ -244,17 +290,45 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
           return
         }
         showInfoPopup("我在，请继续说你的问题，比如：今天植物状态怎么样。")
+        scheduleRestart()
         return
       }
 
       if (Date.now() < followUpUntilRef.current) {
         setHint("我在听哦")
         await handleCommand(normalized)
+        return
       }
+
+      scheduleRestart()
     }
 
     async function ensurePermission() {
       if (permissionCheckedRef.current) return true
+
+      if (isNativeApp()) {
+        const availability = await SpeechRecognition.available().catch(() => ({ available: false }))
+        nativeAvailableRef.current = availability.available
+        if (!availability.available) {
+          setState("unsupported")
+          setHint("当前设备不支持语音识别")
+          return false
+        }
+
+        setState("arming")
+        setHint("正在请求麦克风权限")
+        const permissions = await SpeechRecognition.requestPermissions().catch(() => ({ speechRecognition: "denied" as const }))
+        if (permissions.speechRecognition !== "granted") {
+          setState("error")
+          setHint("麦克风权限未开启")
+          return false
+        }
+
+        permissionCheckedRef.current = true
+        setHint("有什么想问我的吗")
+        return true
+      }
+
       if (!navigator.mediaDevices?.getUserMedia) {
         setState("unsupported")
         setHint("当前设备无法访问麦克风")
@@ -276,15 +350,75 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
       }
     }
 
-    async function startRecognition() {
-      if (!shouldListenRef.current || speakingRef.current || document.visibilityState !== "visible") return
-      if (!(await ensurePermission())) return
-      if (recognitionRef.current) return
+    async function startNativeRecognition() {
+      const listening = await SpeechRecognition.isListening().catch(() => ({ listening: false }))
+      if (listening.listening || nativeStartingRef.current) return
 
-      const RecognitionCtor = SpeechRecognitionCtor
-      if (!RecognitionCtor) return
+      nativeStartingRef.current = true
+      nativePartialRef.current = ""
 
-      const recognition = new RecognitionCtor()
+      const partialHandle = await SpeechRecognition.addListener("partialResults", (data) => {
+        const transcript = (data.matches || []).join(" ").trim()
+        clearNativeFinalizeTimer()
+        nativePartialRef.current = transcript
+        if (transcriptClearTimerRef.current) {
+          window.clearTimeout(transcriptClearTimerRef.current)
+          transcriptClearTimerRef.current = null
+        }
+        setLiveTranscript(transcript)
+      })
+
+      const stateHandle = await SpeechRecognition.addListener("listeningState", ({ status }) => {
+        if (status === "started") {
+          clearNativeFinalizeTimer()
+          nativeStartingRef.current = false
+          setState("listening")
+          setHint("有什么想问我的吗")
+          return
+        }
+
+        if (!shouldListenRef.current || speakingRef.current) return
+
+        clearNativeFinalizeTimer()
+        nativeFinalizeTimerRef.current = window.setTimeout(() => {
+          nativeFinalizeTimerRef.current = null
+          const finalTranscript = nativePartialRef.current.trim()
+          nativePartialRef.current = ""
+          setLiveTranscript("")
+          void removeNativeListeners()
+
+          if (!shouldListenRef.current || speakingRef.current) return
+
+          if (finalTranscript) {
+            void processTranscript(finalTranscript)
+            return
+          }
+
+          setState("idle")
+          setHint("有什么想问我的吗")
+          scheduleRestart()
+        }, 700)
+      })
+
+      listenerHandlesRef.current = [partialHandle, stateHandle]
+
+      await SpeechRecognition.start({
+        language: "zh-CN",
+        maxResults: 3,
+        partialResults: true,
+        popup: false,
+      }).catch((error: unknown) => {
+        nativeStartingRef.current = false
+        void removeNativeListeners()
+        setState("error")
+        setHint(error instanceof Error ? `语音识别异常：${error.message}` : "语音识别启动失败")
+      })
+    }
+
+    function startWebRecognition() {
+      if (!SpeechRecognitionCtor || recognitionRef.current) return
+
+      const recognition = new SpeechRecognitionCtor()
       recognition.lang = "zh-CN"
       recognition.continuous = true
       recognition.interimResults = true
@@ -302,9 +436,7 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
         if (event.error === "no-speech" || event.error === "aborted") {
           setState("idle")
           setHint("有什么想问我的吗")
-          window.setTimeout(() => {
-            void startRecognition()
-          }, 280)
+          scheduleRestart()
           return
         }
         setState("error")
@@ -316,9 +448,7 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
         if (!shouldListenRef.current || speakingRef.current) return
         setState("idle")
         setHint("有什么想问我的吗")
-        window.setTimeout(() => {
-          void startRecognition()
-        }, 280)
+        scheduleRestart()
       }
       recognition.onresult = (event) => {
         const results = Array.from(event.results).slice(event.resultIndex)
@@ -344,13 +474,37 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
       recognition.start()
     }
 
-    function teardown() {
+    async function startRecognition() {
+      if (!shouldListenRef.current || speakingRef.current || document.visibilityState !== "visible") return
+      if (!(await ensurePermission())) return
+
+      if (isNativeApp()) {
+        await startNativeRecognition()
+        return
+      }
+
+      if (!SpeechRecognitionCtor) {
+        setState("unsupported")
+        setHint("当前设备不支持语音识别")
+        return
+      }
+
+      startWebRecognition()
+    }
+
+    async function teardown() {
       shouldListenRef.current = false
-      clearTimers()
-      stopRecognition()
-      window.speechSynthesis.cancel()
-      speakingRef.current = false
+      clearNativeFinalizeTimer()
+      if (transcriptClearTimerRef.current) {
+        window.clearTimeout(transcriptClearTimerRef.current)
+        transcriptClearTimerRef.current = null
+      }
+      await stopRecognition()
+      await removeNativeListeners()
+      clearSpeechOutput()
       followUpUntilRef.current = 0
+      nativePartialRef.current = ""
+      nativeStartingRef.current = false
       setState("idle")
       setHint("有什么想问我的吗")
       setPopupOpen(false)
@@ -367,7 +521,7 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
         shouldListenRef.current = true
         void startRecognition()
       } else {
-        stopRecognition()
+        void stopRecognition()
         setState("idle")
         setHint("有什么想问我的吗")
       }
@@ -377,14 +531,14 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
       shouldListenRef.current = true
       void startRecognition()
     } else {
-      teardown()
+      void teardown()
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange)
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange)
-      teardown()
+      void teardown()
     }
   }, [enabled])
 
@@ -397,7 +551,9 @@ export function useVoiceAssistant({ enabled, plant, realtime, onRefresh }: UseVo
     popupSpeaking,
     popupError,
     closePopup: () => {
-      window.speechSynthesis.cancel()
+      if (canUseSpeechSynthesis()) {
+        window.speechSynthesis.cancel()
+      }
       setPopupOpen(false)
       setPopupText("")
       setPopupSpeaking(false)

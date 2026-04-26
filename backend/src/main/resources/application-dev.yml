@@ -23,6 +23,11 @@ spring:
       max-file-size: 10MB
       max-request-size: 20MB
 
+strategy:
+  rollback-enhancement:
+    enabled: true
+    shadow-recording-enabled: true
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

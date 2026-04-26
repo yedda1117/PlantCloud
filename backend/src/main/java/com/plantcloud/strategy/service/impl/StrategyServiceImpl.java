@@ -22,9 +22,11 @@ import com.plantcloud.strategy.dto.StrategyLogQueryDTO;
 import com.plantcloud.strategy.dto.StrategyQueryDTO;
 import com.plantcloud.strategy.dto.StrategyUpsertDTO;
 import com.plantcloud.strategy.entity.Strategy;
+import com.plantcloud.strategy.entity.StrategyDeviceEffect;
 import com.plantcloud.strategy.entity.StrategyExecutionLog;
 import com.plantcloud.strategy.mapper.StrategyExecutionLogMapper;
 import com.plantcloud.strategy.mapper.StrategyMapper;
+import com.plantcloud.strategy.service.StrategyDeviceEffectService;
 import com.plantcloud.strategy.service.StrategyNotificationService;
 import com.plantcloud.strategy.service.StrategyService;
 import com.plantcloud.strategy.vo.PageResult;
@@ -50,6 +52,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -84,10 +87,27 @@ public class StrategyServiceImpl implements StrategyService {
     private static final String OPERATION_ENABLE = "ENABLE";
     private static final String OPERATION_DISABLE = "DISABLE";
     private static final String OPERATION_UPDATE = "UPDATE";
+    private static final String SOURCE_TYPE_STRATEGY = "STRATEGY";
+    private static final String SOURCE_TYPE_STRATEGY_DISABLE = "STRATEGY_DISABLE";
+    private static final String SOURCE_TYPE_STRATEGY_DISABLE_ROLLBACK = "STRATEGY_ROLLBACK";
+    private static final String COMMAND_ON = "ON";
+    private static final String COMMAND_OFF = "OFF";
+    private static final String CONTROL_TARGET_LIGHT = "LIGHT";
+    private static final String CONTROL_TARGET_FAN = "FAN";
+    private static final String CLEANUP_STATUS_NOT_REQUIRED = "NOT_REQUIRED";
+    private static final String CLEANUP_STATUS_SKIPPED = "SKIPPED";
+    private static final String CLEANUP_STATUS_SUCCESS = "SUCCESS";
+    private static final String CLEANUP_STATUS_FAILED = "FAILED";
+    private static final String CLEANUP_MODE_NONE = "NONE";
+    private static final String CLEANUP_MODE_ROLLBACK = "ROLLBACK_TO_BEFORE_STATE";
+    private static final String CLEANUP_MODE_LEGACY_FALLBACK = "LEGACY_FIXED_FALLBACK";
+    private static final String EFFECT_CLOSE_REASON_DISABLED = "DISABLED";
+    private static final String EFFECT_CLOSE_REASON_REVERTED = "REVERTED";
 
     private final StrategyMapper strategyMapper;
     private final StrategyExecutionLogMapper strategyExecutionLogMapper;
     private final StrategyNotificationService strategyNotificationService;
+    private final StrategyDeviceEffectService strategyDeviceEffectService;
     private final DeviceCommandService deviceCommandService;
     private final PlantMapper plantMapper;
     private final UserMapper userMapper;
@@ -136,7 +156,9 @@ public class StrategyServiceImpl implements StrategyService {
         validateStrategy(strategy, request);
         validateConflict(strategy, strategyId);
         strategyMapper.updateById(strategy);
-        recordStrategyStatusChangeLogIfNeeded(strategy, operationType, traceId);
+        DisableCleanupResult disableCleanupResult = handleDisableCleanupIfNeeded(existing, operationType, traceId);
+        closeStrategyEffectsAfterDisable(existing, operationType, traceId, disableCleanupResult);
+        recordStrategyStatusChangeLogIfNeeded(strategy, operationType, traceId, disableCleanupResult);
         evaluateStrategyAgainstLatestData(strategy, "STRATEGY_SAVE", Map.of());
         log.info("[STRATEGY_UPDATE] success traceId={} strategyId={} operationType={} sourceMethod=StrategyServiceImpl.updateStrategy",
                 traceId, strategyId, operationType);
@@ -239,6 +261,20 @@ public class StrategyServiceImpl implements StrategyService {
                                           String triggerSource,
                                           String payload,
                                           String commandValue) {
+        Long effectDeviceId = null;
+        String effectControlTarget = null;
+        String effectBeforeState = null;
+        if (isDeviceControlAction(strategy)) {
+            try {
+                effectDeviceId = resolveCommandDeviceId(strategy);
+                effectControlTarget = resolveControlTarget(strategy.getActionType());
+                effectBeforeState = resolveCurrentDeviceStateForEffect(strategy, effectDeviceId);
+            } catch (Exception ex) {
+                log.warn("[STRATEGY_RT] shadow effect snapshot skipped. strategyId={} reason={}",
+                        strategy.getId(), safeMessage(ex));
+            }
+        }
+
         StrategyExecutionLog executionLog = new StrategyExecutionLog();
         executionLog.setStrategyId(strategy.getId());
         executionLog.setPlantId(strategy.getPlantId());
@@ -258,6 +294,9 @@ public class StrategyServiceImpl implements StrategyService {
                 boolean success = EXECUTION_SUCCESS.equalsIgnoreCase(command.getExecuteStatus());
                 executionLog.setExecutionResult(success ? EXECUTION_SUCCESS : EXECUTION_FAILED);
                 executionLog.setResultMessage(buildTriggerResultMessage(strategy, currentValue, command.getMessage(), commandValue));
+                if (success) {
+                    recordStrategyEffectIfNeeded(strategy, effectDeviceId, effectControlTarget, effectBeforeState, commandValue, command.getCommandLogId());
+                }
             }
         } catch (Exception ex) {
             executionLog.setExecutionResult(EXECUTION_FAILED);
@@ -408,22 +447,26 @@ public class StrategyServiceImpl implements StrategyService {
     }
 
     private ControlCommandVO executeDeviceCommand(Strategy strategy, String commandValue) {
+        return executeDeviceCommand(strategy, commandValue, SOURCE_TYPE_STRATEGY);
+    }
+
+    private ControlCommandVO executeDeviceCommand(Strategy strategy, String commandValue, String sourceType) {
         Long targetDeviceId = resolveCommandDeviceId(strategy);
         DeviceControlRequest request = new DeviceControlRequest();
         request.setPlantId(strategy.getPlantId());
         request.setDeviceId(targetDeviceId);
         request.setCommandValue(commandValue);
-        request.setSourceType("STRATEGY");
-        log.info("[STRATEGY_RT] Sending command: {} to deviceId={} actionValue={}",
-                strategy.getActionType(), targetDeviceId, strategy.getActionValue());
+        request.setSourceType(sourceType);
+        log.info("[STRATEGY_RT] Sending command: {} to deviceId={} actionValue={} sourceType={}",
+                strategy.getActionType(), targetDeviceId, strategy.getActionValue(), sourceType);
         if (ACTION_AUTO_LIGHT.equals(strategy.getActionType())) {
-            log.info("[STRATEGY_RT] calling controlLight. strategyId={}, plantId={}, deviceId={}, commandValue={}",
-                    strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue);
+            log.info("[STRATEGY_RT] calling controlLight. strategyId={}, plantId={}, deviceId={}, commandValue={}, sourceType={}",
+                    strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue, sourceType);
             return deviceCommandService.controlLight(request);
         }
         if (ACTION_AUTO_FAN.equals(strategy.getActionType())) {
-            log.info("[STRATEGY_RT] calling controlFan. strategyId={}, plantId={}, deviceId={}, commandValue={}",
-                    strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue);
+            log.info("[STRATEGY_RT] calling controlFan. strategyId={}, plantId={}, deviceId={}, commandValue={}, sourceType={}",
+                    strategy.getId(), strategy.getPlantId(), request.getDeviceId(), commandValue, sourceType);
             return deviceCommandService.controlFan(request);
         }
         throw badRequest("Unsupported strategy action for device control: " + strategy.getActionType());
@@ -519,11 +562,288 @@ public class StrategyServiceImpl implements StrategyService {
         return StringUtils.hasText(ex.getMessage()) ? ex.getMessage() : ex.getClass().getSimpleName();
     }
 
+    private String safeText(String text, String fallback) {
+        if (StringUtils.hasText(text)) {
+            return text;
+        }
+        if (StringUtils.hasText(fallback)) {
+            return fallback;
+        }
+        return "UNKNOWN";
+    }
+
     private String resolveStrategyUpdateOperationType(Strategy existing, Strategy strategy) {
         if (!Objects.equals(existing.getEnabled(), strategy.getEnabled())) {
             return Boolean.TRUE.equals(strategy.getEnabled()) ? OPERATION_ENABLE : OPERATION_DISABLE;
         }
         return OPERATION_UPDATE;
+    }
+
+    private DisableCleanupResult handleDisableCleanupIfNeeded(Strategy existing,
+                                                              String operationType,
+                                                              String traceId) {
+        if (!OPERATION_DISABLE.equals(operationType) || !isDeviceControlAction(existing)) {
+            return DisableCleanupResult.notRequired(EFFECT_CLOSE_REASON_DISABLED, SOURCE_TYPE_STRATEGY_DISABLE);
+        }
+        DisableCleanupResult enhancedResult = tryRollbackCleanupWithEffect(existing, traceId);
+        if (enhancedResult != null) {
+            return enhancedResult;
+        }
+        log.info("[STRATEGY_UPDATE] rollback-to-before-state cleanup was not applicable, falling back to legacy disable cleanup. traceId={} strategyId={} actionType={} targetDeviceId={}",
+                traceId, existing.getId(), existing.getActionType(), existing.getTargetDeviceId());
+        return handleLegacyDisableCleanup(existing, traceId);
+    }
+
+    private DisableCleanupResult tryRollbackCleanupWithEffect(Strategy existing, String traceId) {
+        Optional<StrategyDeviceEffect> effectOptional;
+        try {
+            effectOptional = strategyDeviceEffectService.findLatestActiveEffectForStrategy(existing.getId());
+        } catch (Exception ex) {
+            log.warn("[STRATEGY_UPDATE] rollback enhancement lookup failed traceId={} strategyId={} reason={}",
+                    traceId, existing.getId(), safeMessage(ex));
+            return null;
+        }
+        if (effectOptional.isEmpty()) {
+            log.info("[STRATEGY_UPDATE] rollback enhancement skipped because no active effect was found. traceId={} strategyId={}",
+                    traceId, existing.getId());
+            return null;
+        }
+
+        StrategyDeviceEffect effect = effectOptional.get();
+        String rollbackState = normalizeDeviceState(effect.getBeforeState());
+        String appliedState = normalizeDeviceState(effect.getAppliedState());
+        if (!StringUtils.hasText(rollbackState)
+                || !StringUtils.hasText(appliedState)
+                || rollbackState.equals(appliedState)) {
+            log.info("[STRATEGY_UPDATE] rollback enhancement skipped because effect snapshot is incomplete. traceId={} strategyId={} effectId={}",
+                    traceId, existing.getId(), effect.getId());
+            return null;
+        }
+
+        Device targetDevice = effect.getDeviceId() == null ? null : deviceMapper.selectById(effect.getDeviceId());
+        if (targetDevice == null) {
+            log.info("[STRATEGY_UPDATE] rollback enhancement skipped because target device was not found. traceId={} strategyId={} effectId={} deviceId={}",
+                    traceId, existing.getId(), effect.getId(), effect.getDeviceId());
+            return null;
+        }
+
+        String currentState = resolveCurrentDeviceStateForEffectTarget(targetDevice, effect, existing);
+        if (!StringUtils.hasText(currentState) || !appliedState.equals(currentState)) {
+            log.info("[STRATEGY_UPDATE] rollback enhancement skipped because current state no longer matches applied state. traceId={} strategyId={} effectId={} currentState={} appliedState={}",
+                    traceId, existing.getId(), effect.getId(), currentState, appliedState);
+            return null;
+        }
+
+        try {
+            ControlCommandVO command = executeDeviceCommand(existing, rollbackState, SOURCE_TYPE_STRATEGY_DISABLE_ROLLBACK);
+            boolean success = EXECUTION_SUCCESS.equalsIgnoreCase(command.getExecuteStatus());
+            String stateSnapshot = String.format("beforeState=%s, appliedState=%s, currentState=%s",
+                    rollbackState, appliedState, currentState);
+            String message = success
+                    ? "\u505c\u7528\u7b56\u7565\u540e\u5df2\u6062\u590d\u5230\u7b56\u7565\u751f\u6548\u524d\u72b6\u6001: " + stateSnapshot
+                    : "\u505c\u7528\u7b56\u7565\u540e\u5c1d\u8bd5\u6062\u590d\u5230\u7b56\u7565\u751f\u6548\u524d\u72b6\u6001\u5931\u8d25: "
+                    + safeText(command.getMessage(), command.getExecuteStatus());
+            log.info("[STRATEGY_UPDATE] rollback enhancement executed traceId={} strategyId={} effectId={} deviceId={} executeStatus={} commandLogId={}",
+                    traceId, existing.getId(), effect.getId(), targetDevice.getId(), command.getExecuteStatus(), command.getCommandLogId());
+            if (success) {
+                return DisableCleanupResult.rollbackSuccess(
+                        command.getCommandLogId(),
+                        message,
+                        effect.getId(),
+                        EFFECT_CLOSE_REASON_REVERTED,
+                        SOURCE_TYPE_STRATEGY_DISABLE_ROLLBACK
+                );
+            }
+            return DisableCleanupResult.rollbackFailed(
+                    command.getCommandLogId(),
+                    message,
+                    effect.getId(),
+                    EFFECT_CLOSE_REASON_DISABLED,
+                    SOURCE_TYPE_STRATEGY_DISABLE_ROLLBACK
+            );
+        } catch (Exception ex) {
+            String message = "\u505c\u7528\u7b56\u7565\u540e\u5c1d\u8bd5\u6062\u590d\u5230\u7b56\u7565\u751f\u6548\u524d\u72b6\u6001\u5f02\u5e38: " + safeMessage(ex);
+            log.warn("[STRATEGY_UPDATE] rollback enhancement failed traceId={} strategyId={} effectId={} deviceId={}",
+                    traceId, existing.getId(), effect.getId(), targetDevice.getId(), ex);
+            return DisableCleanupResult.rollbackFailed(
+                    null,
+                    message,
+                    effect.getId(),
+                    EFFECT_CLOSE_REASON_DISABLED,
+                    SOURCE_TYPE_STRATEGY_DISABLE_ROLLBACK
+            );
+        }
+    }
+
+    private DisableCleanupResult handleLegacyDisableCleanup(Strategy existing, String traceId) {
+        if (!isOpeningDeviceControlAction(existing)) {
+            return DisableCleanupResult.notRequired(EFFECT_CLOSE_REASON_DISABLED, SOURCE_TYPE_STRATEGY_DISABLE);
+        }
+        if (hasOtherEnabledOpeningStrategyDemand(existing)) {
+            String message = "\u68c0\u6d4b\u5230\u540c\u8bbe\u5907\u4ecd\u6709\u5176\u4ed6\u547d\u4e2d\u7684\u5f00\u542f\u578b\u7b56\u7565\uff0c\u8df3\u8fc7\u5173\u95ed\u8bbe\u5907\u6536\u5c3e";
+            log.info("[STRATEGY_UPDATE] legacy disable cleanup skipped traceId={} strategyId={} actionType={} targetDeviceId={} reason={}",
+                    traceId, existing.getId(), existing.getActionType(), existing.getTargetDeviceId(), message);
+            return DisableCleanupResult.skipped(message, EFFECT_CLOSE_REASON_DISABLED, SOURCE_TYPE_STRATEGY_DISABLE);
+        }
+
+        try {
+            ControlCommandVO command = executeDeviceCommand(existing, COMMAND_OFF, SOURCE_TYPE_STRATEGY_DISABLE);
+            boolean success = EXECUTION_SUCCESS.equalsIgnoreCase(command.getExecuteStatus());
+            String message = success
+                    ? "\u505c\u7528\u5f00\u542f\u578b\u7b56\u7565\u540e\u5df2\u4e3b\u52a8\u4e0b\u53d1\u5173\u95ed\u8bbe\u5907\u6307\u4ee4"
+                    : "\u505c\u7528\u5f00\u542f\u578b\u7b56\u7565\u540e\u5c1d\u8bd5\u5173\u95ed\u8bbe\u5907\u5931\u8d25: "
+                    + safeText(command.getMessage(), command.getExecuteStatus());
+            log.info("[STRATEGY_UPDATE] legacy disable cleanup finished traceId={} strategyId={} targetDeviceId={} executeStatus={} commandLogId={}",
+                    traceId, existing.getId(), existing.getTargetDeviceId(), command.getExecuteStatus(), command.getCommandLogId());
+            if (success) {
+                return DisableCleanupResult.success(command.getCommandLogId(), message, EFFECT_CLOSE_REASON_DISABLED, SOURCE_TYPE_STRATEGY_DISABLE);
+            }
+            return DisableCleanupResult.failed(command.getCommandLogId(), message, EFFECT_CLOSE_REASON_DISABLED, SOURCE_TYPE_STRATEGY_DISABLE);
+        } catch (Exception ex) {
+            String message = "\u505c\u7528\u5f00\u542f\u578b\u7b56\u7565\u540e\u5c1d\u8bd5\u5173\u95ed\u8bbe\u5907\u5f02\u5e38: " + safeMessage(ex);
+            log.warn("[STRATEGY_UPDATE] legacy disable cleanup failed traceId={} strategyId={} targetDeviceId={} actionType={}",
+                    traceId, existing.getId(), existing.getTargetDeviceId(), existing.getActionType(), ex);
+            return DisableCleanupResult.failed(null, message, EFFECT_CLOSE_REASON_DISABLED, SOURCE_TYPE_STRATEGY_DISABLE);
+        }
+    }
+
+    private boolean hasOtherEnabledOpeningStrategyDemand(Strategy disabledStrategy) {
+        return strategyMapper.selectByPlantIdAndFilters(disabledStrategy.getPlantId(), true, TYPE_CONDITION)
+                .stream()
+                .filter(candidate -> !Objects.equals(candidate.getId(), disabledStrategy.getId()))
+                .filter(this::isOpeningDeviceControlAction)
+                .filter(candidate -> sameDeviceControlTarget(candidate, disabledStrategy))
+                .anyMatch(this::isConditionStrategyCurrentlyTriggered);
+    }
+
+    private boolean sameDeviceControlTarget(Strategy candidate, Strategy reference) {
+        return Objects.equals(candidate.getTargetDeviceId(), reference.getTargetDeviceId())
+                && Objects.equals(candidate.getActionType(), reference.getActionType());
+    }
+
+    private boolean isConditionStrategyCurrentlyTriggered(Strategy strategy) {
+        if (!TYPE_CONDITION.equals(strategy.getStrategyType()) || !isWithinActiveTimeWindow(strategy)) {
+            return false;
+        }
+        BigDecimal currentValue = resolveCurrentMetricValue(strategy, Map.of());
+        return currentValue != null && isConditionTriggered(strategy, currentValue);
+    }
+
+    private boolean isOpeningDeviceControlAction(Strategy strategy) {
+        if (!isDeviceControlAction(strategy) || !StringUtils.hasText(strategy.getActionValue())) {
+            return false;
+        }
+        String actionValue = strategy.getActionValue().trim().toUpperCase(Locale.ROOT);
+        if (ACTION_AUTO_LIGHT.equals(strategy.getActionType())) {
+            return COMMAND_ON.equals(actionValue);
+        }
+        if (ACTION_AUTO_FAN.equals(strategy.getActionType())) {
+            return !COMMAND_OFF.equals(actionValue);
+        }
+        return false;
+    }
+
+    private void closeStrategyEffectsAfterDisable(Strategy existing,
+                                                  String operationType,
+                                                  String traceId,
+                                                  DisableCleanupResult disableCleanupResult) {
+        if (!OPERATION_DISABLE.equals(operationType) || !isDeviceControlAction(existing)) {
+            return;
+        }
+        try {
+            strategyDeviceEffectService.closeActiveEffectsForDisabledStrategy(
+                    existing.getId(),
+                    disableCleanupResult == null ? EFFECT_CLOSE_REASON_DISABLED : disableCleanupResult.effectCloseReason(),
+                    disableCleanupResult == null ? SOURCE_TYPE_STRATEGY_DISABLE : disableCleanupResult.effectCloseSourceType(),
+                    disableCleanupResult == null ? null : disableCleanupResult.commandLogId()
+            );
+        } catch (Exception ex) {
+            log.warn("[STRATEGY_UPDATE] shadow effect close skipped traceId={} strategyId={} reason={}",
+                    traceId, existing.getId(), safeMessage(ex));
+        }
+    }
+
+    private void recordStrategyStatusChangeLogIfNeeded(Strategy strategy,
+                                                       String operationType,
+                                                       String traceId,
+                                                       DisableCleanupResult disableCleanupResult) {
+        if (!OPERATION_ENABLE.equals(operationType) && !OPERATION_DISABLE.equals(operationType)) {
+            return;
+        }
+
+        StrategyExecutionLog executionLog = new StrategyExecutionLog();
+        executionLog.setStrategyId(strategy.getId());
+        executionLog.setPlantId(strategy.getPlantId());
+        executionLog.setTriggerSource(TRIGGER_SOURCE_STRATEGY_UPDATE);
+        executionLog.setTriggerPayload(buildStrategyStatusChangePayload(strategy, operationType, traceId, disableCleanupResult));
+        executionLog.setExecutionResult(resolveStatusChangeExecutionResult(operationType, disableCleanupResult));
+        executionLog.setResultMessage(buildStrategyStatusChangeMessage(strategy, operationType, disableCleanupResult));
+        executionLog.setCommandLogId(resolveStatusChangeCommandLogId(operationType, disableCleanupResult));
+        executionLog.setExecutedAt(LocalDateTime.now());
+
+        int inserted = strategyExecutionLogMapper.insert(executionLog);
+        log.info("[STRATEGY_UPDATE] status log inserted traceId={} strategyId={} operationType={} inserted={} logId={} sourceMethod=StrategyServiceImpl.recordStrategyStatusChangeLogIfNeeded",
+                traceId, strategy.getId(), operationType, inserted, executionLog.getId());
+    }
+
+    private String resolveStatusChangeExecutionResult(String operationType, DisableCleanupResult disableCleanupResult) {
+        if (OPERATION_DISABLE.equals(operationType)
+                && disableCleanupResult != null
+                && CLEANUP_STATUS_FAILED.equals(disableCleanupResult.status())) {
+            return EXECUTION_FAILED;
+        }
+        return EXECUTION_SUCCESS;
+    }
+
+    private Long resolveStatusChangeCommandLogId(String operationType, DisableCleanupResult disableCleanupResult) {
+        if (!OPERATION_DISABLE.equals(operationType) || disableCleanupResult == null) {
+            return null;
+        }
+        return disableCleanupResult.commandLogId();
+    }
+
+    private String buildStrategyStatusChangePayload(Strategy strategy,
+                                                    String operationType,
+                                                    String traceId,
+                                                    DisableCleanupResult disableCleanupResult) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("traceId", traceId);
+        payload.put("strategyId", strategy.getId());
+        payload.put("strategyName", strategy.getStrategyName());
+        payload.put("operationType", operationType);
+        payload.put("enabled", strategy.getEnabled());
+        if (OPERATION_DISABLE.equals(operationType) && disableCleanupResult != null) {
+            payload.put("disableCleanupRequired", disableCleanupResult.required());
+            payload.put("disableCleanupStatus", disableCleanupResult.status());
+            payload.put("disableCleanupCommandLogId", disableCleanupResult.commandLogId());
+            payload.put("disableCleanupMessage", disableCleanupResult.message());
+            payload.put("disableCleanupEffectCloseReason", disableCleanupResult.effectCloseReason());
+            payload.put("disableCleanupEffectCloseSourceType", disableCleanupResult.effectCloseSourceType());
+            payload.put("disableCleanupMode", disableCleanupResult.cleanupMode());
+            payload.put("disableCleanupEffectId", disableCleanupResult.effectId());
+        }
+        payload.put("sourceMethod", "StrategyServiceImpl.recordStrategyStatusChangeLogIfNeeded");
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (JsonProcessingException ex) {
+            return payload.toString();
+        }
+    }
+
+    private String buildStrategyStatusChangeMessage(Strategy strategy,
+                                                    String operationType,
+                                                    DisableCleanupResult disableCleanupResult) {
+        if (OPERATION_DISABLE.equals(operationType)) {
+            String baseMessage = "\u7b56\u7565\u5df2\u505c\u7528\uff1a" + strategy.getStrategyName();
+            if (disableCleanupResult == null || !disableCleanupResult.required()) {
+                return baseMessage;
+            }
+            return baseMessage + "; " + disableCleanupResult.message();
+        }
+        if (OPERATION_ENABLE.equals(operationType)) {
+            return "\u7b56\u7565\u5df2\u542f\u7528\uff1a" + strategy.getStrategyName();
+        }
+        return "\u7b56\u7565\u5df2\u66f4\u65b0\uff1a" + strategy.getStrategyName();
     }
 
     private void recordStrategyStatusChangeLogIfNeeded(Strategy strategy, String operationType, String traceId) {
@@ -568,6 +888,87 @@ public class StrategyServiceImpl implements StrategyService {
             return "策略已启用：" + strategy.getStrategyName();
         }
         return "策略已更新：" + strategy.getStrategyName();
+    }
+
+    private void recordStrategyEffectIfNeeded(Strategy strategy,
+                                              Long deviceId,
+                                              String controlTarget,
+                                              String beforeState,
+                                              String appliedState,
+                                              Long commandLogId) {
+        if (!isDeviceControlAction(strategy) || deviceId == null || commandLogId == null) {
+            return;
+        }
+        try {
+            strategyDeviceEffectService.recordStrategyEffect(
+                    strategy.getId(),
+                    strategy.getPlantId(),
+                    deviceId,
+                    controlTarget,
+                    normalizeDeviceState(beforeState),
+                    normalizeDeviceState(appliedState),
+                    commandLogId
+            );
+        } catch (Exception ex) {
+            log.warn("[STRATEGY_RT] shadow effect record skipped. strategyId={} deviceId={} commandLogId={} reason={}",
+                    strategy.getId(), deviceId, commandLogId, safeMessage(ex));
+        }
+    }
+
+    private String resolveCurrentDeviceStateForEffect(Strategy strategy, Long deviceId) {
+        if (deviceId == null) {
+            return null;
+        }
+        Device device = deviceMapper.selectById(deviceId);
+        if (device == null) {
+            return null;
+        }
+        return normalizeDeviceState(resolveCurrentDeviceActionState(device, strategy.getActionType()));
+    }
+
+    private String resolveCurrentDeviceStateForEffectTarget(Device device,
+                                                            StrategyDeviceEffect effect,
+                                                            Strategy strategy) {
+        if (device == null) {
+            return null;
+        }
+        String controlTarget = effect == null ? null : effect.getControlTarget();
+        String currentState = resolveCurrentDeviceActionStateByControlTarget(device, controlTarget);
+        if (StringUtils.hasText(currentState)) {
+            return normalizeDeviceState(currentState);
+        }
+        return normalizeDeviceState(resolveCurrentDeviceActionState(device, strategy.getActionType()));
+    }
+
+    private String resolveControlTarget(String actionType) {
+        if (ACTION_AUTO_LIGHT.equals(actionType)) {
+            return CONTROL_TARGET_LIGHT;
+        }
+        if (ACTION_AUTO_FAN.equals(actionType)) {
+            return CONTROL_TARGET_FAN;
+        }
+        return null;
+    }
+
+    private String resolveCurrentDeviceActionStateByControlTarget(Device device, String controlTarget) {
+        if (device == null || !StringUtils.hasText(controlTarget)) {
+            return null;
+        }
+        Map<String, Object> statusMap = parseStatusMap(device.getCurrentStatus());
+        Object state = null;
+        String normalizedTarget = controlTarget.trim().toUpperCase(Locale.ROOT);
+        if (CONTROL_TARGET_LIGHT.equals(normalizedTarget)) {
+            state = firstNonNull(statusMap, "lightStatus", "light_status", "light", "power", "status", "switch", "value");
+        } else if (CONTROL_TARGET_FAN.equals(normalizedTarget)) {
+            state = firstNonNull(statusMap, "fanStatus", "fan_status", "fan", "power", "status", "switch", "value");
+        }
+        if (state != null) {
+            return String.valueOf(state);
+        }
+        if (statusMap.isEmpty() && StringUtils.hasText(device.getCurrentStatus())) {
+            return device.getCurrentStatus();
+        }
+        return null;
     }
 
     private String resolveCurrentDeviceActionState(Device device, String actionType) {
@@ -1066,6 +1467,56 @@ public class StrategyServiceImpl implements StrategyService {
         }
         if (!strategy.getPlantId().equals(device.getPlantId())) {
             throw badRequest("targetDeviceId 不属于当前 plantId");
+        }
+    }
+
+    private record DisableCleanupResult(boolean required,
+                                        String status,
+                                        Long commandLogId,
+                                        String message,
+                                        String effectCloseReason,
+                                        String effectCloseSourceType,
+                                        String cleanupMode,
+                                        Long effectId) {
+
+        private static DisableCleanupResult notRequired(String effectCloseReason, String effectCloseSourceType) {
+            return new DisableCleanupResult(false, CLEANUP_STATUS_NOT_REQUIRED, null, null, effectCloseReason, effectCloseSourceType, CLEANUP_MODE_NONE, null);
+        }
+
+        private static DisableCleanupResult skipped(String message,
+                                                    String effectCloseReason,
+                                                    String effectCloseSourceType) {
+            return new DisableCleanupResult(true, CLEANUP_STATUS_SKIPPED, null, message, effectCloseReason, effectCloseSourceType, CLEANUP_MODE_LEGACY_FALLBACK, null);
+        }
+
+        private static DisableCleanupResult success(Long commandLogId,
+                                                    String message,
+                                                    String effectCloseReason,
+                                                    String effectCloseSourceType) {
+            return new DisableCleanupResult(true, CLEANUP_STATUS_SUCCESS, commandLogId, message, effectCloseReason, effectCloseSourceType, CLEANUP_MODE_LEGACY_FALLBACK, null);
+        }
+
+        private static DisableCleanupResult failed(Long commandLogId,
+                                                   String message,
+                                                   String effectCloseReason,
+                                                   String effectCloseSourceType) {
+            return new DisableCleanupResult(true, CLEANUP_STATUS_FAILED, commandLogId, message, effectCloseReason, effectCloseSourceType, CLEANUP_MODE_LEGACY_FALLBACK, null);
+        }
+
+        private static DisableCleanupResult rollbackSuccess(Long commandLogId,
+                                                            String message,
+                                                            Long effectId,
+                                                            String effectCloseReason,
+                                                            String effectCloseSourceType) {
+            return new DisableCleanupResult(true, CLEANUP_STATUS_SUCCESS, commandLogId, message, effectCloseReason, effectCloseSourceType, CLEANUP_MODE_ROLLBACK, effectId);
+        }
+
+        private static DisableCleanupResult rollbackFailed(Long commandLogId,
+                                                           String message,
+                                                           Long effectId,
+                                                           String effectCloseReason,
+                                                           String effectCloseSourceType) {
+            return new DisableCleanupResult(true, CLEANUP_STATUS_FAILED, commandLogId, message, effectCloseReason, effectCloseSourceType, CLEANUP_MODE_ROLLBACK, effectId);
         }
     }
 

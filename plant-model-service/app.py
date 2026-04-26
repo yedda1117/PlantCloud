@@ -39,7 +39,7 @@ def load_models():
     else:
         label_meta = {}
 
-    print("✅ 模型加载完成")
+    print("模型加载完成")
     print(f"status_model: {STATUS_MODEL_PATH}")
     print(f"trend_model: {TREND_MODEL_PATH}")
     print(f"feature_columns: {FEATURE_COLUMNS_PATH}")

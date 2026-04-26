@@ -166,9 +166,11 @@ public class CalendarServiceImpl implements CalendarService {
     }
 
     private CalendarSummaryVO toCalendarSummaryVO(PlantLog plantLog) {
-        boolean hasPhoto = StringUtils.hasText(plantLog.getPhotoUrl()) || StringUtils.hasText(plantLog.getOriginPhotoUrl());
-        String thumbnailUrl = photoPathResolver.normalizeForResponse(
-                StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl());
+        String thumbnailUrl = photoPathResolver.resolveForPlantLog(
+                StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl(),
+                plantLog.getPlantId(),
+                plantLog.getLogDate());
+        boolean hasPhoto = StringUtils.hasText(thumbnailUrl);
         return CalendarSummaryVO.builder()
                 .date(plantLog.getLogDate())
                 .hasPhoto(hasPhoto)
@@ -181,13 +183,14 @@ public class CalendarServiceImpl implements CalendarService {
                                                       LocalDate date,
                                                       PlantLog plantLog,
                                                       DailyEnvironmentSummary summary) {
-        boolean hasPhoto = plantLog != null
-                && (StringUtils.hasText(plantLog.getPhotoUrl()) || StringUtils.hasText(plantLog.getOriginPhotoUrl()));
+        String photoUrl = plantLog == null ? null : photoPathResolver.resolveForPlantLog(plantLog.getPhotoUrl(), plantId, date);
+        String originPhotoUrl = plantLog == null ? null : photoPathResolver.resolveForPlantLog(plantLog.getOriginPhotoUrl(), plantId, date);
+        boolean hasPhoto = StringUtils.hasText(photoUrl) || StringUtils.hasText(originPhotoUrl);
         return CalendarDayDetailVO.builder()
                 .plantId(plantId)
                 .date(date)
-                .photoUrl(plantLog == null ? null : photoPathResolver.normalizeForResponse(plantLog.getPhotoUrl()))
-                .originPhotoUrl(plantLog == null ? null : photoPathResolver.normalizeForResponse(plantLog.getOriginPhotoUrl()))
+                .photoUrl(photoUrl)
+                .originPhotoUrl(originPhotoUrl)
                 .note(plantLog == null ? null : plantLog.getNote())
                 .milestone(plantLog == null ? null : plantLog.getMilestone())
                 .temperature(summary.temperature())

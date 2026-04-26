@@ -104,9 +104,8 @@ public class PhotoServiceImpl implements PhotoService {
 
     private Path getPhotoDir(Long plantId, LocalDate date) {
         return photoPathResolver.getUploadRoot()
-                .resolve("calendar")
-                .resolve("plant-" + plantId)
-                .resolve(date.toString())
+                .resolve("photos")
+                .resolve(String.valueOf(plantId))
                 .toAbsolutePath()
                 .normalize();
     }
@@ -131,15 +130,22 @@ public class PhotoServiceImpl implements PhotoService {
     }
 
     private PhotoLogVO toPhotoLogVO(PlantLog plantLog, String aiStatus) {
-        boolean hasPhoto = StringUtils.hasText(plantLog.getPhotoUrl()) || StringUtils.hasText(plantLog.getOriginPhotoUrl());
+        String originPhotoUrl = photoPathResolver.resolveForPlantLog(
+                plantLog.getOriginPhotoUrl(), plantLog.getPlantId(), plantLog.getLogDate());
+        String photoUrl = photoPathResolver.resolveForPlantLog(
+                plantLog.getPhotoUrl(), plantLog.getPlantId(), plantLog.getLogDate());
+        String thumbnailUrl = photoPathResolver.resolveForPlantLog(
+                StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl(),
+                plantLog.getPlantId(),
+                plantLog.getLogDate());
+        boolean hasPhoto = StringUtils.hasText(photoUrl) || StringUtils.hasText(originPhotoUrl);
         return PhotoLogVO.builder()
                 .id(plantLog.getId())
                 .plantId(plantLog.getPlantId())
                 .date(plantLog.getLogDate() == null ? null : plantLog.getLogDate().toString())
-                .originPhotoUrl(photoPathResolver.normalizeForResponse(plantLog.getOriginPhotoUrl()))
-                .photoUrl(photoPathResolver.normalizeForResponse(plantLog.getPhotoUrl()))
-                .thumbnailUrl(photoPathResolver.normalizeForResponse(
-                        StringUtils.hasText(plantLog.getPhotoUrl()) ? plantLog.getPhotoUrl() : plantLog.getOriginPhotoUrl()))
+                .originPhotoUrl(originPhotoUrl)
+                .photoUrl(photoUrl)
+                .thumbnailUrl(thumbnailUrl)
                 .milestone(plantLog.getMilestone())
                 .note(plantLog.getNote())
                 .hasPhoto(hasPhoto)

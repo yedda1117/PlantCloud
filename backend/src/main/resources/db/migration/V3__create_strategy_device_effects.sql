@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS strategy_device_effects (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    strategy_id BIGINT NOT NULL,
+    plant_id BIGINT NOT NULL,
+    device_id BIGINT NOT NULL,
+    control_target VARCHAR(32) NOT NULL,
+    before_state VARCHAR(16) NULL,
+    applied_state VARCHAR(16) NOT NULL,
+    apply_command_log_id BIGINT NOT NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    closed_reason VARCHAR(32) NULL,
+    closed_by_source_type VARCHAR(64) NULL,
+    closed_by_command_log_id BIGINT NULL,
+    closed_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_sde_strategy_active (strategy_id, active, id),
+    KEY idx_sde_device_target_active (device_id, control_target, active, id),
+    KEY idx_sde_apply_command (apply_command_log_id)
+);

@@ -16,6 +16,7 @@ import com.plantcloud.control.service.MqttPublishService;
 import com.plantcloud.control.vo.ControlCommandVO;
 import com.plantcloud.device.entity.Device;
 import com.plantcloud.device.mapper.DeviceMapper;
+import com.plantcloud.strategy.service.StrategyDeviceEffectService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,11 +33,13 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
     private static final String DEVICE_TYPE_IA1 = "IA1";
     private static final String DEVICE_CODE_E53IA1 = "E53IA1";
+    private static final int DEVICE_COMMAND_SOURCE_TYPE_MAX_LENGTH = 20;
 
     private final DeviceMapper deviceMapper;
     private final MqttPublishService mqttService;
     private final ObjectMapper objectMapper;
     private final DeviceCommandPersistenceService commandPersistenceService;
+    private final StrategyDeviceEffectService strategyDeviceEffectService;
 
     @Override
     public ControlCommandVO controlLight(DeviceControlRequest request) {
@@ -90,6 +93,7 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
             commandPersistenceService.markSuccess(commandLog);
             updateDeviceCommandStatus(device, target, action);
+            supersedeStrategyEffectsIfNeeded(device, target, request, commandLog);
             log.info("[CTRL] command success logId={} topic={} payload={}", commandLog.getId(), topic, payload);
             log.info("控制命令执行成功. logId={}, topic={}", commandLog.getId(), topic);
 
@@ -253,8 +257,39 @@ public class DeviceCommandServiceImpl implements DeviceCommandService {
 
     private String resolveSourceType(DeviceControlRequest request) {
         if (StringUtils.hasText(request.getSourceType())) {
-            return request.getSourceType().trim().toUpperCase();
+            return normalizeSourceTypeForCommandLog(request.getSourceType());
         }
         return "MANUAL";
+    }
+
+    private String normalizeSourceTypeForCommandLog(String sourceType) {
+        String normalized = sourceType.trim().toUpperCase();
+        if (normalized.length() <= DEVICE_COMMAND_SOURCE_TYPE_MAX_LENGTH) {
+            return normalized;
+        }
+        String truncated = normalized.substring(0, DEVICE_COMMAND_SOURCE_TYPE_MAX_LENGTH);
+        log.warn("[CTRL] sourceType is longer than device_command_logs.source_type allows, truncating. originalSourceType={} truncatedSourceType={}",
+                normalized, truncated);
+        return truncated;
+    }
+
+    private void supersedeStrategyEffectsIfNeeded(Device device,
+                                                  ControlTarget target,
+                                                  DeviceControlRequest request,
+                                                  DeviceCommandLog commandLog) {
+        if (device == null || device.getId() == null || commandLog == null || commandLog.getId() == null) {
+            return;
+        }
+        try {
+            strategyDeviceEffectService.supersedeActiveEffectsByCommand(
+                    device.getId(),
+                    target.name(),
+                    resolveSourceType(request),
+                    commandLog.getId()
+            );
+        } catch (Exception ex) {
+            log.warn("[CTRL] shadow effect supersede skipped. deviceId={} target={} commandLogId={} reason={}",
+                    device.getId(), target, commandLog.getId(), ex.getMessage());
+        }
     }
 }

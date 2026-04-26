@@ -1,3 +1,4 @@
+import { Capacitor, CapacitorHttp } from "@capacitor/core"
 import type {
   AlertItem,
   EnvironmentData,
@@ -83,6 +84,69 @@ function authHeaders(extra?: HeadersInit) {
     headers.set("Authorization", `Bearer ${token}`)
   }
   return headers
+}
+
+function isNativeApp() {
+  return Capacitor.getPlatform() !== "web"
+}
+
+function headersToObject(headers?: HeadersInit) {
+  if (!headers) return undefined
+  return Object.fromEntries(new Headers(headers).entries())
+}
+
+async function appFetch(input: string, init?: RequestInit) {
+  if (!isNativeApp()) {
+    return fetch(input, init)
+  }
+
+  const method = init?.method || "GET"
+  const headerObject = headersToObject(init?.headers)
+  const body = init?.body
+  let data: unknown = undefined
+
+  if (typeof body === "string") {
+    const contentType = headerObject?.["content-type"] || headerObject?.["Content-Type"] || ""
+    if (contentType.includes("application/json")) {
+      try {
+        data = JSON.parse(body)
+      } catch {
+        data = body
+      }
+    } else {
+      data = body
+    }
+  } else if (body instanceof FormData) {
+    data = body
+  }
+
+  try {
+    const response = await CapacitorHttp.request({
+      url: input,
+      method,
+      headers: headerObject,
+      data,
+      connectTimeout: 15000,
+      readTimeout: 20000,
+    })
+
+    const responseBody =
+      typeof response.data === "string" ? response.data : JSON.stringify(response.data ?? null)
+
+    return new Response(responseBody, {
+      status: response.status,
+      statusText: response.headers?.["x-android-response-source"] || "",
+      headers: response.headers as HeadersInit | undefined,
+    })
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    console.error("[PlantCloud API] native request failed", {
+      url: input,
+      method,
+      reason,
+    })
+    throw new Error(`无法连接到后端服务：${input}。请确认手机和电脑在同一 Wi‑Fi，后端已启动，且 8080 端口可访问。原始错误：${reason}`)
+  }
 }
 
 export function saveAuthSession(data: LoginResult) {
@@ -216,7 +280,7 @@ function buildHomeDeviceStatus(overview: DeviceStatusOverview): HomeDeviceStatus
 
 export async function getPlants() {
   return parseResponse<Plant[]>(
-    await fetch(`${BACKEND_BASE_URL}/plants`, {
+    await appFetch(`${BACKEND_BASE_URL}/plants`, {
       headers: authHeaders({ accept: "application/json" }),
       cache: "no-store",
     }),
@@ -225,7 +289,7 @@ export async function getPlants() {
 
 export async function loginWithPassword(username: string, password: string) {
   return parseResponse<LoginResult>(
-    await fetch(`${BACKEND_BASE_URL}/auth/login`, {
+    await appFetch(`${BACKEND_BASE_URL}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       cache: "no-store",
@@ -236,7 +300,7 @@ export async function loginWithPassword(username: string, password: string) {
 
 export async function loginWithFace(faceImage: string) {
   return parseResponse<LoginResult>(
-    await fetch(`${BACKEND_BASE_URL}/auth/face-login`, {
+    await appFetch(`${BACKEND_BASE_URL}/auth/face-login`, {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       cache: "no-store",
@@ -247,7 +311,7 @@ export async function loginWithFace(faceImage: string) {
 
 export async function registerWithFace(username: string, password: string, faceImage: string) {
   return parseResponse<string | null>(
-    await fetch(`${BACKEND_BASE_URL}/auth/face-register`, {
+    await appFetch(`${BACKEND_BASE_URL}/auth/face-register`, {
       method: "POST",
       headers: { "Content-Type": "application/json", accept: "application/json" },
       cache: "no-store",
@@ -259,11 +323,11 @@ export async function registerWithFace(username: string, password: string, faceI
 export async function getHomeRealtime(plantId: number): Promise<HomeRealtimeData> {
   const headers = authHeaders({ accept: "application/json" })
   const [environmentResponse, infraredResponse, deviceStatusResponse, alertsResponse, alertLogsResponse] = await Promise.all([
-    fetch(`${BACKEND_BASE_URL}/monitoring/environment/current?plantId=${plantId}`, { headers, cache: "no-store" }),
-    fetch(`${BACKEND_BASE_URL}/devices/infrared`, { headers, cache: "no-store" }),
-    fetch(`${BACKEND_BASE_URL}/monitoring/devices/status?plantId=${plantId}`, { headers, cache: "no-store" }),
-    fetch(`${BACKEND_BASE_URL}/alerts?status=UNRESOLVED`, { headers, cache: "no-store" }),
-    fetch(`${BACKEND_BASE_URL}/alerts/logs?current=1&pageSize=50`, { headers, cache: "no-store" }),
+    appFetch(`${BACKEND_BASE_URL}/monitoring/environment/current?plantId=${plantId}`, { headers, cache: "no-store" }),
+    appFetch(`${BACKEND_BASE_URL}/devices/infrared`, { headers, cache: "no-store" }),
+    appFetch(`${BACKEND_BASE_URL}/monitoring/devices/status?plantId=${plantId}`, { headers, cache: "no-store" }),
+    appFetch(`${BACKEND_BASE_URL}/alerts?status=UNRESOLVED`, { headers, cache: "no-store" }),
+    appFetch(`${BACKEND_BASE_URL}/alerts/logs?current=1&pageSize=50`, { headers, cache: "no-store" }),
   ])
 
   const [environment, infrared, deviceStatus, alerts, alertLogs] = await Promise.all([
@@ -319,7 +383,7 @@ export async function getHomeRealtime(plantId: number): Promise<HomeRealtimeData
 export async function controlHomeDevice(plantId: number, deviceId: number | string, target: "light" | "fan", turnOn: boolean) {
   const endpoint = target === "light" ? "/control/light" : "/control/fan"
   return parseResponse(
-    await fetch(`${BACKEND_BASE_URL}${endpoint}`, {
+    await appFetch(`${BACKEND_BASE_URL}${endpoint}`, {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
       cache: "no-store",
@@ -397,7 +461,7 @@ export async function getPlantAiAnalysis(plantId: number): Promise<PlantAiAnalys
 async function fetchPlantAiAnalysis(endpoint: string) {
   try {
     return await parseResponse<any>(
-      await fetch(`${BACKEND_BASE_URL}${endpoint}`, {
+      await appFetch(`${BACKEND_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: authHeaders({ accept: "application/json" }),
         cache: "no-store",
@@ -409,7 +473,7 @@ async function fetchPlantAiAnalysis(endpoint: string) {
 }
 
 export async function askPlantAi(message: string, plantContextText: string, history: Array<{ role: string; content: string }>) {
-  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/chat`, {
+  const response = await appFetch(`${WEB_API_BASE_URL}/api/ragflow/chat`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
     cache: "no-store",
@@ -426,7 +490,7 @@ export async function askPlantAi(message: string, plantContextText: string, hist
 }
 
 export async function getKnowledgeFiles() {
-  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/files`, {
+  const response = await appFetch(`${WEB_API_BASE_URL}/api/ragflow/files`, {
     method: "GET",
     headers: authHeaders({ accept: "application/json" }),
     cache: "no-store",
@@ -444,7 +508,7 @@ export async function uploadKnowledgeFiles(files: FileList | File[]) {
     formData.append("files", file)
   })
 
-  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/upload`, {
+  const response = await appFetch(`${WEB_API_BASE_URL}/api/ragflow/upload`, {
     method: "POST",
     headers: authHeaders(),
     body: formData,
@@ -457,7 +521,7 @@ export async function uploadKnowledgeFiles(files: FileList | File[]) {
 }
 
 export async function getStrategyProposal(message: string, chatAnswer: string, plantContext: unknown, plantContextText: string) {
-  const response = await fetch(`${WEB_API_BASE_URL}/api/ragflow/strategy-agent`, {
+  const response = await appFetch(`${WEB_API_BASE_URL}/api/ragflow/strategy-agent`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
     cache: "no-store",
@@ -471,7 +535,7 @@ export async function getStrategyProposal(message: string, chatAnswer: string, p
 }
 
 export async function createStrategyFromProposal(payload: Record<string, unknown>) {
-  const response = await fetch(`${WEB_API_BASE_URL}/api/strategies`, {
+  const response = await appFetch(`${WEB_API_BASE_URL}/api/strategies`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
     cache: "no-store",
@@ -486,7 +550,7 @@ export async function createStrategyFromProposal(payload: Record<string, unknown
 }
 
 export async function getDevicesStatus(plantId: number | string) {
-  const response = await fetch(`${WEB_API_BASE_URL}/api/devices/status?plantId=${encodeURIComponent(String(plantId))}`, {
+  const response = await appFetch(`${WEB_API_BASE_URL}/api/devices/status?plantId=${encodeURIComponent(String(plantId))}`, {
     method: "GET",
     headers: authHeaders({ accept: "application/json" }),
     cache: "no-store",
@@ -501,7 +565,7 @@ export async function getDevicesStatus(plantId: number | string) {
 
 export async function getCalendarSummary(plantId: number, year: number, month: number) {
   const result = await parseResponse<CalendarSummary[]>(
-    await fetch(`${BACKEND_BASE_URL}/calendar?plant_id=${plantId}&year=${year}&month=${month}`, {
+    await appFetch(`${BACKEND_BASE_URL}/calendar?plant_id=${plantId}&year=${year}&month=${month}`, {
       headers: authHeaders({ accept: "application/json" }),
       cache: "no-store",
     }),
@@ -511,7 +575,7 @@ export async function getCalendarSummary(plantId: number, year: number, month: n
 
 export async function getCalendarDayDetail(plantId: number, date: string) {
   const result = await parseResponse<CalendarDayDetail>(
-    await fetch(`${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`, {
+    await appFetch(`${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`, {
       headers: authHeaders({ accept: "application/json" }),
       cache: "no-store",
     }),
@@ -523,7 +587,7 @@ export async function updateCalendarDayLog(plantId: number, date: string, payloa
   const url = `${BACKEND_BASE_URL}/calendar/${date}?plant_id=${plantId}`
   logApiRequest("updateCalendarDayLog", url, BACKEND_BASE_URL)
   const result = await parseResponse<CalendarDayDetail>(
-    await fetch(url, {
+    await appFetch(url, {
       method: "PUT",
       headers: authHeaders({ "Content-Type": "application/json", accept: "application/json" }),
       cache: "no-store",
@@ -537,7 +601,7 @@ export async function uploadPlantPhoto(formData: FormData) {
   const url = `${BACKEND_BASE_URL}/photos/upload`
   logApiRequest("uploadPlantPhoto", url, BACKEND_BASE_URL)
   const result = await parseResponse<PhotoUploadResult>(
-    await fetch(url, {
+    await appFetch(url, {
       method: "POST",
       headers: authHeaders(),
       cache: "no-store",

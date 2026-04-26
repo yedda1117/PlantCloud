@@ -213,6 +213,14 @@ export function LoginPage({ onLoggedIn, onRegister }: LoginPageProps) {
             注册账号
           </button>
         </div>
+
+        <div className={`auth-inline-status ${statusClass}`}>
+          {statusType === "success" ? <CheckCircle2 size={16} /> : statusType === "error" ? <XCircle size={16} /> : statusType === "loading" ? <Loader2 size={16} className="spin" /> : <ShieldCheck size={16} />}
+          <span>
+            <strong>{status}</strong>
+            <em>{message}</em>
+          </span>
+        </div>
       </section>
 
       {faceOpen ? (
