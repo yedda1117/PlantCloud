@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { SERVER_BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
 // 这里的基准地址可以根据开发环境切换
-const BACKEND_BASE_URL = "http://localhost:8080"
+const BACKEND_BASE_URL = SERVER_BACKEND_BASE_URL
 
 
 

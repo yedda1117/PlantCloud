@@ -1,5 +1,4 @@
 ﻿const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
-
 type ApiResult<T> = {
   code?: number
   message?: string

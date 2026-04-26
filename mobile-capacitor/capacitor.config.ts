@@ -5,6 +5,9 @@ const config: CapacitorConfig = {
   appName: "PlantCloud",
   webDir: "dist",
   bundledWebRuntime: false,
+  server: {
+    cleartext: true,
+  },
   plugins: {
     StatusBar: {
       style: "LIGHT",

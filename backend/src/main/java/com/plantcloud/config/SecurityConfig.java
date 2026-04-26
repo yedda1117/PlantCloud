@@ -79,6 +79,8 @@ public class SecurityConfig {
                 "http://127.0.0.1",
                 "https://127.0.0.1",
                 "https://127.0.0.1:*",
+                "http://150.158.76.53:3000",
+                "https://150.158.76.53:3000",
                 "capacitor://localhost",
                 "ionic://localhost",
                 "http://172.16.*.*:*",

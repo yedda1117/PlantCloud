@@ -3,8 +3,9 @@ import { stat } from "node:fs/promises"
 import path from "node:path"
 import { Readable } from "node:stream"
 import { NextRequest, NextResponse } from "next/server"
+import { SERVER_BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
-const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || "http://localhost:8080"
+const BACKEND_BASE_URL = SERVER_BACKEND_BASE_URL
 const WORKSPACE_ROOT = path.resolve(process.cwd(), "..")
 const BACKEND_UPLOAD_ROOT = path.join(WORKSPACE_ROOT, "backend", "uploads")
 const BACKEND_STATIC_ROOT = path.join(WORKSPACE_ROOT, "backend", "src", "main", "resources", "static")

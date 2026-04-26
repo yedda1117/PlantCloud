@@ -49,7 +49,7 @@ app:
     secret-key: minioadmin
     bucket: plantcloud
   upload:
-    dir: uploads
+    dir: backend/uploads
   smartjavaai:
     enabled: true
     instance-seg-model: SEG_YOLOV8N_PYTORCH
@@ -71,3 +71,7 @@ deepseek:
   api-key: sk-9460599ee06142d5ab80d71f56575b20
   base-url: https://api.deepseek.com
   model: deepseek-chat
+
+plant:
+  model-service:
+    predict-url: http://127.0.0.1:5000/predict

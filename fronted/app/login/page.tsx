@@ -7,8 +7,7 @@ import { Camera, CheckCircle2, KeyRound, Leaf, Loader2, Lock, ShieldCheck, User,
 import { FaceScannerFrame } from "@/components/face-scanner-frame"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
+import { BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
 type LoginResult = {
   userId: number

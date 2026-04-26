@@ -1,3 +1,5 @@
+import { resolveBackendAssetUrl } from "@/lib/asset-url"
+
 export type CalendarSummary = {
   date: string
   hasPhoto: boolean
@@ -67,25 +69,7 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
 }
 
 function resolveCalendarAssetUrl(value: string | null | undefined) {
-  if (!value) {
-    return null
-  }
-
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return null
-  }
-
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    const url = new URL(trimmed)
-    return `/api/assets?path=${encodeURIComponent(`${url.pathname}${url.search}`)}`
-  }
-
-  if (trimmed.startsWith("/")) {
-    return `/api/assets?path=${encodeURIComponent(trimmed)}`
-  }
-
-  return `/api/assets?path=${encodeURIComponent(`/${trimmed}`)}`
+  return resolveBackendAssetUrl(value)
 }
 
 function normalizeCalendarSummary(record: CalendarSummary): CalendarSummary {
