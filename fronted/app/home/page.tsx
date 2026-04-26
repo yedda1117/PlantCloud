@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { BACKEND_BASE_URL } from "@/lib/backend-base-url"
 import { controlHomeDevice, getHomeRealtime, type HomeControlTarget, type HomeRealtimeData } from "@/lib/home-api"
 import { usePlantSelection } from "@/context/plant-selection"
 import {
@@ -32,7 +33,6 @@ const GpsMap = dynamic(() => import("@/components/gps-map"), {
   loading: () => <div className="h-full w-full bg-black/5" />,
 })
 
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
 const POLL_INTERVAL_MS = 1000
 
 type ApiResult<T> = {

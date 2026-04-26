@@ -5,8 +5,7 @@ import { MapPin, Leaf } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import dynamic from "next/dynamic"
 import { usePlantSelection } from "@/context/plant-selection"
-
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
+import { BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
 type ApiResult<T> = {
   code?: number

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { SERVER_BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
-const BACKEND_BASE_URL = "http://localhost:8080"
+const BACKEND_BASE_URL = SERVER_BACKEND_BASE_URL
 
 function getHeaders(req: NextRequest): HeadersInit {
   const headers: HeadersInit = {

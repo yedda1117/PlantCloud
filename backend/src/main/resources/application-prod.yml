@@ -61,3 +61,7 @@ deepseek:
   api-key: ${DEEPSEEK_API_KEY:}
   base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
   model: ${DEEPSEEK_MODEL:deepseek-chat}
+
+plant:
+  model-service:
+    predict-url: ${PLANT_MODEL_SERVICE_PREDICT_URL:http://150.158.76.53:5000/predict}

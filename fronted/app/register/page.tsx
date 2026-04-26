@@ -7,8 +7,7 @@ import { ArrowLeft, Camera, CheckCircle2, Leaf, Loader2, Lock, User, XCircle } f
 import { FaceScannerFrame } from "@/components/face-scanner-frame"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-
-const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
+import { BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
 type ApiResponse<T> = {
   code: number

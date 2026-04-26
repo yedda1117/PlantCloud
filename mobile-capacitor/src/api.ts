@@ -16,8 +16,8 @@ import type {
   LoginResult,
 } from "./types"
 
-const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://localhost:8080"
-const WEB_API_BASE_URL = import.meta.env.VITE_WEB_API_BASE_URL || "http://localhost:3000"
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL || "http://150.158.76.53:8080"
+const WEB_API_BASE_URL = import.meta.env.VITE_WEB_API_BASE_URL || "http://150.158.76.53:3000"
 const IA1_DEVICE_CODE = "E53IA1"
 const LONG_ID_FIELDS = ["id", "userId", "plantId", "createdBy", "targetDeviceId", "deviceId", "strategyId", "commandLogId"] as const
 

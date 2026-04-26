@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { SERVER_BACKEND_BASE_URL } from "@/lib/backend-base-url"
 
-const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL || "http://localhost:8080"
+const BACKEND_BASE_URL = SERVER_BACKEND_BASE_URL
 const LONG_ID_FIELDS = ["id", "strategyId", "plantId", "createdBy", "targetDeviceId", "commandLogId"] as const
 
 type RouteContext = {

@@ -1,6 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server"
 
-const allowedDevOrigins = [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/, /^http:\/\/192\.168\.\d+\.\d+:\d+$/]
+const allowedDevOrigins = [
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
+  /^http:\/\/192\.168\.\d+\.\d+:\d+$/,
+  /^http:\/\/150\.158\.76\.53:\d+$/,
+  /^capacitor:\/\/localhost$/,
+  /^ionic:\/\/localhost$/,
+]
 
 function isAllowedOrigin(origin: string | null) {
   if (!origin) return false
