@@ -85,6 +85,56 @@ const riskLevelStyleMap: Record<string, { label: string; className: string }> = 
   },
 }
 
+const plantHealthStatusStyleMap: Record<string, { label: string; className: string }> = {
+  HEALTHY: {
+    label: "健康",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  MODERATE: {
+    label: "一般",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  STRESSED: {
+    label: "受压",
+    className: "border-amber-200 bg-amber-50 text-amber-700",
+  },
+  WARNING: {
+    label: "预警",
+    className: "border-orange-200 bg-orange-50 text-orange-700",
+  },
+  CRITICAL: {
+    label: "危险",
+    className: "border-red-200 bg-red-50 text-red-700",
+  },
+  DISEASED: {
+    label: "病害",
+    className: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700",
+  },
+}
+
+const plantGrowthTrendStyleMap: Record<string, { label: string; className: string }> = {
+  IMPROVING: {
+    label: "改善中",
+    className: "border-sky-200 bg-sky-50 text-sky-700",
+  },
+  STABLE: {
+    label: "稳定",
+    className: "border-slate-200 bg-slate-50 text-slate-700",
+  },
+  WORSENING: {
+    label: "恶化中",
+    className: "border-rose-200 bg-rose-50 text-rose-700",
+  },
+  DECLINING: {
+    label: "下降",
+    className: "border-rose-200 bg-rose-50 text-rose-700",
+  },
+  FLUCTUATING: {
+    label: "波动",
+    className: "border-violet-200 bg-violet-50 text-violet-700",
+  },
+}
+
 function formatTimestamp(value: string | null | undefined) {
   if (!value) {
     return "暂无数据"
@@ -272,6 +322,52 @@ function mapRiskTypeLabel(value: string) {
 function getRiskLevelMeta(level: string | null | undefined) {
   return riskLevelStyleMap[level || ""] ?? {
     label: level || "未知风险",
+    className: "border-slate-200 bg-slate-50 text-slate-700",
+  }
+}
+
+function formatAnalysisTagLabel(value: string | null | undefined) {
+  if (!value) {
+    return "未知"
+  }
+
+  const normalized = value.trim().toUpperCase()
+  const zhMap: Record<string, string> = {
+    HEALTHY: "健康",
+    MODERATE: "一般",
+    STRESSED: "受压",
+    WARNING: "预警",
+    CRITICAL: "危险",
+    DISEASED: "病害",
+    IMPROVING: "改善中",
+    STABLE: "稳定",
+    WORSENING: "恶化中",
+    DECLINING: "下降",
+    FLUCTUATING: "波动",
+  }
+
+  if (zhMap[normalized]) {
+    return zhMap[normalized]
+  }
+
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" / ")
+}
+
+function getPlantHealthStatusMeta(status: string | null | undefined) {
+  return plantHealthStatusStyleMap[(status || "").toUpperCase()] ?? {
+    label: formatAnalysisTagLabel(status),
+    className: "border-slate-200 bg-slate-50 text-slate-700",
+  }
+}
+
+function getPlantGrowthTrendMeta(trend: string | null | undefined) {
+  return plantGrowthTrendStyleMap[(trend || "").toUpperCase()] ?? {
+    label: formatAnalysisTagLabel(trend),
     className: "border-slate-200 bg-slate-50 text-slate-700",
   }
 }
@@ -584,6 +680,8 @@ export default function DashDetail({ plant, onBack }: Props) {
   const humidityBadge = mapStatusBadge(current?.humidityStatus, "humidity")
   const lightBadge = mapStatusBadge(current?.lightStatus, "light")
   const riskLevelMeta = getRiskLevelMeta(aiAnalysisData?.riskLevel)
+  const analysisStatusMeta = getPlantHealthStatusMeta(aiAnalysisData?.status)
+  const analysisTrendMeta = getPlantGrowthTrendMeta(aiAnalysisData?.trend)
   return (
     <div
       className="min-h-screen"
@@ -951,17 +1049,25 @@ export default function DashDetail({ plant, onBack }: Props) {
                   <Bot className="h-4 w-4 text-primary" />
                   AI 植物管家
                 </div>
-                {!aiAnalysisLoading && !aiAnalysisError && aiAnalysisData?.riskLevel ? (
+                {!aiAnalysisLoading && !aiAnalysisError ? (
                   <div className="flex flex-wrap items-center justify-end gap-2">
-                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${riskLevelMeta.className}`}>
-                      {riskLevelMeta.label}
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${analysisStatusMeta.className}`}>
+                      当前状态: {analysisStatusMeta.label}
                     </span>
-                    {typeof aiAnalysisData.riskScore === "number" ? (
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${analysisTrendMeta.className}`}>
+                      生长趋势: {analysisTrendMeta.label}
+                    </span>
+                    {aiAnalysisData?.riskLevel ? (
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${riskLevelMeta.className}`}>
+                        {riskLevelMeta.label}
+                      </span>
+                    ) : null}
+                    {typeof aiAnalysisData?.riskScore === "number" ? (
                       <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                         风险分 {aiAnalysisData.riskScore}
                       </span>
                     ) : null}
-                    {(aiAnalysisData.riskType || []).map((item) => (
+                    {(aiAnalysisData?.riskType || []).map((item) => (
                       <Badge
                         key={item}
                         variant="secondary"

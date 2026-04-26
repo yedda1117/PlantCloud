@@ -33,6 +33,8 @@ export type PlantAiAnalysis = {
   summary: string
   advice: string[]
   riskWarnings: string[]
+  status?: string | null
+  trend?: string | null
   riskLevel?: string
   riskScore?: number
   riskType?: string[]
@@ -84,6 +86,8 @@ export function normalizePlantAiResult(result: PlantRiskAnalysis | PlantPredicti
       summary: predictionResult.summary?.trim() || "",
       advice: normalizeTextList(predictionResult.advice),
       riskWarnings: normalizeTextList(predictionResult.riskWarnings),
+      status: predictionResult.status,
+      trend: predictionResult.trend,
     }
   }
 

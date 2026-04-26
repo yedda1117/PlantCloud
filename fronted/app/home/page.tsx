@@ -33,7 +33,7 @@ const GpsMap = dynamic(() => import("@/components/gps-map"), {
 })
 
 const BACKEND_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL || "http://localhost:8080"
-const POLL_INTERVAL_MS = 5000
+const POLL_INTERVAL_MS = 1000
 
 type ApiResult<T> = {
   code?: number
@@ -581,7 +581,7 @@ export default function HomePage() {
                       <VerticalMetricBar
                         label="光照"
                         value={realtimeData?.environment.lightLux}
-                        max={2000}
+                        max={2500}
                         unit="lux"
                         gradientStyle="bg-[rgb(237,197,115)]"
                         delayMs={320}
